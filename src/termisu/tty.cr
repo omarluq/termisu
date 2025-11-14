@@ -32,14 +32,21 @@ class Termisu::TTY
 
   # Closes the TTY file descriptors.
   def close
-    @out.close
+    close_output_fd
     close_input_fd unless USE_RDWR
   end
 
   private def open_readonly_fd : Int32
     fd = LibC.open(PATH, LibC::O_RDONLY, 0)
-    raise IO::Error.from_errno("Failed to open #{PATH}") if fd == -1
+    if fd == -1
+      close_output_fd
+      raise IO::Error.from_errno("Failed to open #{PATH}")
+    end
     fd
+  end
+
+  private def close_output_fd
+    @out.try(&.close)
   end
 
   private def close_input_fd
