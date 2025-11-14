@@ -1,5 +1,5 @@
 class Termisu
-  VERSION = "0.1.0"
+  VERSION = "0.0.1.alpha"
 
   def initialize : Int32
     0
