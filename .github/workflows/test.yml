@@ -14,5 +14,5 @@ jobs:
         run: crystal spec
       - name: Run formatter
         run: crystal tool format --check -i ./..
-      - name: Run Amebda
+      - name: Run Ameba
         run: bin/ameba
