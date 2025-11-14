@@ -1,11 +1,10 @@
 class Termisu
   VERSION = "0.0.1.alpha"
+  delegate :close, to: @tty
 
   def initialize : Int32
+    @tty = TTY.new
     0
-  end
-
-  def shutdown : Nil
   end
 
   def width : Int32
