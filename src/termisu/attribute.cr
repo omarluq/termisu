@@ -1,0 +1,2 @@
+class Termisu::Attribute
+end
