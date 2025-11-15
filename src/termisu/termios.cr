@@ -1,4 +1,15 @@
 # Terminal attribute manipulation - raw mode, etc.
+
+# Define missing termios constants for platforms where they're not in LibC
+lib LibC
+  {% unless LibC.has_constant?(:VMIN) %}
+    VMIN = 16
+  {% end %}
+  {% unless LibC.has_constant?(:VTIME) %}
+    VTIME = 17
+  {% end %}
+end
+
 class Termisu::Termios
   @fd : Int32
   @original : LibC::Termios?
@@ -6,10 +17,13 @@ class Termisu::Termios
   def initialize(@fd : Int32)
   end
 
-  def enable_raw_mode : Nil
+  def enable_raw_mode
     @original = get_attrs
 
-    tios = @original.not_nil!.dup
+    original = @original
+    return unless original
+
+    tios = original.dup
 
     # Input flags - turn off input processing
     tios.c_iflag &= ~(LibC::IGNBRK | LibC::BRKINT | LibC::PARMRK |
@@ -25,13 +39,13 @@ class Termisu::Termios
     tios.c_cflag |= LibC::CS8
 
     # Control chars - set raw mode read behavior
-    tios.c_cc[LibC::VMIN] = 1_u8   # minimum number of characters for read
-    tios.c_cc[LibC::VTIME] = 0_u8  # timeout in deciseconds for read
+    tios.c_cc[LibC::VMIN] = 1_u8  # minimum number of characters for read
+    tios.c_cc[LibC::VTIME] = 0_u8 # timeout in deciseconds for read
 
     set_attrs(tios)
   end
 
-  def restore : Nil
+  def restore
     if original = @original
       set_attrs(original)
     end
@@ -45,7 +59,7 @@ class Termisu::Termios
     tios
   end
 
-  private def set_attrs(tios : LibC::Termios) : Nil
+  private def set_attrs(tios : LibC::Termios)
     # Create a copy to pass to tcsetattr
     tios_copy = tios
     if LibC.tcsetattr(@fd, LibC::TCSAFLUSH, pointerof(tios_copy)) != 0
