@@ -2,17 +2,13 @@ class Termisu
   VERSION = "0.0.1.alpha"
   delegate :close, to: @tty
 
-  def initialize : Int32
+  @tty : TTY
+  @termios : Termios
+
+  def initialize
     @tty = TTY.new
-    0
-  end
-
-  def width : Int32
-    0
-  end
-
-  def height : Int32
-    0
+    @termios = Termios.new(@tty.outfd)
+    @termios.enable_raw_mode
   end
 
   def clear : Nil
