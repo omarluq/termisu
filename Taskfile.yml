@@ -1,0 +1,49 @@
+version: "3"
+
+tasks:
+  spec:
+    desc: Run crystal spec
+    cmds:
+      - crystal spec
+
+  run:
+    desc: Run the main file
+    cmds:
+      - crystal run src/termisu.cr
+
+  build:
+    desc: Build the project
+    cmds:
+      - crystal build src/termisu.cr -o bin/termisu --release
+
+  demo:
+    desc: Run demo example
+    cmds:
+      - crystal run examples/demo.cr
+
+  format:
+    desc: Format code with crystal tool format  (use -- to pass flags)
+    cmds:
+      - crystal tool format {{.CLI_ARGS}}
+
+  ameba:
+    desc: Run Ameba linter (use -- to pass flags)
+    cmds:
+      - bin/ameba {{.CLI_ARGS}}
+
+  console:
+    desc: Start Crystal REPL with library loaded
+    cmds:
+      - crystal i -r ./src/termisu.cr
+
+  clean:
+    desc: Clean build artifacts
+    cmds:
+      - rm -rf bin/termisu lib .crystal
+
+  all:
+    desc: Format, lint, and test
+    cmds:
+      - task: format
+      - task: ameba
+      - task: spec
