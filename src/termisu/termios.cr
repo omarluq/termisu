@@ -19,11 +19,8 @@ class Termisu::Termios
 
   def enable_raw_mode
     @original = get_attrs
-
-    original = @original
-    return unless original
-
-    tios = original.dup
+    tios = @original.try(&.dup)
+    return unless tios
 
     # Input flags - turn off input processing
     tios.c_iflag &= ~(LibC::IGNBRK | LibC::BRKINT | LibC::PARMRK |
@@ -46,9 +43,7 @@ class Termisu::Termios
   end
 
   def restore
-    if original = @original
-      set_attrs(original)
-    end
+    @original.try(&->set_attrs(LibC::Termios))
   end
 
   private def get_attrs : LibC::Termios
