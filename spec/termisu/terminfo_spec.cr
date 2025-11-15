@@ -3,12 +3,13 @@ require "../spec_helper"
 describe Termisu::Terminfo do
   describe "#initialize" do
     it "creates a Terminfo instance" do
+      # Ensure TERM is set for CI environments
+      ENV["TERM"] ||= "xterm"
       term = Termisu::Terminfo.new
       term.should be_a(Termisu::Terminfo)
     end
 
     it "raises error when TERM environment variable not set" do
-      # Save original TERM
       original_term = ENV["TERM"]?
 
       begin
@@ -17,17 +18,7 @@ describe Termisu::Terminfo do
           Termisu::Terminfo.new
         end
       ensure
-        # Restore TERM
         ENV["TERM"] = original_term if original_term
-      end
-    end
-
-    it "loads capabilities from database when available" do
-      begin
-        term = Termisu::Terminfo.new
-        term.should be_a(Termisu::Terminfo)
-      rescue
-        pending "Terminfo database not available for current TERM"
       end
     end
 
