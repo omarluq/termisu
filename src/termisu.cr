@@ -1,29 +1,53 @@
 class Termisu
   VERSION = "0.0.1.alpha"
-  delegate :close, to: @tty
 
   @tty : TTY
   @termios : Termios
+  @terminfo : Terminfo
 
   def initialize
     @tty = TTY.new
     @termios = Termios.new(@tty.outfd)
+    @terminfo = Terminfo.new
+
     @termios.enable_raw_mode
+    enter_alternate_screen
   end
 
-  def clear : Nil
+  def close
+    exit_alternate_screen
+    @termios.restore
+    @tty.close
   end
 
-  def present : Nil
+  private def enter_alternate_screen
+    @tty.write(@terminfo.enter_ca)
+    @tty.write(@terminfo.enter_keypad)
+    @tty.write(@terminfo.hide_cursor)
+    @tty.write(@terminfo.clear_screen)
+    @tty.flush
   end
 
-  def put_cell(x : Int32, y : Int32, cell : Termisu::Cell) : Nil
+  private def exit_alternate_screen
+    @tty.write(@terminfo.show_cursor)
+    @tty.write(@terminfo.exit_keypad)
+    @tty.write(@terminfo.exit_ca)
+    @tty.flush
   end
 
-  def change_cell(x : Int32, y : Int32, ch : UInt32, fg : UInt16, bg : UInt16) : Nil
+  def clear
   end
 
-  def blit(x : Int32, y : Int32, h : Int32, cell : Termisu::Cell) : Nil
+  def present
+  end
+
+  def put_cell(x : Int32, y : Int32, cell : Termisu::Cell)
+  end
+
+  def change_cell(x : Int32, y : Int32, ch : UInt32, fg : UInt16, bg : UInt16)
+  end
+
+  def blit(x : Int32, y : Int32, h : Int32, cell : Termisu::Cell)
   end
 
   def select_input_mode(mode : Termisu::InputMode) : Bool
