@@ -31,7 +31,7 @@ class Termisu
     @reader = Reader.new(@terminal.infd)
 
     # Initialize cell buffer with current terminal size
-    width, height = @terminal.size
+    width, height = size
     @buffer = Buffer.new(width, height)
 
     @terminal.enable_raw_mode
@@ -55,9 +55,10 @@ class Termisu
 
   # --- Cursor Control ---
 
-  delegate show_cursor, # Shows the cursor
-    hide_cursor,        # Hides the cursor
-    to: @backend
+  delegate set_cursor, # Sets cursor position (x, y) and shows it
+    hide_cursor,       # Hides the cursor
+    show_cursor,       # Shows the cursor
+    to: @buffer
 
   # --- Cell Buffer Operations ---
 

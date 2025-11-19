@@ -94,12 +94,6 @@ begin
     termisu.set_cell(27 + idx, 10, char, fg: Termisu::Color::White, attr: Termisu::Attribute::Reverse)
   end
 
-  # Cursor info
-  cursor_msg = "Cursor: Visible!"
-  cursor_msg.each_char_with_index do |char, idx|
-    termisu.set_cell(idx, 12, char, fg: Termisu::Color::White)
-  end
-
   # Interactive input demo
   input_prompt = "Press any key to continue (will wait 5 seconds)..."
   input_prompt.each_char_with_index do |char, idx|
@@ -126,15 +120,37 @@ begin
     termisu.flush
   end
 
-  # Animated goodbye
+  # Animated goodbye with cursor following the text
   goodbye = "Thanks for trying Termisu! Goodbye! 👋"
+
+  # Show cursor before animation
+  termisu.set_cursor(0, 17)
+  termisu.flush
+  sleep 0.3.seconds
+
+  # Animate text with cursor following
   goodbye.each_char_with_index do |char, idx|
     termisu.set_cell(idx, 17, char, fg: Termisu::Color::Blue, attr: Termisu::Attribute::Bold)
-    termisu.flush # Each character triggers a flush (shows animation)
+    termisu.set_cursor(idx + 1, 17) # Position cursor after current character
+    termisu.flush                   # Each character triggers a flush (shows animation)
     sleep 0.05.seconds
   end
 
-  sleep 2.seconds
+  # Blink cursor a few times at the end
+  3.times do
+    termisu.hide_cursor
+    termisu.flush
+    sleep 0.2.seconds
+    termisu.set_cursor(goodbye.size, 17)
+    termisu.flush
+    sleep 0.2.seconds
+  end
+
+  # Hide cursor before closing
+  termisu.hide_cursor
+  termisu.flush
+
+  sleep 1.seconds
 ensure
   # Clean shutdown
   termisu.close

@@ -10,6 +10,8 @@ class MockBufferBackend < Termisu::Backend
   property reset_count : Int32 = 0
   property bold_count : Int32 = 0
   property underline_count : Int32 = 0
+  property show_cursor_count : Int32 = 0
+  property hide_cursor_count : Int32 = 0
 
   def write(data : String)
     @write_calls << data
@@ -46,6 +48,14 @@ class MockBufferBackend < Termisu::Backend
   def enable_blink; end
 
   def enable_reverse; end
+
+  def show_cursor
+    @show_cursor_count += 1
+  end
+
+  def hide_cursor
+    @hide_cursor_count += 1
+  end
 
   def size : {Int32, Int32}
     {80, 24}

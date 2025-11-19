@@ -2,6 +2,7 @@
 #
 # Combines Terminal I/O with Terminfo capabilities to provide
 # high-level rendering operations like cursor movement and colors.
+# Used by Buffer for cell-based rendering.
 #
 # Example:
 # ```
@@ -9,8 +10,8 @@
 # terminfo = Termisu::Terminfo.new
 # backend = Termisu::Terminal::Backend.new(terminal, terminfo)
 #
-# backend.clear_screen
 # backend.move_cursor(10, 5)
+# backend.foreground = 2
 # backend.write("Hello!")
 # backend.flush
 # backend.close
@@ -30,13 +31,12 @@ class Termisu::Terminal::Backend < Termisu::Backend
   # Enters alternate screen mode.
   #
   # Switches to alternate screen buffer, enters keypad mode,
-  # hides cursor, and clears the screen.
+  # and hides cursor.
   def enter_alternate_screen
     return if @alternate_screen
     write(@terminfo.enter_ca)
     write(@terminfo.enter_keypad)
     hide_cursor
-    clear_screen
     flush
     @alternate_screen = true
   end
@@ -84,11 +84,6 @@ class Termisu::Terminal::Backend < Termisu::Backend
     else
       write("\e[4#{color}m")
     end
-  end
-
-  # Clears the screen using terminfo capability.
-  def clear_screen
-    write(@terminfo.clear_screen)
   end
 
   # Shows the cursor using terminfo capability.

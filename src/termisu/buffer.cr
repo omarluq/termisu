@@ -4,16 +4,19 @@
 # - Front buffer: What's currently displayed on screen
 # - Back buffer: Where new content is written
 # - Diff algorithm: Only redraws cells that have changed
+# - Cursor position and visibility
 #
 # Example:
 # ```
 # buffer = Termisu::Buffer.new(80, 24)
 # buffer.set_cell(10, 5, 'A', fg: 2, bg: 0)
-# buffer.flush(backend) # Only changed cells are redrawn
+# buffer.set_cursor(10, 5)
+# buffer.flush(backend) # Only changed cells and cursor are redrawn
 # ```
 class Termisu::Buffer
   getter width : Int32
   getter height : Int32
+  getter cursor : Cursor
 
   @front : Array(Cell) # Currently displayed buffer
   @back : Array(Cell)  # Buffer being written to
@@ -27,6 +30,7 @@ class Termisu::Buffer
     size = @width * @height
     @front = Array(Cell).new(size) { Cell.default }
     @back = Array(Cell).new(size) { Cell.default }
+    @cursor = Cursor.new # Hidden by default
   end
 
   # Sets a cell at the specified position in the back buffer.
@@ -72,10 +76,26 @@ class Termisu::Buffer
     end
   end
 
+  # Sets cursor position and makes it visible.
+  def set_cursor(x : Int32, y : Int32)
+    @cursor.move(x, y)
+  end
+
+  # Hides the cursor.
+  def hide_cursor
+    @cursor.hide
+  end
+
+  # Shows the cursor at current position (or 0,0 if never positioned).
+  def show_cursor
+    @cursor.show
+  end
+
   # Flushes changes to the backend by diffing front and back buffers.
   #
   # Only cells that have changed are redrawn. After flushing,
   # the back buffer becomes the new front buffer.
+  # Cursor position and visibility are also updated.
   #
   # Parameters:
   # - backend: The backend to render cells to
@@ -94,6 +114,9 @@ class Termisu::Buffer
       end
     end
 
+    # Render cursor
+    render_cursor(backend)
+
     backend.flush
   end
 
@@ -109,6 +132,9 @@ class Termisu::Buffer
         @front[idx] = back_cell
       end
     end
+
+    # Render cursor
+    render_cursor(backend)
 
     backend.flush
   end
@@ -178,5 +204,15 @@ class Termisu::Buffer
     backend.enable_reverse if attr.reverse?
     backend.enable_blink if attr.blink?
     # Dim, Cursive, Hidden not yet supported in backend
+  end
+
+  # Renders cursor position and visibility to the backend.
+  private def render_cursor(backend : Backend)
+    if @cursor.visible?
+      backend.move_cursor(@cursor.x, @cursor.y)
+      backend.show_cursor
+    else
+      backend.hide_cursor
+    end
   end
 end
