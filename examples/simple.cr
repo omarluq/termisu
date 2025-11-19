@@ -21,7 +21,7 @@ begin
       msg = "You pressed: '#{byte.chr}' (byte: #{byte})"
       msg.each_char_with_index do |char, idx|
         termisu.set_cell(idx, 2, char, Termisu::Color::White, attr: attr)
-        termisu.set_cursor(idx+1, 2)
+        termisu.set_cursor(idx + 1, 2)
         termisu.flush
         sleep 0.01.seconds
       end
