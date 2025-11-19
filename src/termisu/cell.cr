@@ -51,5 +51,3 @@ struct Termisu::Cell
     @attr = Attribute::None
   end
 end
-
-require "./cell/*"

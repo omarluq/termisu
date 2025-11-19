@@ -32,7 +32,7 @@ class Termisu
 
     # Initialize cell buffer with current terminal size
     width, height = @terminal.size
-    @buffer = Cell::Buffer.new(width, height)
+    @buffer = Buffer.new(width, height)
 
     @terminal.enable_raw_mode
     @backend.enter_alternate_screen
@@ -53,29 +53,11 @@ class Termisu
   delegate size, # Returns terminal size as {width, height}
     to: @terminal
 
-  # --- Rendering Operations ---
+  # --- Cursor Control ---
 
-  delegate clear_screen, # Clears the entire screen
-    move_cursor,         # Moves cursor to x, y coordinates (0-based)
-    show_cursor,         # Shows the cursor
-    hide_cursor,         # Hides the cursor
-    reset_attributes,    # Resets all text attributes to default
-    enable_bold,         # Enables bold text
-    enable_underline,    # Enables underlined text
-    enable_blink,        # Enables blinking text
-    enable_reverse,      # Enables reverse video (swap fg/bg)
-    write,               # Writes string to terminal (buffered)
+  delegate show_cursor, # Shows the cursor
+    hide_cursor,        # Hides the cursor
     to: @backend
-
-  # Sets foreground text color (0-7)
-  def foreground=(color : Int32)
-    @backend.foreground = color
-  end
-
-  # Sets background color (0-7)
-  def background=(color : Int32)
-    @backend.background = color
-  end
 
   # --- Cell Buffer Operations ---
 

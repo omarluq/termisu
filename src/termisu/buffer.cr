@@ -1,4 +1,4 @@
-# Cell::Buffer manages a 2D grid of cells with double buffering support.
+# Buffer manages a 2D grid of cells with double buffering support.
 #
 # Buffer maintains:
 # - Front buffer: What's currently displayed on screen
@@ -7,11 +7,11 @@
 #
 # Example:
 # ```
-# buffer = Termisu::Cell::Buffer.new(80, 24)
+# buffer = Termisu::Buffer.new(80, 24)
 # buffer.set_cell(10, 5, 'A', fg: 2, bg: 0)
 # buffer.flush(backend) # Only changed cells are redrawn
 # ```
-class Termisu::Cell::Buffer
+class Termisu::Buffer
   getter width : Int32
   getter height : Int32
 
