@@ -1,2 +1,0 @@
-class Termisu::Key
-end

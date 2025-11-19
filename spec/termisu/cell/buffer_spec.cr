@@ -1,0 +1,265 @@
+require "../../spec_helper"
+
+# Mock backend for testing buffer rendering
+class MockBufferBackend < Termisu::Backend
+  property write_calls : Array(String) = [] of String
+  property move_calls : Array({Int32, Int32}) = [] of {Int32, Int32}
+  property fg_calls : Array(Int32) = [] of Int32
+  property bg_calls : Array(Int32) = [] of Int32
+  property flush_count : Int32 = 0
+  property reset_count : Int32 = 0
+  property bold_count : Int32 = 0
+  property underline_count : Int32 = 0
+
+  def write(data : String)
+    @write_calls << data
+  end
+
+  def move_cursor(x : Int32, y : Int32)
+    @move_calls << {x, y}
+  end
+
+  def foreground=(color : Int32)
+    @fg_calls << color
+  end
+
+  def background=(color : Int32)
+    @bg_calls << color
+  end
+
+  def flush
+    @flush_count += 1
+  end
+
+  def reset_attributes
+    @reset_count += 1
+  end
+
+  def enable_bold
+    @bold_count += 1
+  end
+
+  def enable_underline
+    @underline_count += 1
+  end
+
+  def enable_blink; end
+
+  def enable_reverse; end
+
+  def size : {Int32, Int32}
+    {80, 24}
+  end
+
+  def close; end
+end
+
+describe Termisu::Cell::Buffer do
+  describe ".new" do
+    it "creates a buffer with specified dimensions" do
+      buffer = Termisu::Cell::Buffer.new(80, 24)
+      buffer.width.should eq(80)
+      buffer.height.should eq(24)
+    end
+
+    it "initializes all cells to default" do
+      buffer = Termisu::Cell::Buffer.new(10, 5)
+      cell = buffer.get_cell(0, 0)
+      cell.should_not be_nil
+      cell.as(Termisu::Cell).ch.should eq(' ')
+      cell.as(Termisu::Cell).fg.should eq(7)
+      cell.as(Termisu::Cell).bg.should eq(-1)
+    end
+  end
+
+  describe "#set_cell" do
+    it "sets a cell at valid coordinates" do
+      buffer = Termisu::Cell::Buffer.new(10, 5)
+      result = buffer.set_cell(5, 2, 'A', fg: 2, bg: 1)
+      result.should be_true
+
+      cell = buffer.get_cell(5, 2)
+      cell.should_not be_nil
+      cell.as(Termisu::Cell).ch.should eq('A')
+      cell.as(Termisu::Cell).fg.should eq(2)
+      cell.as(Termisu::Cell).bg.should eq(1)
+    end
+
+    it "returns false for out of bounds x" do
+      buffer = Termisu::Cell::Buffer.new(10, 5)
+      buffer.set_cell(-1, 2, 'A').should be_false
+      buffer.set_cell(10, 2, 'A').should be_false
+    end
+
+    it "returns false for out of bounds y" do
+      buffer = Termisu::Cell::Buffer.new(10, 5)
+      buffer.set_cell(5, -1, 'A').should be_false
+      buffer.set_cell(5, 5, 'A').should be_false
+    end
+
+    it "sets cell with attributes" do
+      buffer = Termisu::Cell::Buffer.new(10, 5)
+      buffer.set_cell(3, 3, 'B', attr: Termisu::Attribute::Bold)
+
+      cell = buffer.get_cell(3, 3)
+      cell.as(Termisu::Cell).attr.should eq(Termisu::Attribute::Bold)
+    end
+  end
+
+  describe "#get_cell" do
+    it "gets a cell at valid coordinates" do
+      buffer = Termisu::Cell::Buffer.new(10, 5)
+      buffer.set_cell(4, 2, 'X')
+      cell = buffer.get_cell(4, 2)
+      cell.should_not be_nil
+      cell.as(Termisu::Cell).ch.should eq('X')
+    end
+
+    it "returns nil for out of bounds" do
+      buffer = Termisu::Cell::Buffer.new(10, 5)
+      buffer.get_cell(-1, 2).should be_nil
+      buffer.get_cell(10, 2).should be_nil
+      buffer.get_cell(5, -1).should be_nil
+      buffer.get_cell(5, 5).should be_nil
+    end
+  end
+
+  describe "#clear" do
+    it "resets all cells to default" do
+      buffer = Termisu::Cell::Buffer.new(10, 5)
+      buffer.set_cell(3, 2, 'A', fg: 2, bg: 1)
+      buffer.clear
+
+      cell = buffer.get_cell(3, 2)
+      cell.as(Termisu::Cell).ch.should eq(' ')
+      cell.as(Termisu::Cell).fg.should eq(7)
+      cell.as(Termisu::Cell).bg.should eq(-1)
+    end
+  end
+
+  describe "#flush (diff-based rendering)" do
+    it "only renders changed cells" do
+      backend = MockBufferBackend.new
+      buffer = Termisu::Cell::Buffer.new(5, 3)
+
+      # First flush - all cells rendered (front buffer empty)
+      buffer.set_cell(2, 1, 'A')
+      buffer.flush(backend)
+
+      # Second flush - only changed cell rendered
+      backend.write_calls.clear
+      backend.move_calls.clear
+
+      buffer.set_cell(3, 1, 'B')
+      buffer.flush(backend)
+
+      # Should only render 1 cell (the changed one)
+      backend.write_calls.size.should eq(1)
+      backend.write_calls[0].should eq("B")
+      backend.move_calls[0].should eq({3, 1})
+    end
+
+    it "calls backend.flush after rendering" do
+      backend = MockBufferBackend.new
+      buffer = Termisu::Cell::Buffer.new(5, 3)
+
+      buffer.flush(backend)
+      backend.flush_count.should eq(1)
+    end
+
+    it "renders colors for changed cells" do
+      backend = MockBufferBackend.new
+      buffer = Termisu::Cell::Buffer.new(5, 3)
+
+      buffer.set_cell(2, 1, 'X', fg: 3, bg: 5)
+      buffer.flush(backend)
+
+      backend.fg_calls.should contain(3)
+      backend.bg_calls.should contain(5)
+    end
+
+    it "renders attributes for changed cells" do
+      backend = MockBufferBackend.new
+      buffer = Termisu::Cell::Buffer.new(5, 3)
+
+      buffer.set_cell(2, 1, 'B', attr: Termisu::Attribute::Bold)
+      buffer.flush(backend)
+
+      backend.bold_count.should be > 0
+      backend.reset_count.should be > 0 # Reset after attribute
+    end
+  end
+
+  describe "#sync (full redraw)" do
+    it "renders all cells regardless of changes" do
+      backend = MockBufferBackend.new
+      buffer = Termisu::Cell::Buffer.new(3, 2)
+
+      # Set one cell
+      buffer.set_cell(1, 1, 'A')
+
+      # First flush
+      buffer.flush(backend)
+
+      # Clear tracking
+      backend.write_calls.clear
+
+      # Sync should render all 6 cells (3x2)
+      buffer.sync(backend)
+
+      backend.write_calls.size.should eq(6)
+      backend.flush_count.should eq(2) # flush + sync
+    end
+  end
+
+  describe "#resize" do
+    it "preserves existing content when growing" do
+      buffer = Termisu::Cell::Buffer.new(5, 3)
+      buffer.set_cell(2, 1, 'A')
+
+      buffer.resize(10, 5)
+
+      buffer.width.should eq(10)
+      buffer.height.should eq(5)
+
+      # Old content preserved
+      cell = buffer.get_cell(2, 1)
+      cell.as(Termisu::Cell).ch.should eq('A')
+
+      # New area has default cells
+      new_cell = buffer.get_cell(8, 4)
+      new_cell.as(Termisu::Cell).ch.should eq(' ')
+    end
+
+    it "preserves existing content when shrinking" do
+      buffer = Termisu::Cell::Buffer.new(10, 5)
+      buffer.set_cell(2, 1, 'B')
+      buffer.set_cell(8, 4, 'X') # Will be lost
+
+      buffer.resize(5, 3)
+
+      buffer.width.should eq(5)
+      buffer.height.should eq(3)
+
+      # Content within new bounds preserved
+      cell = buffer.get_cell(2, 1)
+      cell.as(Termisu::Cell).ch.should eq('B')
+
+      # Content outside new bounds inaccessible
+      buffer.get_cell(8, 4).should be_nil
+    end
+
+    it "does nothing if size unchanged" do
+      buffer = Termisu::Cell::Buffer.new(10, 5)
+      buffer.set_cell(3, 2, 'C')
+
+      buffer.resize(10, 5)
+
+      buffer.width.should eq(10)
+      buffer.height.should eq(5)
+
+      cell = buffer.get_cell(3, 2)
+      cell.as(Termisu::Cell).ch.should eq('C')
+    end
+  end
+end

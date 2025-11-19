@@ -70,12 +70,20 @@ class Termisu::Terminal::Backend < Termisu::Backend
 
   # Sets the foreground color (simplified ANSI color support).
   def foreground=(color : Int32)
-    write("\e[3#{color}m")
+    if color == -1
+      write("\e[39m") # Default foreground
+    else
+      write("\e[3#{color}m")
+    end
   end
 
   # Sets the background color (simplified ANSI color support).
   def background=(color : Int32)
-    write("\e[4#{color}m")
+    if color == -1
+      write("\e[49m") # Default background
+    else
+      write("\e[4#{color}m")
+    end
   end
 
   # Clears the screen using terminfo capability.

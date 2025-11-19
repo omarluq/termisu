@@ -1,110 +1,141 @@
 require "../src/termisu"
 
-# Demo showcasing Termisu's clean API
+# Demo showcasing Termisu's cell-based rendering API
 termisu = Termisu.new
 
-# Clear and position cursor
-termisu.clear_screen
-termisu.move_cursor(0, 0)
+begin
+  width, height = termisu.size
 
-# Display welcome message with styling
-termisu.enable_bold
-termisu.foreground = 2 # Green
-termisu.write("╔════════════════════════════════════════╗")
-termisu.move_cursor(0, 1)
-termisu.write("║     Welcome to Termisu Demo! 🎨        ║")
-termisu.move_cursor(0, 2)
-termisu.write("╚════════════════════════════════════════╝")
-termisu.reset_attributes
-termisu.flush
+  # Clear buffer
+  termisu.clear
 
-# Show terminal size
-width, height = termisu.size
-termisu.move_cursor(0, 4)
-termisu.write("Terminal size: #{width}x#{height}")
-termisu.flush
+  # Display welcome message with styling
+  box_line1 = "╔════════════════════════════════════════╗"
+  box_line2 = "║      Welcome to Termisu Demo!          ║"
+  box_line3 = "╚════════════════════════════════════════╝"
 
-# Demonstrate colors
-termisu.move_cursor(0, 6)
-termisu.write("Color demonstration:")
-8.times do |idx|
-  termisu.move_cursor(idx * 5, 7)
-  termisu.foreground = idx
-  termisu.write("█████")
-end
-termisu.reset_attributes
-termisu.flush
+  box_line1.each_char_with_index do |char, idx|
+    termisu.set_cell(idx, 0, char, fg: Termisu::Color::Green, attr: Termisu::Attribute::Bold)
+  end
+  box_line2.each_char_with_index do |char, idx|
+    termisu.set_cell(idx, 1, char, fg: Termisu::Color::Green, attr: Termisu::Attribute::Bold)
+  end
+  box_line3.each_char_with_index do |char, idx|
+    termisu.set_cell(idx, 2, char, fg: Termisu::Color::Green, attr: Termisu::Attribute::Bold)
+  end
 
-# Demonstrate text attributes
-termisu.move_cursor(0, 9)
-termisu.write("Text attributes:")
-termisu.move_cursor(0, 10)
-termisu.enable_bold
-termisu.write("Bold")
-termisu.reset_attributes
-termisu.write(" | ")
-termisu.enable_underline
-termisu.write("Underline")
-termisu.reset_attributes
-termisu.write(" | ")
-termisu.enable_blink
-termisu.write("Blink")
-termisu.reset_attributes
-termisu.write(" | ")
-termisu.enable_reverse
-termisu.write("Reverse")
-termisu.reset_attributes
-termisu.flush
+  # Show terminal size
+  size_msg = "Terminal size: #{width}x#{height}"
+  size_msg.each_char_with_index do |char, idx|
+    termisu.set_cell(idx, 4, char, fg: Termisu::Color::White)
+  end
 
-# Show cursor manipulation
-termisu.move_cursor(0, 12)
-termisu.write("Cursor: ")
-termisu.hide_cursor
-termisu.write("Hidden... ")
-termisu.flush
-sleep 1.5.seconds
-termisu.show_cursor
-termisu.write("Visible!")
-termisu.flush
+  # Demonstrate colors
+  color_label = "Color demonstration:"
+  color_label.each_char_with_index do |char, idx|
+    termisu.set_cell(idx, 6, char, fg: Termisu::Color::White)
+  end
 
-# Interactive input demo
-termisu.move_cursor(0, 14)
-termisu.enable_bold
-termisu.foreground = 3 # Yellow
-termisu.write("Press any key to continue (will wait 5 seconds)...")
-termisu.reset_attributes
-termisu.flush
+  colors = [
+    Termisu::Color::Black,
+    Termisu::Color::Red,
+    Termisu::Color::Green,
+    Termisu::Color::Yellow,
+    Termisu::Color::Blue,
+    Termisu::Color::Magenta,
+    Termisu::Color::Cyan,
+    Termisu::Color::White,
+  ]
 
-if termisu.wait_for_input(5000)
-  if byte = termisu.read_byte
-    termisu.move_cursor(0, 15)
-    termisu.foreground = 2 # Green
-    termisu.write("You pressed: '#{byte.chr}' (byte: #{byte})")
-    termisu.reset_attributes
+  colors.each_with_index do |color, idx|
+    5.times do |xyz|
+      termisu.set_cell(idx * 5 + xyz, 7, '█', fg: color)
+    end
+  end
+
+  # Demonstrate text attributes
+  attr_label = "Text attributes:"
+  attr_label.each_char_with_index do |char, idx|
+    termisu.set_cell(idx, 9, char, fg: Termisu::Color::White)
+  end
+
+  # Bold
+  "Bold".each_char_with_index do |char, idx|
+    termisu.set_cell(idx, 10, char, fg: Termisu::Color::White, attr: Termisu::Attribute::Bold)
+  end
+
+  # Separator
+  " | ".each_char_with_index do |char, idx|
+    termisu.set_cell(4 + idx, 10, char, fg: Termisu::Color::White)
+  end
+
+  # Underline
+  "Underline".each_char_with_index do |char, idx|
+    termisu.set_cell(7 + idx, 10, char, fg: Termisu::Color::White, attr: Termisu::Attribute::Underline)
+  end
+
+  # Separator
+  " | ".each_char_with_index do |char, idx|
+    termisu.set_cell(16 + idx, 10, char, fg: Termisu::Color::White)
+  end
+
+  # Blink
+  "Blink".each_char_with_index do |char, idx|
+    termisu.set_cell(19 + idx, 10, char, fg: Termisu::Color::White, attr: Termisu::Attribute::Blink)
+  end
+
+  # Separator
+  " | ".each_char_with_index do |char, idx|
+    termisu.set_cell(24 + idx, 10, char, fg: Termisu::Color::White)
+  end
+
+  # Reverse
+  "Reverse".each_char_with_index do |char, idx|
+    termisu.set_cell(27 + idx, 10, char, fg: Termisu::Color::White, attr: Termisu::Attribute::Reverse)
+  end
+
+  # Cursor info
+  cursor_msg = "Cursor: Visible!"
+  cursor_msg.each_char_with_index do |char, idx|
+    termisu.set_cell(idx, 12, char, fg: Termisu::Color::White)
+  end
+
+  # Interactive input demo
+  input_prompt = "Press any key to continue (will wait 5 seconds)..."
+  input_prompt.each_char_with_index do |char, idx|
+    termisu.set_cell(idx, 14, char, fg: Termisu::Color::Yellow, attr: Termisu::Attribute::Bold)
+  end
+
+  # Initial flush - renders all cells
+  termisu.flush
+
+  # Wait for input
+  if termisu.wait_for_input(5000)
+    if byte = termisu.read_byte
+      response = "You pressed: '#{byte.chr}' (byte: #{byte})"
+      response.each_char_with_index do |char, idx|
+        termisu.set_cell(idx, 15, char, fg: Termisu::Color::Green)
+      end
+      termisu.flush # Only the new cells are rendered (diff-based)
+    end
+  else
+    timeout_msg = "Timeout! No input received."
+    timeout_msg.each_char_with_index do |char, idx|
+      termisu.set_cell(idx, 15, char, fg: Termisu::Color::Red)
+    end
     termisu.flush
   end
-else
-  termisu.move_cursor(0, 15)
-  termisu.foreground = 1 # Red
-  termisu.write("Timeout! No input received.")
-  termisu.reset_attributes
-  termisu.flush
+
+  # Animated goodbye
+  goodbye = "Thanks for trying Termisu! Goodbye! 👋"
+  goodbye.each_char_with_index do |char, idx|
+    termisu.set_cell(idx, 17, char, fg: Termisu::Color::Blue, attr: Termisu::Attribute::Bold)
+    termisu.flush # Each character triggers a flush (shows animation)
+    sleep 0.05.seconds
+  end
+
+  sleep 2.seconds
+ensure
+  # Clean shutdown
+  termisu.close
 end
-
-# Animated goodbye
-termisu.move_cursor(0, 17)
-termisu.enable_bold
-termisu.foreground = 4 # Blue
-goodbye = "Thanks for trying Termisu! Goodbye! 👋"
-goodbye.each_char do |char|
-  termisu.write(char.to_s)
-  termisu.flush
-  sleep 0.05.seconds
-end
-termisu.reset_attributes
-termisu.flush
-
-sleep 2.seconds
-
-# Clean shutdown
-termisu.close

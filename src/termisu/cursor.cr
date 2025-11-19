@@ -1,2 +1,0 @@
-class Termisu::Cursor
-end
