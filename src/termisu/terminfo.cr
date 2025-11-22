@@ -1,47 +1,73 @@
+# Terminfo database interface for terminal capability management.
+#
+# Provides access to terminal control sequences by loading capabilities from
+# the system terminfo database with fallback to hardcoded values for common
+# terminals (xterm, linux).
+#
+# ## Loading Strategy
+#
+# 1. Attempts to load capabilities from terminfo database at standard locations
+# 2. Falls back to built-in escape sequences for xterm/linux if database unavailable
+# 3. Merges database values with builtins, preferring database values
+#
+# ## Usage
+#
+# ```
+# terminfo = Termisu::Terminfo.new
+# puts terminfo.clear_screen  # => "\e[H\e[2J"
+# puts terminfo.bold          # => "\e[1m"
+# ```
 class Termisu::Terminfo
   @caps : Hash(String, String)
 
   def initialize
-    name = ENV["TERM"]? || raise Termisu::Error.new("TERM environment variable not set")
+    term_name = ENV["TERM"]? || raise Termisu::Error.new("TERM environment variable not set")
 
-    # Try to load capabilities from terminfo database first
-    @caps = load_from_database(name)
-
-    # Fill in any missing capabilities with builtins
-    fill_missing_with_builtins(name)
+    @caps = load_from_database(term_name)
+    fill_missing_with_builtins(term_name)
   end
 
-  # Load capabilities from terminfo database using name-based lookup
+  # Loads capabilities from the terminfo database.
+  #
+  # Attempts to locate and parse the terminfo file for the given terminal,
+  # extracting all required function and key capabilities.
+  #
+  # Returns empty hash if database is unavailable or parsing fails.
   private def load_from_database(term_name : String) : Hash(String, String)
     data = Database.new(term_name).load
-    all_required = Capabilities::REQUIRED_FUNCS + Capabilities::REQUIRED_KEYS
-    Parser.parse(data, all_required)
+    required = Capabilities::REQUIRED_FUNCS + Capabilities::REQUIRED_KEYS
+    Parser.parse(data, required)
   rescue
     {} of String => String
   end
 
-  # Fill in missing capabilities with builtin fallbacks
+  # Fills in missing capabilities with hardcoded fallback values.
+  #
+  # Uses built-in escape sequences for xterm and linux terminals to ensure
+  # basic functionality even when terminfo database is unavailable.
   private def fill_missing_with_builtins(term_name : String)
-    builtin_funcs = Builtin.funcs_for(term_name)
-    builtin_keys = Builtin.keys_for(term_name)
+    fill_capability_group(Capabilities::REQUIRED_FUNCS, Builtin.funcs_for(term_name))
+    fill_capability_group(Capabilities::REQUIRED_KEYS, Builtin.keys_for(term_name))
+  end
 
-    # Fill missing funcs from builtins
-    Capabilities::REQUIRED_FUNCS.each_with_index do |cap_name, idx|
-      @caps[cap_name] = builtin_funcs[idx] unless @caps.has_key?(cap_name)
-    end
-
-    # Fill missing keys from builtins
-    Capabilities::REQUIRED_KEYS.each_with_index do |cap_name, idx|
-      @caps[cap_name] = builtin_keys[idx] unless @caps.has_key?(cap_name)
+  # Fills missing capabilities from a builtin array.
+  private def fill_capability_group(names : Array(String), values : Array(String))
+    names.each_with_index do |cap_name, idx|
+      @caps[cap_name] ||= values[idx]
     end
   end
 
-  # Get capability value by name with fallback to empty string
+  # Retrieves a capability value by name.
+  #
+  # Returns empty string if capability is not found.
   private def get_cap(name : String) : String
     @caps.fetch(name, "")
   end
 
-  # Convenience accessors using capability names
+  # Terminal Control Capabilities
+  #
+  # The following methods provide access to terminal control sequences
+  # for screen management, cursor control, and text attributes.
   def enter_ca : String
     get_cap("smcup")
   end

@@ -1,12 +1,27 @@
-# Standard terminfo string capability names in exact ncurses term.h order.
+# Terminfo capability definitions for terminal control sequences.
 #
-# This ordering is CRITICAL - it matches the binary terminfo format exactly.
-# Each index corresponds to the position in the terminfo strings section.
+# This module defines the standard ncurses terminfo capability names in the exact
+# order they appear in the binary terminfo format. The ordering is critical for
+# correct capability lookup - each array index corresponds to a position in the
+# terminfo strings section.
 #
-# Reference: https://github.com/docelic/terminfo (complete ncurses ordering)
+# ## Binary Format Order
+#
+# The STRING_CAPS array contains all 414 standard terminfo string capabilities
+# in ncurses term.h order. This allows name-based capability lookup by finding
+# the index of a capability name and using it to read from the binary format.
+#
+# ## References
+#
+# - ncurses term.h: Standard capability ordering
+# - terminfo(5) man page: Capability descriptions
+# - https://github.com/docelic/terminfo: Complete reference implementation
 module Termisu::Terminfo::Capabilities
-  # Complete terminfo string capabilities in binary format order (414 entries)
-  # Format: terminfo short name
+  # All terminfo string capabilities in binary format order.
+  #
+  # This array defines the complete set of 414 standard terminfo string
+  # capabilities. The index of each capability name corresponds to its
+  # position in the terminfo binary strings section.
   STRING_CAPS = [
     "cbt", "bel", "cr", "csr", "tbc", "clear", "el", "ed", "hpa", "cmdch",
     "cup", "cud1", "home", "civis", "cub1", "mrcup", "cnorm", "cuf1", "ll", "cuu1",
@@ -52,35 +67,39 @@ module Termisu::Terminfo::Capabilities
     "meml", "memu", "box1",
   ]
 
-  # Capability names we need for Termisu
+  # Terminal control function capabilities required by Termisu.
+  #
+  # These capabilities control screen modes, cursor visibility, and attributes.
   REQUIRED_FUNCS = [
-    "smcup", # enter_ca
-    "rmcup", # exit_ca
-    "cnorm", # show_cursor
-    "civis", # hide_cursor
-    "clear", # clear_screen
-    "sgr0",  # sgr0
-    "smul",  # underline
-    "bold",  # bold
-    "blink", # blink
-    "rev",   # reverse
-    "smkx",  # enter_keypad
-    "rmkx",  # exit_keypad
+    "smcup", # Enter alternate screen buffer (ca mode)
+    "rmcup", # Exit alternate screen buffer
+    "cnorm", # Make cursor normal/visible
+    "civis", # Make cursor invisible
+    "clear", # Clear screen and home cursor
+    "sgr0",  # Turn off all attributes
+    "smul",  # Begin underline mode
+    "bold",  # Begin bold mode
+    "blink", # Begin blinking mode
+    "rev",   # Begin reverse video mode
+    "smkx",  # Enable keypad transmission mode
+    "rmkx",  # Disable keypad transmission mode
   ]
 
-  # Key capabilities we need
+  # Keyboard input capabilities required by Termisu.
+  #
+  # These capabilities map special keys to their terminal escape sequences.
   REQUIRED_KEYS = [
-    "kf1", "kf2", "kf3", "kf4", "kf5", "kf6",    # F1-F6
-    "kf7", "kf8", "kf9", "kf10", "kf11", "kf12", # F7-F12
-    "kich1",                                     # Insert
-    "kdch1",                                     # Delete
-    "khome",                                     # Home
-    "kend",                                      # End
-    "kpp",                                       # Page Up
-    "knp",                                       # Page Down
-    "kcuu1",                                     # Up
-    "kcud1",                                     # Down
-    "kcub1",                                     # Left
-    "kcuf1",                                     # Right
+    "kf1", "kf2", "kf3", "kf4", "kf5", "kf6",    # Function keys F1-F6
+    "kf7", "kf8", "kf9", "kf10", "kf11", "kf12", # Function keys F7-F12
+    "kich1",                                     # Insert key
+    "kdch1",                                     # Delete key
+    "khome",                                     # Home key
+    "kend",                                      # End key
+    "kpp",                                       # Page Up key
+    "knp",                                       # Page Down key
+    "kcuu1",                                     # Up arrow key
+    "kcud1",                                     # Down arrow key
+    "kcub1",                                     # Left arrow key
+    "kcuf1",                                     # Right arrow key
   ]
 end
