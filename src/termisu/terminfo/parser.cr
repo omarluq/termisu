@@ -127,7 +127,7 @@ class Termisu::Terminfo::Parser
   # - [4]: String capabilities count
   # - [5]: String table size
   private def read_header(io : IO::Memory)
-    StaticArray(Int16, 6).new do |i|
+    StaticArray(Int16, 6).new do |_|
       io.read_bytes(Int16, IO::ByteFormat::LittleEndian)
     end
   end
