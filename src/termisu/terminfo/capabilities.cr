@@ -1,39 +1,86 @@
+# Standard terminfo string capability names in exact ncurses term.h order.
+#
+# This ordering is CRITICAL - it matches the binary terminfo format exactly.
+# Each index corresponds to the position in the terminfo strings section.
+#
+# Reference: https://github.com/docelic/terminfo (complete ncurses ordering)
 module Termisu::Terminfo::Capabilities
-  # Terminfo function capability indices (from ncurses term.h).
-  #
-  # These indices map to string capabilities in the terminfo database:
-  # - Index 0-11 correspond to the 12 terminal control functions
-  # - Indices are based on the standard ncurses terminfo structure
-  # - Each index points to a capability string in the terminfo file
-  FUNCS_INDICES = [
-    28_i16, # enter_ca (smcup) - Enter alternate screen mode
-    40_i16, # exit_ca (rmcup) - Exit alternate screen mode
-    16_i16, # show_cursor (cnorm) - Make cursor visible
-    13_i16, # hide_cursor (civis) - Make cursor invisible
-    5_i16,  # clear_screen (clear) - Clear screen and home cursor
-    39_i16, # sgr0 (sgr0) - Reset all attributes
-    36_i16, # underline (smul) - Start underline mode
-    27_i16, # bold (bold) - Start bold mode
-    26_i16, # blink (blink) - Start blink mode
-    30_i16, # reverse (rev) - Start reverse video mode
-    89_i16, # enter_keypad (smkx) - Enable keypad transmit mode
-    88_i16, # exit_keypad (rmkx) - Disable keypad transmit mode
+  # Complete terminfo string capabilities in binary format order (414 entries)
+  # Format: terminfo short name
+  STRING_CAPS = [
+    "cbt", "bel", "cr", "csr", "tbc", "clear", "el", "ed", "hpa", "cmdch",
+    "cup", "cud1", "home", "civis", "cub1", "mrcup", "cnorm", "cuf1", "ll", "cuu1",
+    "cvvis", "dch1", "dl1", "dsl", "hd", "smacs", "blink", "bold", "smcup", "smdc",
+    "dim", "smir", "invis", "prot", "rev", "smso", "smul", "ech", "rmacs", "sgr0",
+    "rmcup", "rmdc", "rmir", "rmso", "rmul", "flash", "ff", "fsl", "is1", "is2",
+    "is3", "if", "ich1", "il1", "ip", "kbs", "ktbc", "kclr", "kctab", "kdch1",
+    "kdl1", "kcud1", "krmir", "kel", "ked", "kf0", "kf1", "kf10", "kf2", "kf3",
+    "kf4", "kf5", "kf6", "kf7", "kf8", "kf9", "khome", "kich1", "kil1", "kcub1",
+    "kll", "knp", "kpp", "kcuf1", "kind", "kri", "khts", "kcuu1", "rmkx", "smkx",
+    "lf0", "lf1", "lf10", "lf2", "lf3", "lf4", "lf5", "lf6", "lf7", "lf8",
+    "lf9", "rmm", "smm", "nel", "pad", "dch", "dl", "cud", "ich", "indn",
+    "il", "cub", "cuf", "rin", "cuu", "pfkey", "pfloc", "pfx", "mc0", "mc4",
+    "mc5", "rep", "rs1", "rs2", "rs3", "rf", "rc", "vpa", "sc", "ind",
+    "ri", "sgr", "hts", "wind", "ht", "tsl", "uc", "hu", "iprog", "ka1",
+    "ka3", "kb2", "kc1", "kc3", "mc5p", "rmp", "acsc", "pln", "kcbt", "smxon",
+    "rmxon", "smam", "rmam", "xonc", "xoffc", "enacs", "smln", "rmln", "kbeg", "kcan",
+    "kclo", "kcmd", "kcpy", "kcrt", "kend", "kent", "kext", "kfnd", "khlp", "kmrk",
+    "kmsg", "kmov", "knxt", "kopn", "kopt", "kprv", "kprt", "krdo", "kref", "krpl",
+    "krst", "kres", "ksav", "kspd", "kund", "kBEG", "kCAN", "kCMD", "kCPY", "kCRT",
+    "kDC", "kDL", "kslt", "kEND", "kEOL", "kEXT", "kFND", "kHLP", "kHOM", "kIC",
+    "kLFT", "kMSG", "kMOV", "kNXT", "kOPT", "kPRV", "kPRT", "kRDO", "kRPL", "kRIT",
+    "kRES", "kSAV", "kSPD", "kUND", "rfi", "kf11", "kf12", "kf13", "kf14", "kf15",
+    "kf16", "kf17", "kf18", "kf19", "kf20", "kf21", "kf22", "kf23", "kf24", "kf25",
+    "kf26", "kf27", "kf28", "kf29", "kf30", "kf31", "kf32", "kf33", "kf34", "kf35",
+    "kf36", "kf37", "kf38", "kf39", "kf40", "kf41", "kf42", "kf43", "kf44", "kf45",
+    "kf46", "kf47", "kf48", "kf49", "kf50", "kf51", "kf52", "kf53", "kf54", "kf55",
+    "kf56", "kf57", "kf58", "kf59", "kf60", "kf61", "kf62", "kf63", "el1", "mgc",
+    "smgl", "smgr", "fln", "sclk", "dclk", "rmclk", "cwin", "wingo", "hup", "dial",
+    "qdial", "tone", "pulse", "hook", "pause", "wait", "u0", "u1", "u2", "u3",
+    "u4", "u5", "u6", "u7", "u8", "u9", "op", "oc", "initc", "initp",
+    "scp", "setf", "setb", "cpi", "lpi", "chr", "cvr", "defc", "swidm", "sdrfq",
+    "sitm", "slm", "smicm", "snlq", "snrmq", "sshm", "ssubm", "ssupm", "sum", "rwidm",
+    "ritm", "rlm", "rmicm", "rshm", "rsubm", "rsupm", "rum", "mhpa", "mcud1", "mcub1",
+    "mcuf1", "mvpa", "mcuu1", "porder", "mcud", "mcub", "mcuf", "mcuu", "scs", "smgb",
+    "smgbp", "smglp", "smgrp", "smgt", "smgtp", "sbim", "scsd", "rbim", "rcsd", "subcs",
+    "supcs", "docr", "zerom", "csnm", "kmous", "minfo", "reqmp", "getm", "setaf", "setab",
+    "pfxl", "devt", "csin", "s0ds", "s1ds", "s2ds", "s3ds", "smglr", "smgtb", "birep",
+    "binel", "bicr", "colornm", "defbi", "endbi", "setcolor", "slines", "dispc", "smpch", "rmpch",
+    "smsc", "rmsc", "pctrm", "scesc", "scesa", "ehhlm", "elhlm", "elohlm", "erhlm", "ethlm",
+    "evhlm", "sgr1", "slength", "OTi2", "OTrs", "OTnl", "OTbs", "OTko", "OTma", "OTG2",
+    "OTG3", "OTG1", "OTG4", "OTGR", "OTGL", "OTGU", "OTGD", "OTGH", "OTGV", "OTGC",
+    "meml", "memu", "box1",
   ]
 
-  # Special key capability indices for terminal key sequences.
-  #
-  # These indices map to the key capabilities in terminfo:
-  # - Indices 0-11: Function keys F1-F12
-  # - Indices 12-13: Insert, Delete
-  # - Indices 14-15: Home, End
-  # - Indices 16-17: Page Up, Page Down
-  # - Indices 18-21: Arrow keys (Up, Down, Left, Right)
-  KEYS_INDICES = [
-    66_i16, 68_i16, 69_i16, 70_i16, 71_i16, 72_i16,   # F1-F6
-    73_i16, 74_i16, 75_i16, 67_i16, 216_i16, 217_i16, # F7-F12
-    77_i16, 59_i16,                                   # Insert, Delete
-    76_i16, 164_i16,                                  # Home, End
-    82_i16, 81_i16,                                   # Page Up, Page Down
-    87_i16, 61_i16, 79_i16, 83_i16,                   # Up, Down, Left, Right
+  # Capability names we need for Termisu
+  REQUIRED_FUNCS = [
+    "smcup", # enter_ca
+    "rmcup", # exit_ca
+    "cnorm", # show_cursor
+    "civis", # hide_cursor
+    "clear", # clear_screen
+    "sgr0",  # sgr0
+    "smul",  # underline
+    "bold",  # bold
+    "blink", # blink
+    "rev",   # reverse
+    "smkx",  # enter_keypad
+    "rmkx",  # exit_keypad
+  ]
+
+  # Key capabilities we need
+  REQUIRED_KEYS = [
+    "kf1", "kf2", "kf3", "kf4", "kf5", "kf6",    # F1-F6
+    "kf7", "kf8", "kf9", "kf10", "kf11", "kf12", # F7-F12
+    "kich1",                                     # Insert
+    "kdch1",                                     # Delete
+    "khome",                                     # Home
+    "kend",                                      # End
+    "kpp",                                       # Page Up
+    "knp",                                       # Page Down
+    "kcuu1",                                     # Up
+    "kcud1",                                     # Down
+    "kcub1",                                     # Left
+    "kcuf1",                                     # Right
   ]
 end

@@ -1,74 +1,93 @@
 class Termisu::Terminfo
-  @funcs : Array(String)
-  @keys : Array(String)
+  @caps : Hash(String, String)
 
   def initialize
     name = ENV["TERM"]? || raise Termisu::Error.new("TERM environment variable not set")
 
-    @funcs = load_capabilities(name, Capabilities::FUNCS_INDICES) do
-      Builtin.funcs_for(name)
+    # Try to load capabilities from terminfo database first
+    @caps = load_from_database(name)
+
+    # Fill in any missing capabilities with builtins
+    fill_missing_with_builtins(name)
+  end
+
+  # Load capabilities from terminfo database using name-based lookup
+  private def load_from_database(term_name : String) : Hash(String, String)
+    data = Database.new(term_name).load
+    all_required = Capabilities::REQUIRED_FUNCS + Capabilities::REQUIRED_KEYS
+    Parser.parse(data, all_required)
+  rescue
+    {} of String => String
+  end
+
+  # Fill in missing capabilities with builtin fallbacks
+  private def fill_missing_with_builtins(term_name : String)
+    builtin_funcs = Builtin.funcs_for(term_name)
+    builtin_keys = Builtin.keys_for(term_name)
+
+    # Fill missing funcs from builtins
+    Capabilities::REQUIRED_FUNCS.each_with_index do |cap_name, idx|
+      @caps[cap_name] = builtin_funcs[idx] unless @caps.has_key?(cap_name)
     end
 
-    @keys = load_capabilities(name, Capabilities::KEYS_INDICES) do
-      Builtin.keys_for(name)
+    # Fill missing keys from builtins
+    Capabilities::REQUIRED_KEYS.each_with_index do |cap_name, idx|
+      @caps[cap_name] = builtin_keys[idx] unless @caps.has_key?(cap_name)
     end
   end
 
-  private def load_capabilities(name : String, indices : Array(Int16), & : -> Array(String)) : Array(String)
-    data = Database.new(name).load
-    Parser.parse(data, indices)
-  rescue ex : Exception
-    # Fall back to builtin capabilities if database load or parse fails
-    yield
+  # Get capability value by name with fallback to empty string
+  private def get_cap(name : String) : String
+    @caps.fetch(name, "")
   end
 
-  # Convenience accessors with bounds checking
+  # Convenience accessors using capability names
   def enter_ca : String
-    @funcs.fetch(0, "")
+    get_cap("smcup")
   end
 
   def exit_ca : String
-    @funcs.fetch(1, "")
+    get_cap("rmcup")
   end
 
   def show_cursor : String
-    @funcs.fetch(2, "")
+    get_cap("cnorm")
   end
 
   def hide_cursor : String
-    @funcs.fetch(3, "")
+    get_cap("civis")
   end
 
   def clear_screen : String
-    @funcs.fetch(4, "")
+    get_cap("clear")
   end
 
   def sgr0 : String
-    @funcs.fetch(5, "")
+    get_cap("sgr0")
   end
 
   def underline : String
-    @funcs.fetch(6, "")
+    get_cap("smul")
   end
 
   def bold : String
-    @funcs.fetch(7, "")
+    get_cap("bold")
   end
 
   def blink : String
-    @funcs.fetch(8, "")
+    get_cap("blink")
   end
 
   def reverse : String
-    @funcs.fetch(9, "")
+    get_cap("rev")
   end
 
   def enter_keypad : String
-    @funcs.fetch(10, "")
+    get_cap("smkx")
   end
 
   def exit_keypad : String
-    @funcs.fetch(11, "")
+    get_cap("rmkx")
   end
 end
 
