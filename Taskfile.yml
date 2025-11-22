@@ -21,6 +21,11 @@ tasks:
     cmds:
       - crystal run examples/demo.cr
 
+  colors:
+    desc: Run colors example
+    cmds:
+      - crystal run examples/colors.cr
+
   format:
     desc: Format code with crystal tool format  (use -- to pass flags)
     cmds:

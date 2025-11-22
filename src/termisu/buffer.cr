@@ -9,7 +9,7 @@
 # Example:
 # ```
 # buffer = Termisu::Buffer.new(80, 24)
-# buffer.set_cell(10, 5, 'A', fg: 2, bg: 0)
+# buffer.set_cell(10, 5, 'A', fg: Color.green, bg: Color.black)
 # buffer.set_cursor(10, 5)
 # buffer.flush(backend) # Only changed cells and cursor are redrawn
 # ```
@@ -39,8 +39,8 @@ class Termisu::Buffer
   # - x: Column position (0-based)
   # - y: Row position (0-based)
   # - ch: Character to display
-  # - fg: Foreground color (Color enum or Int32, default: White)
-  # - bg: Background color (Color enum or Int32, default: Default/transparent)
+  # - fg: Foreground color (default: white)
+  # - bg: Background color (default: default terminal color)
   # - attr: Text attributes (default: None)
   #
   # Returns false if coordinates are out of bounds.
@@ -48,8 +48,8 @@ class Termisu::Buffer
     x : Int32,
     y : Int32,
     ch : Char,
-    fg : Color | Int32 = Color::White,
-    bg : Color | Int32 = Color::Default,
+    fg : Color = Color.white,
+    bg : Color = Color.default,
     attr : Attribute = Attribute::None,
   ) : Bool
     return false if out_of_bounds?(x, y)
@@ -192,8 +192,8 @@ class Termisu::Buffer
     if cell.attr != Attribute::None
       backend.reset_attributes
       # Restore default colors after reset
-      backend.foreground = Color::White.value
-      backend.background = Color::Default.value
+      backend.foreground = Color.white
+      backend.background = Color.default
     end
   end
 

@@ -8,9 +8,9 @@
 # termisu = Termisu.new
 #
 # # Set cells with colors and attributes
-# termisu.set_cell(10, 5, 'H', fg: Color::Red, bg: Color::Black, attr: Attribute::Bold)
-# termisu.set_cell(11, 5, 'i', fg: Color::Green)
-# termisu.set_cell(12, 5, '!', fg: Color::Blue)
+# termisu.set_cell(10, 5, 'H', fg: Color.red, bg: Color.black, attr: Attribute::Bold)
+# termisu.set_cell(11, 5, 'i', fg: Color.green)
+# termisu.set_cell(12, 5, '!', fg: Color.blue)
 #
 # # Flush applies changes (diff-based rendering)
 # termisu.flush
@@ -68,23 +68,23 @@ class Termisu
   # - x: Column position (0-based)
   # - y: Row position (0-based)
   # - ch: Character to display
-  # - fg: Foreground color (Color enum or Int32, default: White)
-  # - bg: Background color (Color enum or Int32, default: Default/transparent)
+  # - fg: Foreground color (default: white)
+  # - bg: Background color (default: default terminal color)
   # - attr: Text attributes (default: None)
   #
   # Returns false if coordinates are out of bounds.
   #
   # Example:
   # ```
-  # termisu.set_cell(10, 5, 'A', fg: Color::Red, attr: Attribute::Bold)
+  # termisu.set_cell(10, 5, 'A', fg: Color.red, attr: Attribute::Bold)
   # termisu.flush # Apply changes
   # ```
   def set_cell(
     x : Int32,
     y : Int32,
     ch : Char,
-    fg : Color | Int32 = Color::White,
-    bg : Color | Int32 = Color::Default,
+    fg : Color = Color.white,
+    bg : Color = Color.default,
     attr : Attribute = Attribute::None,
   ) : Bool
     @buffer.set_cell(x, y, ch, fg, bg, attr)

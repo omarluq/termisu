@@ -66,6 +66,7 @@ See `examples/demo.cr` for a complete demonstration.
 - Text attributes (bold, underline, blink, reverse)
 - Cursor control (position, visibility)
 - Input reading (bytes, with timeout)
+- 256-color and RGB support
 
 ### In Progress
 
@@ -74,7 +75,6 @@ See `examples/demo.cr` for a complete demonstration.
 
 ### Planned
 
-- 256-color and RGB support
 - Higher-level widgets and layout system (Maybe)
 - Performance optimizations
 
