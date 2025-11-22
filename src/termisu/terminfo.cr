@@ -14,8 +14,8 @@
 #
 # ```
 # terminfo = Termisu::Terminfo.new
-# puts terminfo.clear_screen  # => "\e[H\e[2J"
-# puts terminfo.bold          # => "\e[1m"
+# puts terminfo.clear_screen # => "\e[H\e[2J"
+# puts terminfo.bold         # => "\e[1m"
 # ```
 class Termisu::Terminfo
   @caps : Hash(String, String)
