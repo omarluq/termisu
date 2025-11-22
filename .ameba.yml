@@ -4,133 +4,92 @@
 # one by one as the reported problems are removed from the code base.
 Lint/AmbiguousAssignment:
   Enabled: true
-
 Lint/ComparisonToBoolean:
   Enabled: true
-
 Lint/DebugCalls:
   Enabled: true
-
 Lint/DuplicatedRequire:
   Enabled: true
-
 Lint/EmptyEnsure:
   Enabled: true
-
 Lint/EmptyExpression:
   Enabled: true
-
 Lint/EmptyLoop:
   Enabled: true
-
 Lint/LiteralInCondition:
   Enabled: true
-
 Lint/LiteralInInterpolation:
   Enabled: true
-
 Lint/NotNil:
   Enabled: true
-
 Lint/PercentArrays:
   Enabled: true
-
 Lint/PercentStringArray:
   Enabled: true
-
 Lint/RandZero:
   Enabled: true
-
 Lint/RedundantWithIndex:
   Enabled: true
-
 Lint/RedundantWithObject:
   Enabled: true
-
 Lint/ShadowedArgument:
   Enabled: true
-
 Lint/ShadowedException:
   Enabled: true
-
 Lint/ShadowingOuterLocalVar:
   Enabled: true
-
 Lint/UnneededDisableDirective:
   Enabled: true
-
 Lint/UnreachableCode:
   Enabled: true
-
 Lint/UnusedArgument:
   Enabled: true
-
 Lint/UnusedBlockArgument:
   Enabled: true
-
 Lint/UselessAssign:
   Enabled: true
-
 # Style rules - enforce consistency
 Style/ConstantNames:
   Enabled: true
-
 Style/MethodNames:
   Enabled: true
-
 Style/NegatedConditionsInUnless:
   Enabled: true
-
 Style/ParenthesesAroundCondition:
   Enabled: true
-
 Style/PredicateName:
   Enabled: true
-
 Style/RedundantBegin:
   Enabled: true
-
 Style/RedundantNext:
   Enabled: true
-
 Style/RedundantParentheses:
   Enabled: true
-
 Style/RedundantReturn:
   Enabled: true
-
 Style/TypeNames:
   Enabled: true
-
 Style/UnlessElse:
   Enabled: true
-
 Style/VariableNames:
   Enabled: true
-
 Style/VerboseBlock:
   Enabled: true
   MaxLength: 10
-
 Style/WhileTrue:
   Enabled: true
-
 # Metrics - code complexity
 Metrics/CyclomaticComplexity:
   Enabled: true
   MaxComplexity: 10
-
 # Layout rules
 Layout/LineLength:
   Enabled: true
   MaxLength: 120
-
 Layout/TrailingBlankLines:
   Enabled: true
-
 Layout/TrailingWhitespace:
   Enabled: true
-
 # Naming conventions
 Naming/BlockParameterName:
   Enabled: true
@@ -147,34 +106,24 @@ Naming/BlockParameterName:
     - os
     - tx
     - rx
-
 Naming/ConstantNames:
   Enabled: true
-
 Naming/FileName:
   Enabled: true
-
 Naming/MethodNames:
   Enabled: true
-
 Naming/TypeNames:
   Enabled: true
-
 Naming/VariableNames:
   Enabled: true
-
 # Performance rules
 Performance/AnyInsteadOfEmpty:
   Enabled: true
-
 Performance/CompactAfterMap:
   Enabled: true
-
 Performance/FlattenAfterMap:
   Enabled: true
-
 Performance/MapInsteadOfBlock:
   Enabled: true
-
 Performance/SizeAfterFilter:
   Enabled: true
