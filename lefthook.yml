@@ -1,0 +1,16 @@
+# Lefthook configuration for Termisu
+# https://github.com/evilmartians/lefthook
+pre-commit:
+  parallel: true
+  commands:
+    format:
+      glob: "*.cr"
+      run: task format
+      stage_fixed: true
+    ameba:
+      glob: "*.cr"
+      run: task ameba
+    yamlfmt:
+      glob: "*.{yml,yaml}"
+      run: yamlfmt {staged_files}
+      stage_fixed: true
