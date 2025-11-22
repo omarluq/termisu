@@ -1,30 +1,47 @@
 class Termisu::Terminfo::Parser
-  MAGIC          = 0o432_i16
-  EXTENDED_MAGIC = 0o542_i16
+  MAGIC          = 0o432_i16 # 282 in decimal (standard 16-bit format)
+  EXTENDED_MAGIC =   542_i16 # 542 in decimal (extended 32-bit format)
   HEADER_LENGTH  =        12
 
-  def self.parse(data : Bytes, indices : Array(Int16)) : Array(String)
-    new(data).parse(indices)
+  # Parse terminfo data and return a hash of capability names to values
+  def self.parse(data : Bytes, cap_names : Array(String)) : Hash(String, String)
+    new(data).parse(cap_names)
   end
 
   def initialize(@data : Bytes)
   end
 
-  def parse(indices : Array(Int16)) : Array(String)
+  # Parse terminfo data and return a hash mapping capability names to values
+  def parse(required_caps : Array(String)) : Hash(String, String)
     io = IO::Memory.new(@data)
 
     header = read_header(io)
     offsets = calculate_offsets(header)
+    str_count = header[4]
 
-    indices.map do |idx|
-      if idx < 0
-        ""
-      else
-        read_string(io, offsets[:str_offset] + (2_i16 * idx), offsets[:table_offset])
+    # Build hash of all capabilities (index => value)
+    all_caps = {} of Int32 => String
+
+    str_count.times do |idx|
+      value = read_string(io, offsets[:str_offset] + (2_i16 * idx), offsets[:table_offset])
+      all_caps[idx] = value unless value.empty?
+    end
+
+    # Map required capability names to their values
+    result = {} of String => String
+
+    required_caps.each do |cap_name|
+      # Find index of this capability in standard order
+      if idx = Capabilities::STRING_CAPS.index(cap_name)
+        if value = all_caps[idx]?
+          result[cap_name] = value
+        end
       end
     end
+
+    result
   rescue
-    Array.new(indices.size, "")
+    {} of String => String
   end
 
   private def read_header(io : IO::Memory)
