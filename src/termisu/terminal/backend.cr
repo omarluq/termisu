@@ -11,7 +11,7 @@
 # backend = Termisu::Terminal::Backend.new(terminal, terminfo)
 #
 # backend.move_cursor(10, 5)
-# backend.foreground = 2
+# backend.foreground = Color.green
 # backend.write("Hello!")
 # backend.flush
 # backend.close
@@ -68,21 +68,35 @@ class Termisu::Terminal::Backend < Termisu::Backend
     write("\e[#{y + 1};#{x + 1}H")
   end
 
-  # Sets the foreground color (simplified ANSI color support).
-  def foreground=(color : Int32)
-    if color == -1
+  # Sets the foreground color with full ANSI-8, ANSI-256, and RGB support.
+  def foreground=(color : Color)
+    if color.default?
       write("\e[39m") # Default foreground
     else
-      write("\e[3#{color}m")
+      case color.mode
+      when .ansi8?
+        write("\e[3#{color.index}m")
+      when .ansi256?
+        write("\e[38;5;#{color.index}m")
+      when .rgb?
+        write("\e[38;2;#{color.r};#{color.g};#{color.b}m")
+      end
     end
   end
 
-  # Sets the background color (simplified ANSI color support).
-  def background=(color : Int32)
-    if color == -1
+  # Sets the background color with full ANSI-8, ANSI-256, and RGB support.
+  def background=(color : Color)
+    if color.default?
       write("\e[49m") # Default background
     else
-      write("\e[4#{color}m")
+      case color.mode
+      when .ansi8?
+        write("\e[4#{color.index}m")
+      when .ansi256?
+        write("\e[48;5;#{color.index}m")
+      when .rgb?
+        write("\e[48;2;#{color.r};#{color.g};#{color.b}m")
+      end
     end
   end
 

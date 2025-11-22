@@ -12,21 +12,25 @@ module Termisu::Terminfo::Builtin
     "\e[7m",          # reverse
     "\e[?1h\e=",      # enter_keypad
     "\e[?1l\e>",      # exit_keypad
+    "\e[38;5;%p1%dm", # setaf (256-color foreground)
+    "\e[48;5;%p1%dm", # setab (256-color background)
   ]
 
   private LINUX_FUNCS = [
-    "",              # enter_ca
-    "",              # exit_ca
-    "\e[?25h\e[?0c", # show_cursor
-    "\e[?25l\e[?1c", # hide_cursor
-    "\e[H\e[J",      # clear_screen
-    "\e[m",          # sgr0
-    "\e[4m",         # underline
-    "\e[1m",         # bold
-    "\e[5m",         # blink
-    "\e[7m",         # reverse
-    "",              # enter_keypad
-    "",              # exit_keypad
+    "",               # enter_ca
+    "",               # exit_ca
+    "\e[?25h\e[?0c",  # show_cursor
+    "\e[?25l\e[?1c",  # hide_cursor
+    "\e[H\e[J",       # clear_screen
+    "\e[m",           # sgr0
+    "\e[4m",          # underline
+    "\e[1m",          # bold
+    "\e[5m",          # blink
+    "\e[7m",          # reverse
+    "",               # enter_keypad
+    "",               # exit_keypad
+    "\e[38;5;%p1%dm", # setaf (256-color foreground)
+    "\e[48;5;%p1%dm", # setab (256-color background)
   ]
 
   private XTERM_KEYS = [

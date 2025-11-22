@@ -83,6 +83,8 @@ module Termisu::Terminfo::Capabilities
     "rev",   # Begin reverse video mode
     "smkx",  # Enable keypad transmission mode
     "rmkx",  # Disable keypad transmission mode
+    "setaf", # Set foreground color (ANSI)
+    "setab", # Set background color (ANSI)
   ]
 
   # Keyboard input capabilities required by Termisu.

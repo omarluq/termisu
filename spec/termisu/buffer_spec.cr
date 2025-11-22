@@ -4,8 +4,8 @@ require "../spec_helper"
 class MockBufferBackend < Termisu::Backend
   property write_calls : Array(String) = [] of String
   property move_calls : Array({Int32, Int32}) = [] of {Int32, Int32}
-  property fg_calls : Array(Int32) = [] of Int32
-  property bg_calls : Array(Int32) = [] of Int32
+  property fg_calls : Array(Termisu::Color) = [] of Termisu::Color
+  property bg_calls : Array(Termisu::Color) = [] of Termisu::Color
   property flush_count : Int32 = 0
   property reset_count : Int32 = 0
   property bold_count : Int32 = 0
@@ -21,11 +21,11 @@ class MockBufferBackend < Termisu::Backend
     @move_calls << {x, y}
   end
 
-  def foreground=(color : Int32)
+  def foreground=(color : Termisu::Color)
     @fg_calls << color
   end
 
-  def background=(color : Int32)
+  def background=(color : Termisu::Color)
     @bg_calls << color
   end
 
@@ -77,22 +77,22 @@ describe Termisu::Buffer do
       cell = buffer.get_cell(0, 0)
       cell.should_not be_nil
       cell.as(Termisu::Cell).ch.should eq(' ')
-      cell.as(Termisu::Cell).fg.should eq(7)
-      cell.as(Termisu::Cell).bg.should eq(-1)
+      cell.as(Termisu::Cell).fg.should eq(Termisu::Color.white)
+      cell.as(Termisu::Cell).bg.should eq(Termisu::Color.default)
     end
   end
 
   describe "#set_cell" do
     it "sets a cell at valid coordinates" do
       buffer = Termisu::Buffer.new(10, 5)
-      result = buffer.set_cell(5, 2, 'A', fg: 2, bg: 1)
+      result = buffer.set_cell(5, 2, 'A', fg: Termisu::Color.green, bg: Termisu::Color.red)
       result.should be_true
 
       cell = buffer.get_cell(5, 2)
       cell.should_not be_nil
       cell.as(Termisu::Cell).ch.should eq('A')
-      cell.as(Termisu::Cell).fg.should eq(2)
-      cell.as(Termisu::Cell).bg.should eq(1)
+      cell.as(Termisu::Cell).fg.should eq(Termisu::Color.green)
+      cell.as(Termisu::Cell).bg.should eq(Termisu::Color.red)
     end
 
     it "returns false for out of bounds x" do
@@ -137,13 +137,13 @@ describe Termisu::Buffer do
   describe "#clear" do
     it "resets all cells to default" do
       buffer = Termisu::Buffer.new(10, 5)
-      buffer.set_cell(3, 2, 'A', fg: 2, bg: 1)
+      buffer.set_cell(3, 2, 'A', fg: Termisu::Color.green, bg: Termisu::Color.red)
       buffer.clear
 
       cell = buffer.get_cell(3, 2)
       cell.as(Termisu::Cell).ch.should eq(' ')
-      cell.as(Termisu::Cell).fg.should eq(7)
-      cell.as(Termisu::Cell).bg.should eq(-1)
+      cell.as(Termisu::Cell).fg.should eq(Termisu::Color.white)
+      cell.as(Termisu::Cell).bg.should eq(Termisu::Color.default)
     end
   end
 
@@ -181,11 +181,11 @@ describe Termisu::Buffer do
       backend = MockBufferBackend.new
       buffer = Termisu::Buffer.new(5, 3)
 
-      buffer.set_cell(2, 1, 'X', fg: 3, bg: 5)
+      buffer.set_cell(2, 1, 'X', fg: Termisu::Color.yellow, bg: Termisu::Color.magenta)
       buffer.flush(backend)
 
-      backend.fg_calls.should contain(3)
-      backend.bg_calls.should contain(5)
+      backend.fg_calls.should contain(Termisu::Color.yellow)
+      backend.bg_calls.should contain(Termisu::Color.magenta)
     end
 
     it "renders attributes for changed cells" do
