@@ -1,10 +1,14 @@
 on:
   push:
+    branches: [main]
   pull_request:
     branches: [main]
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      checks: write
+      contents: read
     steps:
       - name: Download source
         uses: actions/checkout@v5
