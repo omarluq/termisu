@@ -26,6 +26,13 @@ class Termisu::Terminal < Termisu::Renderer
   @buffer : Buffer
   @alternate_screen : Bool = false
 
+  # Cached render state for direct API optimization.
+  # Prevents redundant escape sequences when the same style is set repeatedly.
+  @cached_fg : Color?
+  @cached_bg : Color?
+  @cached_attr : Attribute = Attribute::None
+  @cached_cursor_visible : Bool?
+
   # Creates a new terminal.
   #
   # Parameters:
@@ -42,13 +49,16 @@ class Termisu::Terminal < Termisu::Renderer
   # Enters alternate screen mode.
   #
   # Switches to alternate screen buffer, clears the screen,
-  # enters keypad mode, and hides cursor.
+  # enters keypad mode, and hides cursor. Also resets cached
+  # render state since we're entering a fresh screen.
   def enter_alternate_screen
     return if @alternate_screen
     write(@terminfo.enter_ca_seq)
     write(@terminfo.clear_screen_seq)
     write(@terminfo.enter_keypad_seq)
-    write_hide_cursor
+    reset_render_state
+    @cached_cursor_visible = false # We're about to hide it
+    write(@terminfo.hide_cursor_seq)
     flush
     @alternate_screen = true
   end
@@ -56,11 +66,15 @@ class Termisu::Terminal < Termisu::Renderer
   # Exits alternate screen mode.
   #
   # Shows cursor, exits keypad mode, and returns to main screen buffer.
+  # Also resets cached render state since we're returning to the
+  # main screen which may have different state.
   def exit_alternate_screen
     return unless @alternate_screen
-    write_show_cursor
+    @cached_cursor_visible = true # We're about to show it
+    write(@terminfo.show_cursor_seq)
     write(@terminfo.exit_keypad_seq)
     write(@terminfo.exit_ca_seq)
+    reset_render_state
     flush
     @alternate_screen = false
   end
@@ -73,9 +87,30 @@ class Termisu::Terminal < Termisu::Renderer
   # Clears the screen.
   #
   # Writes the clear screen escape sequence immediately and flushes.
+  # Also resets cached render state since screen content is cleared.
   def clear_screen
     write(@terminfo.clear_screen_seq)
+    reset_render_state
     flush
+  end
+
+  # Resets the cached render state.
+  #
+  # Call this when the terminal state becomes unknown (e.g., after external
+  # programs have modified the terminal, or after errors). This forces
+  # the next color/attribute calls to emit escape sequences even if
+  # the cached values match.
+  #
+  # The following operations automatically reset render state:
+  # - enter_alternate_screen
+  # - exit_alternate_screen
+  # - clear_screen
+  # - reset_attributes
+  def reset_render_state
+    @cached_fg = nil
+    @cached_bg = nil
+    @cached_attr = Attribute::None
+    @cached_cursor_visible = nil
   end
 
   # Moves cursor to the specified position.
@@ -89,7 +124,13 @@ class Termisu::Terminal < Termisu::Renderer
   end
 
   # Sets the foreground color with full ANSI-8, ANSI-256, and RGB support.
+  #
+  # Caches the color to avoid redundant escape sequences when called
+  # repeatedly with the same color.
   def foreground=(color : Color)
+    return if @cached_fg == color
+    @cached_fg = color
+
     if color.default?
       write("\e[39m") # Default foreground
     else
@@ -105,7 +146,13 @@ class Termisu::Terminal < Termisu::Renderer
   end
 
   # Sets the background color with full ANSI-8, ANSI-256, and RGB support.
+  #
+  # Caches the color to avoid redundant escape sequences when called
+  # repeatedly with the same color.
   def background=(color : Color)
+    return if @cached_bg == color
+    @cached_bg = color
+
     if color.default?
       write("\e[49m") # Default background
     else
@@ -122,42 +169,71 @@ class Termisu::Terminal < Termisu::Renderer
 
   # Writes show cursor escape sequence immediately.
   #
+  # Caches visibility state to avoid redundant escape sequences.
   # Note: This is part of the Renderer interface, called by Buffer.
   # For buffer-based cursor control, use show_cursor instead.
   def write_show_cursor
+    return if @cached_cursor_visible
+    @cached_cursor_visible = true
     write(@terminfo.show_cursor_seq)
   end
 
   # Writes hide cursor escape sequence immediately.
   #
+  # Caches visibility state to avoid redundant escape sequences.
   # Note: This is part of the Renderer interface, called by Buffer.
   # For buffer-based cursor control, use hide_cursor instead.
   def write_hide_cursor
+    # Skip if cursor is already hidden (false). Don't skip if nil (unknown).
+    cached = @cached_cursor_visible
+    return if cached.is_a?(Bool) && !cached
+    @cached_cursor_visible = false
     write(@terminfo.hide_cursor_seq)
   end
 
   # Resets all attributes to default.
+  #
+  # Also clears cached color/attribute state since reset affects all styling.
   def reset_attributes
     write(@terminfo.reset_attrs_seq)
+    @cached_fg = nil
+    @cached_bg = nil
+    @cached_attr = Attribute::None
   end
 
   # Enables bold text.
+  #
+  # Caches attribute state to avoid redundant escape sequences.
   def enable_bold
+    return if @cached_attr.bold?
+    @cached_attr |= Attribute::Bold
     write(@terminfo.bold_seq)
   end
 
   # Enables underline.
+  #
+  # Caches attribute state to avoid redundant escape sequences.
   def enable_underline
+    return if @cached_attr.underline?
+    @cached_attr |= Attribute::Underline
     write(@terminfo.underline_seq)
   end
 
   # Enables blink.
+  #
+  # Caches attribute state to avoid redundant escape sequences.
   def enable_blink
+    return if @cached_attr.blink?
+    @cached_attr |= Attribute::Blink
     write(@terminfo.blink_seq)
   end
 
   # Enables reverse video.
+  #
+  # Caches attribute state to avoid redundant escape sequences.
   def enable_reverse
+    return if @cached_attr.reverse?
+    @cached_attr |= Attribute::Reverse
     write(@terminfo.reverse_seq)
   end
 
