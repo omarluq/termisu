@@ -2,6 +2,29 @@
 class Termisu::Error < Exception
 end
 
+# Error raised for terminal I/O operations.
+#
+# Wraps system-level I/O errors with additional context about
+# the operation that failed. Handles EINTR transparently via retry.
+class Termisu::IOError < Termisu::Error
+  # The underlying system errno value.
+  getter errno : Errno
+
+  def initialize(@errno : Errno, operation : String)
+    super("#{operation}: #{@errno.message}")
+  end
+
+  # Creates an error for a failed select() call.
+  def self.select_failed(errno : Errno) : IOError
+    new(errno, "select() failed")
+  end
+
+  # Creates an error for a failed read() call.
+  def self.read_failed(errno : Errno) : IOError
+    new(errno, "read() failed")
+  end
+end
+
 # Error raised when parsing terminfo binary data fails.
 #
 # Provides specific error types to distinguish between different failure modes:
