@@ -160,13 +160,35 @@ describe Termisu::Buffer do
       backend.write_calls.clear
       backend.move_calls.clear
 
-      buffer.set_cell(3, 1, 'B')
+      # Change a non-adjacent cell to force cursor move
+      buffer.set_cell(0, 2, 'B')
       buffer.flush(backend)
 
       # Should only render 1 cell (the changed one)
       backend.write_calls.size.should eq(1)
-      backend.write_calls[0].should eq("B")
-      backend.move_calls[0].should eq({3, 1})
+      backend.write_calls.should contain("B")
+      backend.move_calls.should contain({0, 2})
+    end
+
+    it "skips cursor movement when cursor is already at correct position" do
+      backend = MockBufferBackend.new
+      buffer = Termisu::Buffer.new(5, 3)
+
+      # First flush - set up initial state
+      buffer.set_cell(2, 1, 'A')
+      buffer.flush(backend)
+
+      # Clear tracking
+      backend.write_calls.clear
+      backend.move_calls.clear
+
+      # Write at position where cursor already is (right after 'A')
+      buffer.set_cell(3, 1, 'B')
+      buffer.flush(backend)
+
+      # Should write 'B' but no cursor move needed (cursor advanced from writing 'A')
+      backend.write_calls.should contain("B")
+      backend.move_calls.should be_empty # Optimization: cursor already at right position
     end
 
     it "calls backend.flush after rendering" do
@@ -196,7 +218,51 @@ describe Termisu::Buffer do
       buffer.flush(backend)
 
       backend.bold_count.should be > 0
-      backend.reset_count.should be > 0 # Reset after attribute
+      # Note: Optimized rendering doesn't reset after each cell,
+      # only when attributes are removed in a subsequent cell
+    end
+
+    it "batches consecutive cells with same styling" do
+      backend = MockBufferBackend.new
+      buffer = Termisu::Buffer.new(10, 3)
+
+      # Set 3 consecutive cells with same styling
+      buffer.set_cell(2, 1, 'A', fg: Termisu::Color.green)
+      buffer.set_cell(3, 1, 'B', fg: Termisu::Color.green)
+      buffer.set_cell(4, 1, 'C', fg: Termisu::Color.green)
+      buffer.flush(backend)
+
+      # Clear and set up for diff test
+      backend.write_calls.clear
+      backend.move_calls.clear
+      backend.fg_calls.clear
+
+      # Change same cells again
+      buffer.set_cell(2, 1, 'X', fg: Termisu::Color.red)
+      buffer.set_cell(3, 1, 'Y', fg: Termisu::Color.red)
+      buffer.set_cell(4, 1, 'Z', fg: Termisu::Color.red)
+      buffer.flush(backend)
+
+      # Should batch into single write "XYZ"
+      backend.write_calls.should contain("XYZ")
+      # Should only set color once (not 3 times)
+      backend.fg_calls.size.should eq(1)
+      backend.fg_calls[0].should eq(Termisu::Color.red)
+    end
+
+    it "splits batches when styling changes" do
+      backend = MockBufferBackend.new
+      buffer = Termisu::Buffer.new(10, 3)
+
+      # Set cells with different colors
+      buffer.set_cell(2, 1, 'A', fg: Termisu::Color.green)
+      buffer.set_cell(3, 1, 'B', fg: Termisu::Color.red) # Different color
+      buffer.set_cell(4, 1, 'C', fg: Termisu::Color.red) # Same as B
+      buffer.flush(backend)
+
+      # Should have separate writes for different styles
+      backend.write_calls.should contain("A")
+      backend.write_calls.should contain("BC")
     end
   end
 
@@ -215,10 +281,25 @@ describe Termisu::Buffer do
       backend.write_calls.clear
 
       # Sync should render all 6 cells (3x2)
+      # With batching, cells with same style are batched together
       buffer.sync(backend)
 
-      backend.write_calls.size.should eq(6)
+      # Total characters rendered should equal total cells
+      total_chars = backend.write_calls.sum(&.size)
+      total_chars.should eq(6)
       backend.flush_count.should eq(2) # flush + sync
+    end
+
+    it "batches cells with same styling on sync" do
+      backend = MockBufferBackend.new
+      buffer = Termisu::Buffer.new(5, 1)
+
+      # All default cells - should batch into single write
+      buffer.sync(backend)
+
+      # All 5 cells should be in a single batched write
+      backend.write_calls.size.should eq(1)
+      backend.write_calls[0].size.should eq(5)
     end
   end
 

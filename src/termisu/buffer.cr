@@ -5,6 +5,12 @@
 # - Back buffer: Where new content is written
 # - Diff algorithm: Only redraws cells that have changed
 # - Cursor position and visibility
+# - Render state tracking for escape sequence optimization
+#
+# Performance Optimizations:
+# - Only emits color/attribute escape sequences when they change
+# - Batches consecutive cells on the same row with the same styling
+# - Tracks cursor position to minimize move_cursor calls
 #
 # Example:
 # ```
@@ -18,8 +24,9 @@ class Termisu::Buffer
   getter height : Int32
   getter cursor : Cursor
 
-  @front : Array(Cell) # Currently displayed buffer
-  @back : Array(Cell)  # Buffer being written to
+  @front : Array(Cell)        # Currently displayed buffer
+  @back : Array(Cell)         # Buffer being written to
+  @render_state : RenderState # Tracks current terminal state for optimization
 
   # Creates a new Buffer with the specified dimensions.
   #
@@ -31,6 +38,7 @@ class Termisu::Buffer
     @front = Array(Cell).new(size) { Cell.default }
     @back = Array(Cell).new(size) { Cell.default }
     @cursor = Cursor.new # Hidden by default
+    @render_state = RenderState.new
   end
 
   # Sets a cell at the specified position in the back buffer.
@@ -102,21 +110,16 @@ class Termisu::Buffer
   # the back buffer becomes the new front buffer.
   # Cursor position and visibility are also updated.
   #
+  # Optimizations applied:
+  # - Batches consecutive cells with same styling on same row
+  # - Only emits escape sequences when color/attribute changes
+  # - Minimizes cursor movement by tracking position
+  #
   # Parameters:
   # - backend: The backend to render cells to
   def flush(backend : Backend)
     @height.times do |row|
-      @width.times do |col|
-        idx = row * @width + col
-        front_cell = @front[idx]
-        back_cell = @back[idx]
-
-        # Only redraw if cell has changed
-        if front_cell != back_cell
-          render_cell(backend, col, row, back_cell)
-          @front[idx] = back_cell
-        end
-      end
+      render_row_diff(backend, row)
     end
 
     # Render cursor
@@ -129,13 +132,11 @@ class Termisu::Buffer
   #
   # Useful after terminal resize or corruption.
   def sync(backend : Backend)
+    # Reset render state to force all sequences to be emitted
+    @render_state.reset
+
     @height.times do |row|
-      @width.times do |col|
-        idx = row * @width + col
-        back_cell = @back[idx]
-        render_cell(backend, col, row, back_cell)
-        @front[idx] = back_cell
-      end
+      render_row_full(backend, row)
     end
 
     # Render cursor
@@ -221,6 +222,122 @@ class Termisu::Buffer
       backend.show_cursor
     else
       backend.hide_cursor
+    end
+  end
+
+  # Renders a row using diff-based rendering (only changed cells).
+  #
+  # Batches consecutive changed cells with same styling for efficiency.
+  # Updates front buffer to match back buffer after rendering.
+  private def render_row_diff(backend : Backend, row : Int32)
+    row_start = row * @width
+    col = 0
+
+    while col < @width
+      idx = row_start + col
+      back_cell = @back[idx]
+      front_cell = @front[idx]
+
+      # Skip unchanged cells
+      if back_cell == front_cell
+        col += 1
+        next
+      end
+
+      # Found a changed cell - start a batch
+      batch_start = col
+      batch_fg = back_cell.fg
+      batch_bg = back_cell.bg
+      batch_attr = back_cell.attr
+
+      # Collect consecutive changed cells with same styling
+      batch_chars = String.build do |str|
+        while col < @width
+          idx = row_start + col
+          back_cell = @back[idx]
+          front_cell = @front[idx]
+
+          # Stop if unchanged or different styling
+          break if back_cell == front_cell
+          break if back_cell.fg != batch_fg || back_cell.bg != batch_bg || back_cell.attr != batch_attr
+
+          str << back_cell.ch
+          @front[idx] = back_cell # Update front buffer
+          col += 1
+        end
+      end
+
+      # Render the batch
+      render_batch(backend, batch_start, row, batch_chars, batch_fg, batch_bg, batch_attr)
+    end
+  end
+
+  # Renders an entire row (for sync/full redraw).
+  #
+  # Batches consecutive cells with same styling for efficiency.
+  # Updates front buffer to match back buffer after rendering.
+  private def render_row_full(backend : Backend, row : Int32)
+    row_start = row * @width
+    col = 0
+
+    while col < @width
+      idx = row_start + col
+      cell = @back[idx]
+
+      # Start a batch with current cell's styling
+      batch_start = col
+      batch_fg = cell.fg
+      batch_bg = cell.bg
+      batch_attr = cell.attr
+
+      # Collect consecutive cells with same styling
+      batch_chars = String.build do |str|
+        while col < @width
+          idx = row_start + col
+          cell = @back[idx]
+
+          # Stop if different styling
+          break if cell.fg != batch_fg || cell.bg != batch_bg || cell.attr != batch_attr
+
+          str << cell.ch
+          @front[idx] = cell # Update front buffer
+          col += 1
+        end
+      end
+
+      # Render the batch
+      render_batch(backend, batch_start, row, batch_chars, batch_fg, batch_bg, batch_attr)
+    end
+  end
+
+  # Renders a batch of characters with the same styling.
+  #
+  # Uses RenderState to minimize escape sequence emission:
+  # - Only moves cursor if not at expected position
+  # - Only emits color/attribute sequences when they change
+  private def render_batch(
+    backend : Backend,
+    x : Int32,
+    y : Int32,
+    chars : String,
+    fg : Color,
+    bg : Color,
+    attr : Attribute,
+  )
+    return if chars.empty?
+
+    # Move cursor only if needed
+    @render_state.move_cursor(backend, x, y)
+
+    # Apply style only if changed
+    @render_state.apply_style(backend, fg, bg, attr)
+
+    # Write all characters in the batch
+    backend.write(chars)
+
+    # Update cursor position in render state (cursor advances with each char)
+    chars.each_char do
+      @render_state.advance_cursor
     end
   end
 end
