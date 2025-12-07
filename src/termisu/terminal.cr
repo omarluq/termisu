@@ -41,11 +41,12 @@ class Termisu::Terminal < Termisu::Renderer
 
   # Enters alternate screen mode.
   #
-  # Switches to alternate screen buffer, enters keypad mode,
-  # and hides cursor.
+  # Switches to alternate screen buffer, clears the screen,
+  # enters keypad mode, and hides cursor.
   def enter_alternate_screen
     return if @alternate_screen
     write(@terminfo.enter_ca_seq)
+    write(@terminfo.clear_screen_seq)
     write(@terminfo.enter_keypad_seq)
     write_hide_cursor
     flush
@@ -67,6 +68,14 @@ class Termisu::Terminal < Termisu::Renderer
   # Returns whether alternate screen mode is active.
   def alternate_screen? : Bool
     @alternate_screen
+  end
+
+  # Clears the screen.
+  #
+  # Writes the clear screen escape sequence immediately and flushes.
+  def clear_screen
+    write(@terminfo.clear_screen_seq)
+    flush
   end
 
   # Moves cursor to the specified position.
