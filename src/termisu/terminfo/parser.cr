@@ -20,11 +20,20 @@
 # - Magic 0o432 (282): Standard format with 16-bit numbers
 # - Magic 542: Extended format with 32-bit numbers
 #
+# ## Error Handling
+#
+# The parser raises `ParseError` with specific error types:
+# - `InvalidMagic`: Unrecognized format identifier
+# - `TruncatedData`: File smaller than header indicates
+# - `InvalidHeader`: Negative or unreasonable header values
+# - `InvalidOffset`: String offsets point outside data bounds
+#
 # ## Usage
 #
 # ```
 # data = File.read("/usr/share/terminfo/x/xterm-256color")
 # caps = Parser.parse(data, ["clear", "bold", "smcup"])
+# # Raises ParseError if data is malformed
 # ```
 class Termisu::Terminfo::Parser
   # Magic number for standard 16-bit terminfo format.
@@ -35,6 +44,13 @@ class Termisu::Terminfo::Parser
 
   # Size of terminfo binary header in bytes.
   HEADER_LENGTH = 12
+
+  # Maximum reasonable header values to detect corruption.
+  MAX_NAMES_LENGTH   =  4096
+  MAX_BOOLEANS_COUNT =   512
+  MAX_NUMBERS_COUNT  =   512
+  MAX_STRINGS_COUNT  =   512
+  MAX_TABLE_SIZE     = 65536
 
   # Parses terminfo binary data and returns requested capabilities.
   #
@@ -49,9 +65,25 @@ class Termisu::Terminfo::Parser
   # ## Returns
   #
   # Hash mapping capability names to their escape sequence values.
-  # Returns empty hash on parse errors.
+  #
+  # ## Raises
+  #
+  # - `ParseError` if the data is malformed or corrupted
   def self.parse(data : Bytes, cap_names : Array(String)) : Hash(String, String)
     new(data).parse(cap_names)
+  end
+
+  # Parses terminfo data, returning nil on parse errors instead of raising.
+  #
+  # Useful when you want to handle parse failures gracefully without exceptions.
+  #
+  # ## Returns
+  #
+  # Hash of capabilities, or nil if parsing failed.
+  def self.parse?(data : Bytes, cap_names : Array(String)) : Hash(String, String)?
+    parse(data, cap_names)
+  rescue ParseError
+    nil
   end
 
   def initialize(@data : Bytes)
@@ -69,11 +101,21 @@ class Termisu::Terminfo::Parser
   # ## Returns
   #
   # Hash of capability name => escape sequence. Missing capabilities are omitted.
+  #
+  # ## Raises
+  #
+  # - `ParseError` with specific type on malformed data
   def parse(required_caps : Array(String)) : Hash(String, String)
+    validate_minimum_size!
+
     io = IO::Memory.new(@data)
 
     header = read_header(io)
+    validate_header!(header)
+
     offsets = calculate_offsets(header)
+    validate_offsets!(offsets, header)
+
     string_count = header[4]
 
     # Parse all string capabilities from binary format
@@ -81,8 +123,47 @@ class Termisu::Terminfo::Parser
 
     # Filter to only requested capabilities
     extract_requested_capabilities(all_capabilities, required_caps)
-  rescue
-    {} of String => String
+  end
+
+  # Validates that data is at least large enough for the header.
+  private def validate_minimum_size!
+    if @data.size < HEADER_LENGTH
+      raise ParseError.truncated_data(HEADER_LENGTH, @data.size)
+    end
+  end
+
+  # Validates the header magic number and field values.
+  private def validate_header!(header : StaticArray(Int16, 6))
+    validate_magic!(header[0])
+    validate_header_field!("names_length", header[1], MAX_NAMES_LENGTH)
+    validate_header_field!("booleans_count", header[2], MAX_BOOLEANS_COUNT)
+    validate_header_field!("numbers_count", header[3], MAX_NUMBERS_COUNT)
+    validate_header_field!("strings_count", header[4], MAX_STRINGS_COUNT)
+    validate_header_field!("table_size", header[5], MAX_TABLE_SIZE)
+  end
+
+  # Validates the terminfo magic number.
+  private def validate_magic!(magic : Int16)
+    unless magic == MAGIC || magic == EXTENDED_MAGIC
+      raise ParseError.invalid_magic(magic)
+    end
+  end
+
+  # Validates a single header field is within valid range.
+  private def validate_header_field!(name : String, value : Int16, max : Int32)
+    if value < 0 || value > max
+      raise ParseError.invalid_header(name, value)
+    end
+  end
+
+  # Validates that calculated offsets don't exceed data bounds.
+  private def validate_offsets!(offsets : NamedTuple, header : StaticArray(Int16, 6))
+    table_size = header[5]
+    expected_end = offsets[:table_offset].to_i32 + table_size.to_i32
+
+    if expected_end > @data.size
+      raise ParseError.truncated_data(expected_end, @data.size)
+    end
   end
 
   # Parses all string capabilities from the terminfo binary data.
@@ -162,17 +243,23 @@ class Termisu::Terminfo::Parser
   #
   # ## Returns
   #
-  # The null-terminated string, or empty string if offset is -1 or on error.
+  # The null-terminated string, or empty string if offset is -1 (absent capability).
   private def read_string_at(io : IO::Memory, offset_pos : Int16, table_start : Int16) : String
     io.pos = offset_pos.to_i
     offset = io.read_bytes(Int16, IO::ByteFormat::LittleEndian)
 
+    # -1 offset means capability is absent (not an error)
     return "" if offset < 0
 
-    io.pos = (table_start + offset).to_i
+    string_pos = (table_start + offset).to_i
+
+    # Validate the string position is within bounds
+    if string_pos >= @data.size
+      raise ParseError.invalid_offset(string_pos, @data.size)
+    end
+
+    io.pos = string_pos
     read_null_terminated_string(io)
-  rescue
-    ""
   end
 
   # Reads a null-terminated string from the current IO position.
