@@ -1,10 +1,12 @@
 class Termisu::Terminfo::Database
+  Log = Termisu::Logs::Terminfo
   @name : String
 
   def initialize(@name : String)
   end
 
   def load : Bytes
+    Log.trace { "Searching for terminfo database: #{@name}" }
     try_terminfo_env ||
       try_home_terminfo ||
       try_terminfo_dirs ||
@@ -48,13 +50,23 @@ class Termisu::Terminfo::Database
   private def try_path(base : String) : Bytes?
     # Standard *nix path: /usr/share/terminfo/x/xterm-256color
     path = File.join(base, @name[0].to_s, @name)
-    return File.read(path).to_slice if File.exists?(path)
+    if File.exists?(path)
+      Log.debug { "Found terminfo at #{path}" }
+      return File.read(path).to_slice
+    end
 
     # Darwin format: /usr/share/terminfo/78/xterm-256color
     hex = @name[0].ord.to_s(16)
     path = File.join(base, hex, @name)
-    File.read(path).to_slice if File.exists?(path)
-  rescue
+    if File.exists?(path)
+      Log.debug { "Found terminfo at #{path} (Darwin format)" }
+      return File.read(path).to_slice
+    end
+
+    Log.trace { "Terminfo not found at #{base}" }
+    nil
+  rescue ex
+    Log.trace { "Error reading #{base}: #{ex.message}" }
     nil
   end
 end

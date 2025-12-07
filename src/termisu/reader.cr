@@ -20,6 +20,7 @@
 # reader.close
 # ```
 class Termisu::Reader
+  Log = Termisu::Logs::Reader
   @fd : Int32
   @buffer : Bytes
   @buffer_pos : Int32 = 0
@@ -35,6 +36,7 @@ class Termisu::Reader
   # - `buffer_size` - Internal buffer size (default: 128 bytes)
   def initialize(@fd : Int32, buffer_size : Int32 = 128)
     @buffer = Bytes.new(buffer_size)
+    Log.debug { "Reader initialized: fd=#{@fd}, buffer_size=#{buffer_size}" }
   end
 
   # Reads a single byte from the input.
@@ -47,6 +49,9 @@ class Termisu::Reader
 
     byte = @buffer[@buffer_pos]
     @buffer_pos += 1
+
+    Termisu::Logs::Input.trace { "read_byte: #{byte} (0x#{byte.to_s(16)}) '#{byte.chr.printable? ? byte.chr : '?'}'" }
+
     byte
   end
 
@@ -148,12 +153,14 @@ class Termisu::Reader
 
   # Clears any buffered data.
   def clear_buffer
+    Log.trace { "Clearing buffer (#{@buffer_len - @buffer_pos} bytes discarded)" } if @buffer_len > @buffer_pos
     @buffer_pos = 0
     @buffer_len = 0
   end
 
   # Closes the reader (does not close the file descriptor).
   def close
+    Log.debug { "Closing reader" }
     clear_buffer
   end
 
@@ -171,11 +178,13 @@ class Termisu::Reader
       if bytes_read > 0
         @buffer_pos = 0
         @buffer_len = bytes_read.to_i32
+        Termisu::Logs::Reader.trace { "fill_buffer: read #{bytes_read} bytes" }
         return true
       elsif bytes_read == 0
         # EOF
         @buffer_pos = 0
         @buffer_len = 0
+        Termisu::Logs::Reader.debug { "fill_buffer: EOF" }
         return false
       end
 
@@ -185,7 +194,9 @@ class Termisu::Reader
       if errno.eintr?
         # Interrupted by signal - retry
         retries += 1
+        Termisu::Logs::Reader.trace { "fill_buffer: EINTR, retry #{retries}" }
         if retries >= MAX_EINTR_RETRIES
+          Termisu::Logs::Reader.error { "fill_buffer: max EINTR retries exceeded" }
           raise Termisu::IOError.read_failed(errno)
         end
         next
@@ -202,6 +213,7 @@ class Termisu::Reader
       # EIO: I/O error
       # EISDIR: fd refers to a directory
       # Other errors are unrecoverable
+      Termisu::Logs::Reader.error { "fill_buffer: read error #{errno}" }
       raise Termisu::IOError.read_failed(errno)
     end
   end

@@ -20,6 +20,7 @@
 # buffer.render_to(renderer) # Only changed cells and cursor are redrawn
 # ```
 class Termisu::Buffer
+  Log = Termisu::Logs::Buffer
   getter width : Int32
   getter height : Int32
   getter cursor : Cursor
@@ -39,6 +40,7 @@ class Termisu::Buffer
     @back = Array(Cell).new(size) { Cell.default }
     @cursor = Cursor.new # Hidden by default
     @render_state = RenderState.new
+    Log.debug { "Buffer initialized: #{@width}x#{@height} (#{size} cells)" }
   end
 
   # Sets a cell at the specified position in the back buffer.
@@ -79,6 +81,7 @@ class Termisu::Buffer
 
   # Clears the back buffer (fills with default cells).
   def clear
+    Log.trace { "Clearing buffer" }
     @back.size.times do |index|
       @back[index] = Cell.default
     end
@@ -118,6 +121,7 @@ class Termisu::Buffer
   # Parameters:
   # - renderer: The renderer to render cells to
   def render_to(renderer : Renderer)
+    Log.trace { "Rendering diff to renderer" }
     @height.times do |row|
       render_row_diff(renderer, row)
     end
@@ -132,6 +136,7 @@ class Termisu::Buffer
   #
   # Useful after terminal resize or corruption.
   def sync_to(renderer : Renderer)
+    Log.debug { "Syncing full buffer to renderer" }
     # Reset render state to force all sequences to be emitted
     @render_state.reset
 
@@ -152,6 +157,7 @@ class Termisu::Buffer
   def resize(new_width : Int32, new_height : Int32)
     return if new_width == @width && new_height == @height
 
+    Log.info { "Resizing buffer: #{@width}x#{@height} → #{new_width}x#{new_height}" }
     new_size = new_width * new_height
     new_back = Array(Cell).new(new_size) { Cell.default }
     new_front = Array(Cell).new(new_size) { Cell.default }

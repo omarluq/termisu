@@ -21,6 +21,7 @@
 # Note: All capability methods return escape sequence STRINGS, not actions.
 # The `_seq` suffix indicates this clearly.
 class Termisu::Terminfo
+  Log = Termisu::Logs::Terminfo
   @caps : Hash(String, String)
 
   # Cached capability strings for frequently-used parametrized capabilities.
@@ -40,10 +41,12 @@ class Termisu::Terminfo
 
   def initialize
     term_name = ENV["TERM"]? || raise Termisu::Error.new("TERM environment variable not set")
+    Log.info { "Loading terminfo for TERM=#{term_name}" }
 
     @caps = load_from_database(term_name)
     fill_missing_with_builtins(term_name)
     cache_frequent_capabilities
+    Log.debug { "Loaded #{@caps.size} capabilities" }
   end
 
   # Pre-caches frequently-used parametrized capability strings.
@@ -66,15 +69,21 @@ class Termisu::Terminfo
   private def load_from_database(term_name : String) : Hash(String, String)
     data = Database.new(term_name).load
     required = Capabilities::REQUIRED_FUNCS + Capabilities::REQUIRED_KEYS
-    Parser.parse(data, required)
-  rescue
+    caps = Parser.parse(data, required)
+    Log.debug { "Loaded #{caps.size} capabilities from database" }
+    caps
+  rescue ex
+    Log.warn { "Failed to load terminfo database: #{ex.message}" }
     {} of String => String
   end
 
   # Fills in missing capabilities with hardcoded fallback values.
   private def fill_missing_with_builtins(term_name : String)
+    before_count = @caps.size
     fill_capability_group(Capabilities::REQUIRED_FUNCS, Builtin.funcs_for(term_name))
     fill_capability_group(Capabilities::REQUIRED_KEYS, Builtin.keys_for(term_name))
+    added = @caps.size - before_count
+    Log.debug { "Filled #{added} missing capabilities from builtins" } if added > 0
   end
 
   # Fills missing capabilities from a builtin array.

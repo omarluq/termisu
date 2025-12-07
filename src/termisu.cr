@@ -25,21 +25,34 @@ class Termisu
   # Sets up terminal I/O, rendering, and input reader.
   # Automatically enables raw mode and enters alternate screen.
   def initialize
+    Logging.setup
+
+    Log.info { "Initializing Termisu v#{VERSION}" }
+
     @terminal = Terminal.new
     @reader = Reader.new(@terminal.infd)
 
+    Log.debug { "Terminal size: #{@terminal.size}" }
+
     @terminal.enable_raw_mode
     @terminal.enter_alternate_screen
+
+    Log.debug { "Raw mode enabled, alternate screen entered" }
   end
 
   # Closes Termisu and cleans up all resources.
   #
   # Exits alternate screen, disables raw mode, and closes all components.
   def close
+    Log.info { "Closing Termisu" }
+
     @terminal.exit_alternate_screen
     @terminal.disable_raw_mode
     @reader.close
     @terminal.close
+
+    Logging.flush
+    Logging.close
   end
 
   # --- Terminal Operations ---

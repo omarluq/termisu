@@ -21,6 +21,7 @@
 # terminal.close
 # ```
 class Termisu::Terminal < Termisu::Renderer
+  Log = Termisu::Logs::Terminal
   @backend : Terminal::Backend
   @terminfo : Terminfo
   @buffer : Buffer
@@ -44,6 +45,7 @@ class Termisu::Terminal < Termisu::Renderer
   )
     width, height = size
     @buffer = Buffer.new(width, height)
+    Log.debug { "Terminal initialized: #{width}x#{height}" }
   end
 
   # Enters alternate screen mode.
@@ -53,6 +55,7 @@ class Termisu::Terminal < Termisu::Renderer
   # render state since we're entering a fresh screen.
   def enter_alternate_screen
     return if @alternate_screen
+    Log.debug { "Entering alternate screen" }
     write(@terminfo.enter_ca_seq)
     write(@terminfo.clear_screen_seq)
     write(@terminfo.enter_keypad_seq)
@@ -70,6 +73,7 @@ class Termisu::Terminal < Termisu::Renderer
   # main screen which may have different state.
   def exit_alternate_screen
     return unless @alternate_screen
+    Log.debug { "Exiting alternate screen" }
     @cached_cursor_visible = true # We're about to show it
     write(@terminfo.show_cursor_seq)
     write(@terminfo.exit_keypad_seq)
@@ -89,6 +93,7 @@ class Termisu::Terminal < Termisu::Renderer
   # Writes the clear screen escape sequence immediately and flushes.
   # Also resets cached render state since screen content is cleared.
   def clear_screen
+    Log.debug { "Clearing screen" }
     write(@terminfo.clear_screen_seq)
     reset_render_state
     flush
@@ -301,11 +306,13 @@ class Termisu::Terminal < Termisu::Renderer
 
   # Enables raw mode on the terminal.
   def enable_raw_mode
+    Log.debug { "Enabling raw mode" }
     @backend.enable_raw_mode
   end
 
   # Disables raw mode on the terminal.
   def disable_raw_mode
+    Log.debug { "Disabling raw mode" }
     @backend.disable_raw_mode
   end
 
@@ -321,6 +328,7 @@ class Termisu::Terminal < Termisu::Renderer
 
   # Closes the terminal and underlying backend.
   def close
+    Log.debug { "Closing terminal" }
     @backend.close
   end
 
@@ -368,6 +376,7 @@ class Termisu::Terminal < Termisu::Renderer
   # Only cells that have changed since the last render are redrawn (diff-based).
   # This is more efficient than full redraws for partial updates.
   def render
+    Log.trace { "Rendering buffer" }
     @buffer.render_to(self)
   end
 
@@ -375,6 +384,7 @@ class Termisu::Terminal < Termisu::Renderer
   #
   # Useful after terminal resize or screen corruption.
   def sync
+    Log.debug { "Forcing full buffer sync" }
     @buffer.sync_to(self)
   end
 
@@ -400,6 +410,7 @@ class Termisu::Terminal < Termisu::Renderer
   #
   # Preserves existing content where possible.
   def resize_buffer(width : Int32, height : Int32)
+    Log.info { "Resizing buffer to #{width}x#{height}" }
     @buffer.resize(width, height)
   end
 end
