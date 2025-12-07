@@ -315,6 +315,120 @@ describe Termisu::Terminfo::Tparm do
       it "handles negative parameters" do
         Termisu::Terminfo::Tparm.process("%p1%d", -100).should eq("-100")
       end
+
+      it "handles unknown escape codes gracefully" do
+        # Unknown codes should be silently ignored
+        Termisu::Terminfo::Tparm.process("%z%p1%d", 5).should eq("5")
+      end
+
+      it "handles zero-length integer constants" do
+        # %{} should push 0
+        Termisu::Terminfo::Tparm.process("%{}%d").should eq("0")
+      end
+    end
+
+    describe "static variable persistence" do
+      it "persists static variables across separate calls" do
+        # Clear any existing static vars first
+        Termisu::Terminfo::Tparm::Processor.clear_static_vars
+
+        # First call: store value in static var A
+        Termisu::Terminfo::Tparm.process("%{42}%PA")
+
+        # Second call: retrieve from static var A
+        result = Termisu::Terminfo::Tparm.process("%gA%d")
+        result.should eq("42")
+      end
+
+      it "does not persist dynamic variables across calls" do
+        # First call: store in dynamic var
+        Termisu::Terminfo::Tparm.process("%{99}%Pa")
+
+        # Second call: dynamic var should be unset (returns 0)
+        result = Termisu::Terminfo::Tparm.process("%ga%d")
+        result.should eq("0")
+      end
+    end
+
+    describe "nested conditionals" do
+      it "handles conditionals with escape codes in branches" do
+        # If p1 > 5 then output p1 else output "X"
+        format = "%?%p1%{5}%>%t%p1%d%eX%;"
+        Termisu::Terminfo::Tparm.process(format, 10).should eq("10")
+        Termisu::Terminfo::Tparm.process(format, 3).should eq("X")
+      end
+
+      it "handles conditional without else" do
+        # If p1 then output "Y"
+        format = "%?%p1%tY%;"
+        Termisu::Terminfo::Tparm.process(format, 1).should eq("Y")
+        Termisu::Terminfo::Tparm.process(format, 0).should eq("")
+      end
+
+      it "handles multiple sequential conditionals" do
+        # Two separate conditionals in sequence
+        # Note: Each conditional is independent
+        format1 = "%?%p1%tA%;"
+        format2 = "%?%p2%tB%;"
+
+        # Test them separately
+        Termisu::Terminfo::Tparm.process(format1, 1).should eq("A")
+        Termisu::Terminfo::Tparm.process(format2, 0, 1).should eq("B")
+      end
+    end
+
+    describe "chained operations" do
+      it "handles chained arithmetic" do
+        # ((p1 + p2) * 2) - 1
+        result = Termisu::Terminfo::Tparm.process("%p1%p2%+%{2}%*%{1}%-%d", 3, 5)
+        result.should eq("15") # ((3+5)*2)-1 = 15
+      end
+
+      it "handles chained comparisons in conditionals" do
+        # If p1 > 0 AND p1 < 10 then "OK" else "NO"
+        format = "%?%p1%{0}%>%p1%{10}%<%A%tOK%eNO%;"
+        Termisu::Terminfo::Tparm.process(format, 5).should eq("OK")
+        Termisu::Terminfo::Tparm.process(format, 0).should eq("NO")
+        Termisu::Terminfo::Tparm.process(format, 15).should eq("NO")
+      end
+    end
+
+    describe "complex real-world patterns" do
+      it "processes single conditional capability" do
+        # Simple conditional: if p1 then output reverse
+        format = "%?%p1%t\e[7m%;"
+
+        Termisu::Terminfo::Tparm.process(format, 1).should eq("\e[7m")
+        Termisu::Terminfo::Tparm.process(format, 0).should eq("")
+      end
+
+      it "processes initc-like capability with RGB parameters" do
+        # initc: \e]4;%p1%d;rgb:%p2%{255}%*%{1000}%/%2.2X/%p3%{255}%*%{1000}%/%2.2X/%p4%{255}%*%{1000}%/%2.2X\e\\
+        # Simplified version: color index and three color components
+        format = "\e]4;%p1%d;%p2%d,%p3%d,%p4%d\e\\"
+        result = Termisu::Terminfo::Tparm.process(format, 16, 255, 128, 0)
+        result.should eq("\e]4;16;255,128,0\e\\")
+      end
+
+      it "processes ech (erase characters) capability" do
+        # ech: \e[%p1%dX
+        format = "\e[%p1%dX"
+        Termisu::Terminfo::Tparm.process(format, 5).should eq("\e[5X")
+      end
+
+      it "processes hpa (horizontal position absolute)" do
+        # hpa: \e[%i%p1%dG
+        format = "\e[%i%p1%dG"
+        Termisu::Terminfo::Tparm.process(format, 0).should eq("\e[1G")
+        Termisu::Terminfo::Tparm.process(format, 79).should eq("\e[80G")
+      end
+
+      it "processes vpa (vertical position absolute)" do
+        # vpa: \e[%i%p1%dd
+        format = "\e[%i%p1%dd"
+        Termisu::Terminfo::Tparm.process(format, 0).should eq("\e[1d")
+        Termisu::Terminfo::Tparm.process(format, 23).should eq("\e[24d")
+      end
     end
   end
 end
