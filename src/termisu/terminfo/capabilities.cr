@@ -95,6 +95,9 @@ module Termisu::Terminfo::Capabilities
     "ech",   # Erase N characters (parametrized)
     "il",    # Insert N lines (parametrized)
     "dl",    # Delete N lines (parametrized)
+    "dim",   # Begin dim/faint mode (SGR 2)
+    "sitm",  # Begin italic/cursive mode (SGR 3)
+    "invis", # Begin invisible/hidden mode (SGR 8)
   ]
 
   # Keyboard input capabilities required by Termisu.

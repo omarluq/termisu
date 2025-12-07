@@ -250,6 +250,21 @@ class Termisu::Terminfo
     get_cap("rev")
   end
 
+  # Returns escape sequence to enable dim/faint mode (dim).
+  def dim_seq : String
+    get_cap("dim")
+  end
+
+  # Returns escape sequence to enable italic/cursive mode (sitm).
+  def italic_seq : String
+    get_cap("sitm")
+  end
+
+  # Returns escape sequence to enable hidden/invisible mode (invis).
+  def hidden_seq : String
+    get_cap("invis")
+  end
+
   # --- Keypad Control Sequences ---
 
   # Returns escape sequence to enter keypad mode (smkx).

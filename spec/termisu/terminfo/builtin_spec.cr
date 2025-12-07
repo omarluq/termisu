@@ -6,18 +6,18 @@ describe Termisu::Terminfo::Builtin do
       it "returns XTERM_FUNCS for xterm" do
         funcs = Termisu::Terminfo::Builtin.funcs_for("xterm")
         funcs.should be_a(Array(String))
-        funcs.size.should eq(24) # All required funcs including parametrized caps
+        funcs.size.should eq(27) # All required funcs including parametrized caps and extended attributes
       end
 
       it "returns XTERM_FUNCS for xterm-256color" do
         funcs = Termisu::Terminfo::Builtin.funcs_for("xterm-256color")
-        funcs.size.should eq(24)        # All required funcs including parametrized caps
+        funcs.size.should eq(27)        # All required funcs including parametrized caps and extended attributes
         funcs[0].should eq("\e[?1049h") # smcup
       end
 
       it "returns XTERM_FUNCS for xterm-color" do
         funcs = Termisu::Terminfo::Builtin.funcs_for("xterm-color")
-        funcs.size.should eq(24) # All required funcs including parametrized caps
+        funcs.size.should eq(27) # All required funcs including parametrized caps and extended attributes
       end
     end
 
@@ -25,7 +25,7 @@ describe Termisu::Terminfo::Builtin do
       it "returns LINUX_FUNCS for linux" do
         funcs = Termisu::Terminfo::Builtin.funcs_for("linux")
         funcs.should be_a(Array(String))
-        funcs.size.should eq(24) # All required funcs including parametrized caps
+        funcs.size.should eq(27) # All required funcs including parametrized caps and extended attributes
       end
 
       it "has empty strings for enter/exit_ca on linux" do
@@ -61,6 +61,38 @@ describe Termisu::Terminfo::Builtin do
         funcs[5].should eq("\e[m")     # sgr0
         funcs[6].should eq("\e[4m")    # underline
         funcs[7].should eq("\e[1m")    # bold
+      end
+    end
+
+    context "extended attributes" do
+      it "contains dim escape sequence for xterm" do
+        funcs = Termisu::Terminfo::Builtin.funcs_for("xterm")
+        funcs[24].should eq("\e[2m") # dim (SGR 2)
+      end
+
+      it "contains italic escape sequence for xterm" do
+        funcs = Termisu::Terminfo::Builtin.funcs_for("xterm")
+        funcs[25].should eq("\e[3m") # sitm (SGR 3)
+      end
+
+      it "contains hidden escape sequence for xterm" do
+        funcs = Termisu::Terminfo::Builtin.funcs_for("xterm")
+        funcs[26].should eq("\e[8m") # invis (SGR 8)
+      end
+
+      it "contains dim escape sequence for linux" do
+        funcs = Termisu::Terminfo::Builtin.funcs_for("linux")
+        funcs[24].should eq("\e[2m") # dim (SGR 2)
+      end
+
+      it "contains italic escape sequence for linux" do
+        funcs = Termisu::Terminfo::Builtin.funcs_for("linux")
+        funcs[25].should eq("\e[3m") # sitm (SGR 3)
+      end
+
+      it "contains hidden escape sequence for linux" do
+        funcs = Termisu::Terminfo::Builtin.funcs_for("linux")
+        funcs[26].should eq("\e[8m") # invis (SGR 8)
       end
     end
   end

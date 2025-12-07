@@ -58,4 +58,13 @@ abstract class Termisu::Renderer
 
   # Enables blink text (writes escape sequence).
   abstract def enable_blink
+
+  # Enables dim/faint text (writes escape sequence).
+  abstract def enable_dim
+
+  # Enables italic/cursive text (writes escape sequence).
+  abstract def enable_cursive
+
+  # Enables hidden/invisible text (writes escape sequence).
+  abstract def enable_hidden
 end

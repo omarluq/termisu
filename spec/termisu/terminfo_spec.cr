@@ -628,4 +628,78 @@ describe Termisu::Terminfo do
       end
     end
   end
+
+  describe "extended attribute sequences" do
+    it "returns dim sequence (SGR 2)" do
+      original_term = ENV["TERM"]?
+
+      begin
+        ENV["TERM"] = "fake-unknown-terminal"
+        term = Termisu::Terminfo.new
+        term.dim_seq.should eq("\e[2m")
+      ensure
+        ENV["TERM"] = original_term if original_term
+      end
+    end
+
+    it "returns italic sequence (SGR 3)" do
+      original_term = ENV["TERM"]?
+
+      begin
+        ENV["TERM"] = "fake-unknown-terminal"
+        term = Termisu::Terminfo.new
+        term.italic_seq.should eq("\e[3m")
+      ensure
+        ENV["TERM"] = original_term if original_term
+      end
+    end
+
+    it "returns hidden sequence (SGR 8)" do
+      original_term = ENV["TERM"]?
+
+      begin
+        ENV["TERM"] = "fake-unknown-terminal"
+        term = Termisu::Terminfo.new
+        term.hidden_seq.should eq("\e[8m")
+      ensure
+        ENV["TERM"] = original_term if original_term
+      end
+    end
+
+    it "dim sequence contains escape character" do
+      original_term = ENV["TERM"]?
+
+      begin
+        ENV["TERM"] = "xterm"
+        term = Termisu::Terminfo.new
+        term.dim_seq.should contain("\e")
+      ensure
+        ENV["TERM"] = original_term if original_term
+      end
+    end
+
+    it "italic sequence contains escape character" do
+      original_term = ENV["TERM"]?
+
+      begin
+        ENV["TERM"] = "xterm"
+        term = Termisu::Terminfo.new
+        term.italic_seq.should contain("\e")
+      ensure
+        ENV["TERM"] = original_term if original_term
+      end
+    end
+
+    it "hidden sequence contains escape character" do
+      original_term = ENV["TERM"]?
+
+      begin
+        ENV["TERM"] = "xterm"
+        term = Termisu::Terminfo.new
+        term.hidden_seq.should contain("\e")
+      ensure
+        ENV["TERM"] = original_term if original_term
+      end
+    end
+  end
 end

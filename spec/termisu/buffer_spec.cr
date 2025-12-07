@@ -49,6 +49,12 @@ class MockBufferRenderer < Termisu::Renderer
 
   def enable_reverse; end
 
+  def enable_dim; end
+
+  def enable_cursive; end
+
+  def enable_hidden; end
+
   def write_show_cursor
     @show_cursor_count += 1
   end

@@ -24,6 +24,9 @@ module Termisu::Terminfo::Builtin
     "\e[%p1%dX",         # ech - erase N characters
     "\e[%p1%dL",         # il - insert N lines
     "\e[%p1%dM",         # dl - delete N lines
+    "\e[2m",             # dim - faint/dim mode (SGR 2)
+    "\e[3m",             # sitm - italic mode (SGR 3)
+    "\e[8m",             # invis - hidden/invisible mode (SGR 8)
   ]
 
   private LINUX_FUNCS = [
@@ -51,6 +54,9 @@ module Termisu::Terminfo::Builtin
     "\e[%p1%dX",         # ech - erase N characters
     "\e[%p1%dL",         # il - insert N lines
     "\e[%p1%dM",         # dl - delete N lines
+    "\e[2m",             # dim - faint/dim mode (SGR 2)
+    "\e[3m",             # sitm - italic mode (SGR 3)
+    "\e[8m",             # invis - hidden/invisible mode (SGR 8)
   ]
 
   private XTERM_KEYS = [

@@ -120,6 +120,24 @@ class CaptureTerminal < Termisu::Renderer
     write("\e[7m")
   end
 
+  def enable_dim
+    return if @cached_attr.dim?
+    @cached_attr |= Termisu::Attribute::Dim
+    write("\e[2m")
+  end
+
+  def enable_cursive
+    return if @cached_attr.cursive?
+    @cached_attr |= Termisu::Attribute::Cursive
+    write("\e[3m")
+  end
+
+  def enable_hidden
+    return if @cached_attr.hidden?
+    @cached_attr |= Termisu::Attribute::Hidden
+    write("\e[8m")
+  end
+
   def reset_render_state
     @cached_fg = nil
     @cached_bg = nil

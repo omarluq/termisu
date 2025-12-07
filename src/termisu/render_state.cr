@@ -112,19 +112,33 @@ struct Termisu::RenderState
   end
 
   private def apply_attribute_change(renderer : Renderer, new_attr : Attribute)
-    # If any attributes are being removed, we need to reset first
+    reset_if_removing_attrs(renderer, new_attr)
+    apply_new_attributes(renderer, new_attr)
+    @attr = new_attr
+  end
+
+  # Resets all attributes if any are being removed.
+  private def reset_if_removing_attrs(renderer : Renderer, new_attr : Attribute)
     if (@attr & ~new_attr) != Attribute::None
       renderer.reset_attributes
       @fg = nil # Reset clears colors too
       @bg = nil
     end
+  end
 
-    # Apply new attributes
-    renderer.enable_bold if new_attr.bold? && !@attr.bold?
-    renderer.enable_underline if new_attr.underline? && !@attr.underline?
-    renderer.enable_reverse if new_attr.reverse? && !@attr.reverse?
-    renderer.enable_blink if new_attr.blink? && !@attr.blink?
+  # Applies individual attributes that are newly enabled.
+  private def apply_new_attributes(renderer : Renderer, new_attr : Attribute)
+    renderer.enable_bold if needs_attr?(new_attr, Attribute::Bold)
+    renderer.enable_underline if needs_attr?(new_attr, Attribute::Underline)
+    renderer.enable_reverse if needs_attr?(new_attr, Attribute::Reverse)
+    renderer.enable_blink if needs_attr?(new_attr, Attribute::Blink)
+    renderer.enable_dim if needs_attr?(new_attr, Attribute::Dim)
+    renderer.enable_cursive if needs_attr?(new_attr, Attribute::Cursive)
+    renderer.enable_hidden if needs_attr?(new_attr, Attribute::Hidden)
+  end
 
-    @attr = new_attr
+  # Checks if an attribute needs to be enabled (present in new but not current).
+  private def needs_attr?(new_attr : Attribute, flag : Attribute) : Bool
+    new_attr.includes?(flag) && !@attr.includes?(flag)
   end
 end

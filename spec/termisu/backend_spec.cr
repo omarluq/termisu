@@ -45,6 +45,12 @@ class MockRenderer < Termisu::Renderer
   def enable_reverse; end
 
   def enable_blink; end
+
+  def enable_dim; end
+
+  def enable_cursive; end
+
+  def enable_hidden; end
 end
 
 describe Termisu::Renderer do

@@ -10,6 +10,9 @@ class MockRenderStateRenderer < Termisu::Renderer
   property underline_count : Int32 = 0
   property reverse_count : Int32 = 0
   property blink_count : Int32 = 0
+  property dim_count : Int32 = 0
+  property cursive_count : Int32 = 0
+  property hidden_count : Int32 = 0
 
   def write(data : String); end
 
@@ -45,6 +48,18 @@ class MockRenderStateRenderer < Termisu::Renderer
 
   def enable_reverse
     @reverse_count += 1
+  end
+
+  def enable_dim
+    @dim_count += 1
+  end
+
+  def enable_cursive
+    @cursive_count += 1
+  end
+
+  def enable_hidden
+    @hidden_count += 1
   end
 
   def write_show_cursor; end
@@ -317,6 +332,93 @@ describe Termisu::RenderState do
       state = Termisu::RenderState.new
 
       state.cursor_at?(10, 5).should be_false
+    end
+  end
+
+  describe "extended attribute handling" do
+    it "enables dim attribute when added" do
+      renderer = MockRenderStateRenderer.new
+      state = Termisu::RenderState.new
+
+      state.apply_style(renderer, Termisu::Color.white, Termisu::Color.default, Termisu::Attribute::Dim)
+
+      renderer.dim_count.should eq(1)
+    end
+
+    it "enables cursive attribute when added" do
+      renderer = MockRenderStateRenderer.new
+      state = Termisu::RenderState.new
+
+      state.apply_style(renderer, Termisu::Color.white, Termisu::Color.default, Termisu::Attribute::Cursive)
+
+      renderer.cursive_count.should eq(1)
+    end
+
+    it "enables hidden attribute when added" do
+      renderer = MockRenderStateRenderer.new
+      state = Termisu::RenderState.new
+
+      state.apply_style(renderer, Termisu::Color.white, Termisu::Color.default, Termisu::Attribute::Hidden)
+
+      renderer.hidden_count.should eq(1)
+    end
+
+    it "enables multiple extended attributes at once" do
+      renderer = MockRenderStateRenderer.new
+      state = Termisu::RenderState.new
+
+      state.apply_style(
+        renderer,
+        Termisu::Color.white,
+        Termisu::Color.default,
+        Termisu::Attribute::Dim | Termisu::Attribute::Cursive | Termisu::Attribute::Hidden
+      )
+
+      renderer.dim_count.should eq(1)
+      renderer.cursive_count.should eq(1)
+      renderer.hidden_count.should eq(1)
+    end
+
+    it "combines basic and extended attributes" do
+      renderer = MockRenderStateRenderer.new
+      state = Termisu::RenderState.new
+
+      state.apply_style(
+        renderer,
+        Termisu::Color.white,
+        Termisu::Color.default,
+        Termisu::Attribute::Bold | Termisu::Attribute::Dim | Termisu::Attribute::Cursive
+      )
+
+      renderer.bold_count.should eq(1)
+      renderer.dim_count.should eq(1)
+      renderer.cursive_count.should eq(1)
+    end
+
+    it "does not re-enable already set extended attributes" do
+      renderer = MockRenderStateRenderer.new
+      state = Termisu::RenderState.new
+
+      state.apply_style(renderer, Termisu::Color.white, Termisu::Color.default, Termisu::Attribute::Dim)
+      initial_dim_count = renderer.dim_count
+
+      # Apply same attribute again
+      state.apply_style(renderer, Termisu::Color.white, Termisu::Color.default, Termisu::Attribute::Dim)
+
+      renderer.dim_count.should eq(initial_dim_count)
+    end
+
+    it "resets when removing extended attributes" do
+      renderer = MockRenderStateRenderer.new
+      state = Termisu::RenderState.new
+
+      # Set dim
+      state.apply_style(renderer, Termisu::Color.white, Termisu::Color.default, Termisu::Attribute::Dim)
+      renderer.reset_count.should eq(0)
+
+      # Remove dim - should reset
+      state.apply_style(renderer, Termisu::Color.white, Termisu::Color.default, Termisu::Attribute::None)
+      renderer.reset_count.should eq(1)
     end
   end
 end

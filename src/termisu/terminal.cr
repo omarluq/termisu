@@ -247,6 +247,33 @@ class Termisu::Terminal < Termisu::Renderer
     write(@terminfo.reverse_seq)
   end
 
+  # Enables dim/faint text.
+  #
+  # Caches attribute state to avoid redundant escape sequences.
+  def enable_dim
+    return if @cached_attr.dim?
+    @cached_attr |= Attribute::Dim
+    write(@terminfo.dim_seq)
+  end
+
+  # Enables italic/cursive text.
+  #
+  # Caches attribute state to avoid redundant escape sequences.
+  def enable_cursive
+    return if @cached_attr.cursive?
+    @cached_attr |= Attribute::Cursive
+    write(@terminfo.italic_seq)
+  end
+
+  # Enables hidden/invisible text.
+  #
+  # Caches attribute state to avoid redundant escape sequences.
+  def enable_hidden
+    return if @cached_attr.hidden?
+    @cached_attr |= Attribute::Hidden
+    write(@terminfo.hidden_seq)
+  end
+
   # Delegates write to backend.
   def write(data : String)
     @backend.write(data)
