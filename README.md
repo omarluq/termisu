@@ -33,8 +33,8 @@ termisu = Termisu.new
 
 begin
   # Set individual cells with colors and attributes
-  termisu.set_cell(0, 0, 'H', fg: Termisu::Color::Red, attr: Termisu::Attribute::Bold)
-  termisu.set_cell(1, 0, 'i', fg: Termisu::Color::Green)
+  termisu.set_cell(0, 0, 'H', fg: Termisu::Color.red, attr: Termisu::Attribute::Bold)
+  termisu.set_cell(1, 0, 'i', fg: Termisu::Color.green)
 
   # Position and show cursor
   termisu.set_cursor(3, 0)
@@ -68,12 +68,12 @@ See `examples/demo.cr` for a complete demonstration.
 - Cursor control (position, visibility)
 - Input reading (bytes, with timeout)
 - Modular color architecture
+- Performance optimizations (RenderState batching, cursor tracking)
 
 ### In Progress
 
 - Mouse input handling
 - Event system (keyboard, mouse, resize)
-- Performance optimizations (attribute batching)
 
 ### Planned
 
