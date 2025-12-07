@@ -166,7 +166,7 @@ begin
     termisu.set_cell(col, y, char, fg: Termisu::Color.white, bg: bg)
   end
 
-  # Position cursor and flush
+  # Position cursor and render
   termisu.set_cursor(0, y + 2)
-  termisu.flush
+  termisu.render
 end

@@ -31,118 +31,118 @@ describe Termisu::Terminfo do
         term = Termisu::Terminfo.new
         term.should be_a(Termisu::Terminfo)
         # Should have fallback values
-        term.clear_screen.should be_a(String)
+        term.clear_screen_seq.should be_a(String)
       ensure
         ENV["TERM"] = original_term if original_term
       end
     end
   end
 
-  describe "function accessors" do
-    it "provides enter_ca accessor" do
+  describe "sequence accessors" do
+    it "provides enter_ca_seq accessor" do
       begin
         term = Termisu::Terminfo.new
-        term.enter_ca.should be_a(String)
+        term.enter_ca_seq.should be_a(String)
       rescue
         pending "Terminfo not available"
       end
     end
 
-    it "provides exit_ca accessor" do
+    it "provides exit_ca_seq accessor" do
       begin
         term = Termisu::Terminfo.new
-        term.exit_ca.should be_a(String)
+        term.exit_ca_seq.should be_a(String)
       rescue
         pending "Terminfo not available"
       end
     end
 
-    it "provides show_cursor accessor" do
+    it "provides show_cursor_seq accessor" do
       begin
         term = Termisu::Terminfo.new
-        term.show_cursor.should be_a(String)
+        term.show_cursor_seq.should be_a(String)
       rescue
         pending "Terminfo not available"
       end
     end
 
-    it "provides hide_cursor accessor" do
+    it "provides hide_cursor_seq accessor" do
       begin
         term = Termisu::Terminfo.new
-        term.hide_cursor.should be_a(String)
+        term.hide_cursor_seq.should be_a(String)
       rescue
         pending "Terminfo not available"
       end
     end
 
-    it "provides clear_screen accessor" do
+    it "provides clear_screen_seq accessor" do
       begin
         term = Termisu::Terminfo.new
-        term.clear_screen.should be_a(String)
-        term.clear_screen.should_not be_empty
+        term.clear_screen_seq.should be_a(String)
+        term.clear_screen_seq.should_not be_empty
       rescue
         pending "Terminfo not available"
       end
     end
 
-    it "provides sgr0 accessor" do
+    it "provides reset_attrs_seq accessor" do
       begin
         term = Termisu::Terminfo.new
-        term.sgr0.should be_a(String)
+        term.reset_attrs_seq.should be_a(String)
       rescue
         pending "Terminfo not available"
       end
     end
 
-    it "provides underline accessor" do
+    it "provides underline_seq accessor" do
       begin
         term = Termisu::Terminfo.new
-        term.underline.should be_a(String)
+        term.underline_seq.should be_a(String)
       rescue
         pending "Terminfo not available"
       end
     end
 
-    it "provides bold accessor" do
+    it "provides bold_seq accessor" do
       begin
         term = Termisu::Terminfo.new
-        term.bold.should be_a(String)
+        term.bold_seq.should be_a(String)
       rescue
         pending "Terminfo not available"
       end
     end
 
-    it "provides blink accessor" do
+    it "provides blink_seq accessor" do
       begin
         term = Termisu::Terminfo.new
-        term.blink.should be_a(String)
+        term.blink_seq.should be_a(String)
       rescue
         pending "Terminfo not available"
       end
     end
 
-    it "provides reverse accessor" do
+    it "provides reverse_seq accessor" do
       begin
         term = Termisu::Terminfo.new
-        term.reverse.should be_a(String)
+        term.reverse_seq.should be_a(String)
       rescue
         pending "Terminfo not available"
       end
     end
 
-    it "provides enter_keypad accessor" do
+    it "provides enter_keypad_seq accessor" do
       begin
         term = Termisu::Terminfo.new
-        term.enter_keypad.should be_a(String)
+        term.enter_keypad_seq.should be_a(String)
       rescue
         pending "Terminfo not available"
       end
     end
 
-    it "provides exit_keypad accessor" do
+    it "provides exit_keypad_seq accessor" do
       begin
         term = Termisu::Terminfo.new
-        term.exit_keypad.should be_a(String)
+        term.exit_keypad_seq.should be_a(String)
       rescue
         pending "Terminfo not available"
       end
@@ -158,9 +158,9 @@ describe Termisu::Terminfo do
         term = Termisu::Terminfo.new
 
         # Should get xterm fallback values
-        term.clear_screen.should eq("\e[H\e[2J")
-        term.bold.should eq("\e[1m")
-        term.underline.should eq("\e[4m")
+        term.clear_screen_seq.should eq("\e[H\e[2J")
+        term.bold_seq.should eq("\e[1m")
+        term.underline_seq.should eq("\e[4m")
       ensure
         ENV["TERM"] = original_term if original_term
       end
@@ -174,8 +174,8 @@ describe Termisu::Terminfo do
         term = Termisu::Terminfo.new
 
         # Should get linux fallback values
-        term.clear_screen.should eq("\e[H\e[J")
-        term.sgr0.should eq("\e[m")
+        term.clear_screen_seq.should eq("\e[H\e[J")
+        term.reset_attrs_seq.should eq("\e[m")
       ensure
         ENV["TERM"] = original_term if original_term
       end
@@ -188,18 +188,18 @@ describe Termisu::Terminfo do
         term = Termisu::Terminfo.new
         # Verify all 12 accessors work
         [
-          term.enter_ca,
-          term.exit_ca,
-          term.show_cursor,
-          term.hide_cursor,
-          term.clear_screen,
-          term.sgr0,
-          term.underline,
-          term.bold,
-          term.blink,
-          term.reverse,
-          term.enter_keypad,
-          term.exit_keypad,
+          term.enter_ca_seq,
+          term.exit_ca_seq,
+          term.show_cursor_seq,
+          term.hide_cursor_seq,
+          term.clear_screen_seq,
+          term.reset_attrs_seq,
+          term.underline_seq,
+          term.bold_seq,
+          term.blink_seq,
+          term.reverse_seq,
+          term.enter_keypad_seq,
+          term.exit_keypad_seq,
         ].size.should eq(12)
       rescue
         pending "Terminfo not available"
@@ -213,7 +213,7 @@ describe Termisu::Terminfo do
         term = Termisu::Terminfo.new
 
         # Clear screen should have escape sequence
-        term.clear_screen.should contain("\e")
+        term.clear_screen_seq.should contain("\e")
       rescue
         pending "Terminfo not available"
       end
@@ -222,7 +222,7 @@ describe Termisu::Terminfo do
     it "bold capability contains escape sequence" do
       begin
         term = Termisu::Terminfo.new
-        term.bold.should contain("\e")
+        term.bold_seq.should contain("\e")
       rescue
         pending "Terminfo not available"
       end
@@ -244,7 +244,7 @@ describe Termisu::Terminfo do
       begin
         term = Termisu::Terminfo.new
         # Parser should have extracted capabilities
-        term.clear_screen.should be_a(String)
+        term.clear_screen_seq.should be_a(String)
       rescue
         pending "Terminfo not available"
       end
@@ -257,7 +257,7 @@ describe Termisu::Terminfo do
         ENV["TERM"] = "fake-terminal"
         term = Termisu::Terminfo.new
         # Builtin fallback should provide capabilities
-        term.clear_screen.should_not be_empty
+        term.clear_screen_seq.should_not be_empty
       ensure
         ENV["TERM"] = original_term if original_term
       end
@@ -282,7 +282,7 @@ describe Termisu::Terminfo do
         ENV["TERM"] = "nonexistent-term"
         term = Termisu::Terminfo.new
         # Should fall back to builtin without crashing
-        term.clear_screen.should be_a(String)
+        term.clear_screen_seq.should be_a(String)
       ensure
         ENV["TERM"] = original_term if original_term
       end
@@ -309,7 +309,7 @@ describe Termisu::Terminfo do
       begin
         ENV["TERM"] = "xterm"
         term = Termisu::Terminfo.new
-        term.clear_screen.should_not be_empty
+        term.clear_screen_seq.should_not be_empty
       ensure
         ENV["TERM"] = original_term if original_term
       end
@@ -321,7 +321,7 @@ describe Termisu::Terminfo do
       begin
         ENV["TERM"] = "linux"
         term = Termisu::Terminfo.new
-        term.clear_screen.should_not be_empty
+        term.clear_screen_seq.should_not be_empty
       ensure
         ENV["TERM"] = original_term if original_term
       end

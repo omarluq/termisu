@@ -10,10 +10,10 @@ describe Termisu::Cursor do
     end
   end
 
-  describe "#move" do
-    it "moves cursor to specified position" do
+  describe "#set_position" do
+    it "sets cursor to specified position and shows it" do
       cursor = Termisu::Cursor.new
-      cursor.move(10, 5)
+      cursor.set_position(10, 5)
       cursor.x.should eq(10)
       cursor.y.should eq(5)
       cursor.visible?.should be_true
@@ -23,7 +23,7 @@ describe Termisu::Cursor do
   describe "#hide" do
     it "hides the cursor" do
       cursor = Termisu::Cursor.new
-      cursor.move(10, 5)
+      cursor.set_position(10, 5)
       cursor.hide
       cursor.hidden?.should be_true
       cursor.x.should eq(-1)
@@ -42,7 +42,7 @@ describe Termisu::Cursor do
 
     it "keeps current position if already positioned" do
       cursor = Termisu::Cursor.new
-      cursor.move(5, 3)
+      cursor.set_position(5, 3)
       cursor.hide
       cursor.show
       cursor.visible?.should be_true
@@ -56,7 +56,7 @@ describe Termisu::Cursor do
       cursor = Termisu::Cursor.new
       cursor.hidden?.should be_true
 
-      cursor.move(5, 5)
+      cursor.set_position(5, 5)
       cursor.hidden?.should be_false
 
       cursor.hide
@@ -69,7 +69,7 @@ describe Termisu::Cursor do
       cursor = Termisu::Cursor.new
       cursor.visible?.should be_false
 
-      cursor.move(5, 5)
+      cursor.set_position(5, 5)
       cursor.visible?.should be_true
     end
   end
@@ -77,7 +77,7 @@ describe Termisu::Cursor do
   describe "#clamp" do
     it "clamps visible cursor position to bounds" do
       cursor = Termisu::Cursor.new
-      cursor.move(10, 8)
+      cursor.set_position(10, 8)
       cursor.clamp(5, 5)
 
       cursor.x.should eq(4)
@@ -87,7 +87,7 @@ describe Termisu::Cursor do
 
     it "does not change cursor within bounds" do
       cursor = Termisu::Cursor.new
-      cursor.move(3, 2)
+      cursor.set_position(3, 2)
       cursor.clamp(10, 10)
 
       cursor.x.should eq(3)
@@ -96,7 +96,7 @@ describe Termisu::Cursor do
 
     it "clamps negative cursor values to 0" do
       cursor = Termisu::Cursor.new
-      cursor.move(5, 5)
+      cursor.set_position(5, 5)
       # Manually set to test edge case
       cursor.x = -5
       cursor.y = -3
@@ -108,7 +108,7 @@ describe Termisu::Cursor do
 
     it "keeps hidden cursor hidden but clamps last position" do
       cursor = Termisu::Cursor.new
-      cursor.move(10, 8)
+      cursor.set_position(10, 8)
       cursor.hide
       cursor.clamp(5, 5)
 
@@ -124,7 +124,7 @@ describe Termisu::Cursor do
 
     it "handles zero or negative bounds gracefully" do
       cursor = Termisu::Cursor.new
-      cursor.move(5, 5)
+      cursor.set_position(5, 5)
       cursor.clamp(0, 0)
 
       # Should not modify cursor when bounds are invalid
@@ -134,7 +134,7 @@ describe Termisu::Cursor do
 
     it "clamps only x when only x is out of bounds" do
       cursor = Termisu::Cursor.new
-      cursor.move(10, 3)
+      cursor.set_position(10, 3)
       cursor.clamp(5, 10)
 
       cursor.x.should eq(4)
@@ -143,7 +143,7 @@ describe Termisu::Cursor do
 
     it "clamps only y when only y is out of bounds" do
       cursor = Termisu::Cursor.new
-      cursor.move(3, 10)
+      cursor.set_position(3, 10)
       cursor.clamp(10, 5)
 
       cursor.x.should eq(3)

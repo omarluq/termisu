@@ -1,14 +1,18 @@
-# Cursor manages cursor position and visibility.
+# Cursor manages cursor position and visibility state.
 #
-# The cursor can be positioned at any cell or hidden.
-# Following termbox-go's model, hidden cursor is represented by (-1, -1).
+# The cursor tracks both position (x, y) and visibility.
+# Hidden cursor is represented by (-1, -1) coordinates.
 #
 # Example:
 # ```
 # cursor = Termisu::Cursor.new
-# cursor.move(10, 5)
-# cursor.show
-# cursor.hidden? # => false
+# cursor.set_position(10, 5)
+# cursor.visible? # => true (set_position shows cursor)
+#
+# cursor.hide
+# cursor.hidden? # => true
+#
+# cursor.show # restores to last position
 # ```
 class Termisu::Cursor
   HIDDEN = -1
@@ -27,21 +31,24 @@ class Termisu::Cursor
     @last_y = nil
   end
 
-  # Moves cursor to specified position and shows it.
-  def move(x : Int32, y : Int32)
+  # Sets cursor position and makes it visible.
+  #
+  # Note: This method has a side effect of showing the cursor.
+  # Use hide() after if you want to position without showing.
+  def set_position(x : Int32, y : Int32)
     @x = x
     @y = y
     @last_x = x
     @last_y = y
   end
 
-  # Hides the cursor.
+  # Hides the cursor (sets position to HIDDEN).
   def hide
     @x = HIDDEN
     @y = HIDDEN
   end
 
-  # Shows the cursor at last position (or 0,0 if never positioned).
+  # Shows the cursor at last known position (or 0,0 if never positioned).
   def show
     return unless hidden?
 
@@ -70,10 +77,6 @@ class Termisu::Cursor
   #
   # If cursor is hidden, it remains hidden but last_x/last_y are clamped.
   # If cursor is visible and outside bounds, it's clamped to max valid position.
-  #
-  # Parameters:
-  # - max_x: Maximum valid x position (exclusive, typically buffer width)
-  # - max_y: Maximum valid y position (exclusive, typically buffer height)
   def clamp(max_x : Int32, max_y : Int32)
     return if max_x <= 0 || max_y <= 0
 

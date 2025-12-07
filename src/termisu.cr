@@ -1,7 +1,7 @@
 # Main Termisu class - Terminal User Interface library.
 #
 # Provides a clean, minimal API for terminal manipulation by delegating
-# all logic to specialized components: Terminal, Backend, Reader, and Cell::Buffer.
+# all logic to specialized components: Terminal and Reader.
 #
 # Example:
 # ```
@@ -12,8 +12,8 @@
 # termisu.set_cell(11, 5, 'i', fg: Color.green)
 # termisu.set_cell(12, 5, '!', fg: Color.blue)
 #
-# # Flush applies changes (diff-based rendering)
-# termisu.flush
+# # Render applies changes (diff-based rendering)
+# termisu.render
 #
 # termisu.close
 # ```
@@ -22,43 +22,33 @@ class Termisu
 
   # Initializes Termisu with all required components.
   #
-  # Sets up terminal I/O, rendering backend, input reader, and cell buffer.
+  # Sets up terminal I/O, rendering, and input reader.
   # Automatically enables raw mode and enters alternate screen.
   def initialize
     @terminal = Terminal.new
-    @terminfo = Terminfo.new
-    @backend = Terminal::Backend.new(@terminal, @terminfo)
     @reader = Reader.new(@terminal.infd)
 
-    # Initialize cell buffer with current terminal size
-    width, height = size
-    @buffer = Buffer.new(width, height)
-
     @terminal.enable_raw_mode
-    @backend.enter_alternate_screen
+    @terminal.enter_alternate_screen
   end
 
   # Closes Termisu and cleans up all resources.
   #
   # Exits alternate screen, disables raw mode, and closes all components.
   def close
-    @backend.exit_alternate_screen
+    @terminal.exit_alternate_screen
     @terminal.disable_raw_mode
     @reader.close
-    @backend.close
+    @terminal.close
   end
 
   # --- Terminal Operations ---
 
-  delegate size, # Returns terminal size as {width, height}
-    to: @terminal
+  # Returns the underlying terminal for direct access.
+  getter terminal : Terminal
 
-  # --- Cursor Control ---
-
-  delegate set_cursor, # Sets cursor position (x, y) and shows it
-    hide_cursor,       # Hides the cursor
-    show_cursor,       # Shows the cursor
-    to: @buffer
+  # Returns terminal size as {width, height}.
+  delegate size, to: @terminal
 
   # --- Cell Buffer Operations ---
 
@@ -77,40 +67,34 @@ class Termisu
   # Example:
   # ```
   # termisu.set_cell(10, 5, 'A', fg: Color.red, attr: Attribute::Bold)
-  # termisu.flush # Apply changes
+  # termisu.render # Apply changes
   # ```
-  def set_cell(
-    x : Int32,
-    y : Int32,
-    ch : Char,
-    fg : Color = Color.white,
-    bg : Color = Color.default,
-    attr : Attribute = Attribute::None,
-  ) : Bool
-    @buffer.set_cell(x, y, ch, fg, bg, attr)
-  end
+  delegate set_cell, to: @terminal
 
   # Clears the cell buffer (fills with spaces).
   #
-  # Note: This clears the buffer, not the screen. Call flush() to apply.
+  # Note: This clears the buffer, not the screen. Call render() to apply.
   def clear
-    @buffer.clear
+    @terminal.clear_cells
   end
 
-  # Flushes cell buffer changes to the screen.
+  # Renders cell buffer changes to the screen.
   #
-  # Only cells that have changed since the last flush are redrawn (diff-based rendering).
+  # Only cells that have changed since the last render are redrawn (diff-based).
   # This is more efficient than clear_screen + write for partial updates.
-  def flush
-    @buffer.flush(@backend)
-  end
+  delegate render, to: @terminal
 
   # Forces a full redraw of all cells.
   #
   # Useful after terminal resize or screen corruption.
-  def sync
-    @buffer.sync(@backend)
-  end
+  delegate sync, to: @terminal
+
+  # --- Cursor Control ---
+
+  # Sets cursor position and makes it visible.
+  # Hides the cursor (rendered on next render()).
+  # Shows the cursor (rendered on next render()).
+  delegate set_cursor, hide_cursor, show_cursor, to: @terminal
 
   # --- Input Operations ---
 

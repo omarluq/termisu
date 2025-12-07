@@ -11,8 +11,8 @@ begin
   # Position and show cursor
   termisu.set_cursor(3, 0)
 
-  # Flush renders only changed cells (diff-based)
-  termisu.flush
+  # Render only changed cells (diff-based)
+  termisu.render
 
   # Wait for input
   if termisu.wait_for_input(5000)
@@ -22,7 +22,7 @@ begin
       msg.each_char_with_index do |char, idx|
         termisu.set_cell(idx, 2, char, Termisu::Color.white, attr: attr)
         termisu.set_cursor(idx + 1, 2)
-        termisu.flush
+        termisu.render
         sleep 0.01.seconds
       end
     end

@@ -1,7 +1,7 @@
 require "../spec_helper"
 
-# Mock backend for testing abstract interface
-class MockBackend < Termisu::Backend
+# Mock renderer for testing abstract interface
+class MockRenderer < Termisu::Renderer
   property write_calls : Array(String) = [] of String
   property flush_called : Int32 = 0
   property close_called : Int32 = 0
@@ -22,102 +22,143 @@ class MockBackend < Termisu::Backend
   def close
     @close_called += 1
   end
+
+  # Cursor control
+  def move_cursor(x : Int32, y : Int32); end
+
+  def write_show_cursor; end
+
+  def write_hide_cursor; end
+
+  # Color control
+  def foreground=(color : Termisu::Color); end
+
+  def background=(color : Termisu::Color); end
+
+  # Text attributes
+  def reset_attributes; end
+
+  def enable_bold; end
+
+  def enable_underline; end
+
+  def enable_reverse; end
+
+  def enable_blink; end
 end
 
-describe Termisu::Backend do
+describe Termisu::Renderer do
   describe "abstract interface" do
     it "can be subclassed" do
-      backend = MockBackend.new
-      backend.should be_a(Termisu::Backend)
+      renderer = MockRenderer.new
+      renderer.should be_a(Termisu::Renderer)
     end
 
     it "requires write implementation" do
-      backend = MockBackend.new
-      backend.write("mock")
-      backend.write_calls.should eq(["mock"])
+      renderer = MockRenderer.new
+      renderer.write("mock")
+      renderer.write_calls.should eq(["mock"])
     end
 
     it "requires flush implementation" do
-      backend = MockBackend.new
-      backend.flush
-      backend.flush_called.should eq(1)
+      renderer = MockRenderer.new
+      renderer.flush
+      renderer.flush_called.should eq(1)
     end
 
     it "requires size implementation" do
-      backend = MockBackend.new
-      backend.size.should eq({80, 24})
+      renderer = MockRenderer.new
+      renderer.size.should eq({80, 24})
     end
 
     it "requires close implementation" do
-      backend = MockBackend.new
-      backend.close
-      backend.close_called.should eq(1)
+      renderer = MockRenderer.new
+      renderer.close
+      renderer.close_called.should eq(1)
     end
   end
 end
 
 describe Termisu::Terminal::Backend do
   describe ".new" do
-    it "creates a terminal backend" do
+    it "creates a terminal renderer" do
       begin
-        terminal = Termisu::Terminal.new
-        terminfo = Termisu::Terminfo.new
-        backend = Termisu::Terminal::Backend.new(terminal, terminfo)
-        backend.should be_a(Termisu::Terminal::Backend)
-        backend.should be_a(Termisu::Backend)
-        backend.close
-      rescue IO::Error | Termisu::Error
-        # Expected in CI without /dev/tty or TERM
+        renderer = Termisu::Terminal::Backend.new
+        renderer.should be_a(Termisu::Terminal::Backend)
+        renderer.close
+      rescue IO::Error
+        # Expected in CI without /dev/tty
+        true.should be_true
+      end
+    end
+
+    it "exposes input and output file descriptors" do
+      begin
+        renderer = Termisu::Terminal::Backend.new
+        renderer.infd.should be_a(Int32)
+        renderer.outfd.should be_a(Int32)
+        renderer.infd.should be >= 0
+        renderer.outfd.should be >= 0
+        renderer.close
+      rescue IO::Error
+        # Expected in CI without /dev/tty
+        true.should be_true
+      end
+    end
+  end
+
+  describe "#raw_mode?" do
+    it "returns false initially" do
+      begin
+        renderer = Termisu::Terminal::Backend.new
+        renderer.raw_mode?.should be_false
+        renderer.close
+      rescue IO::Error
+        # Expected in CI
+        true.should be_true
+      end
+    end
+  end
+
+  describe "#enable_raw_mode" do
+    it "enables raw mode" do
+      begin
+        renderer = Termisu::Terminal::Backend.new
+        renderer.enable_raw_mode
+        renderer.raw_mode?.should be_true
+        renderer.close
+      rescue IO::Error
+        # Expected in CI
         true.should be_true
       end
     end
   end
 
   describe "#size" do
-    it "delegates to terminal" do
+    it "returns terminal dimensions" do
       begin
-        terminal = Termisu::Terminal.new
-        terminfo = Termisu::Terminfo.new
-        backend = Termisu::Terminal::Backend.new(terminal, terminfo)
-        width, height = backend.size
+        renderer = Termisu::Terminal::Backend.new
+        width, height = renderer.size
         width.should be_a(Int32)
         height.should be_a(Int32)
-        backend.close
-      rescue IO::Error | Termisu::Error
+        width.should be > 0
+        height.should be > 0
+        renderer.close
+      rescue IO::Error
         # Expected in CI
         true.should be_true
       end
     end
   end
-
-  describe "#alternate_screen?" do
-    it "returns false initially" do
-      begin
-        terminal = Termisu::Terminal.new
-        terminfo = Termisu::Terminfo.new
-        backend = Termisu::Terminal::Backend.new(terminal, terminfo)
-        backend.alternate_screen?.should be_false
-        backend.close
-      rescue IO::Error | Termisu::Error
-        # Expected in CI
-        true.should be_true
-      end
-    end
-  end
-
-  # Note: Terminal manipulation methods (clear_screen, move_cursor, show_cursor,
-  # hide_cursor, enter_alternate_screen, exit_alternate_screen, color/attribute
-  # methods) are tested interactively in examples/demo.cr to avoid polluting
-  # spec output with escape sequences and screen manipulation.
 
   describe "#close" do
-    it "closes underlying terminal" do
+    it "disables raw mode and closes TTY" do
       begin
-        terminal = Termisu::Terminal.new
-        terminfo = Termisu::Terminfo.new
-        backend = Termisu::Terminal::Backend.new(terminal, terminfo)
-        backend.close
-      rescue IO::Error | Termisu::Error
+        renderer = Termisu::Terminal::Backend.new
+        renderer.enable_raw_mode
+        renderer.close
+        renderer.raw_mode?.should be_false
+      rescue IO::Error
         # Expected in CI
         true.should be_true
       end

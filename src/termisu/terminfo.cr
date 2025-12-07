@@ -14,9 +14,12 @@
 #
 # ```
 # terminfo = Termisu::Terminfo.new
-# puts terminfo.clear_screen # => "\e[H\e[2J"
-# puts terminfo.bold         # => "\e[1m"
+# puts terminfo.clear_screen_seq # => "\e[H\e[2J"
+# puts terminfo.bold_seq         # => "\e[1m"
 # ```
+#
+# Note: All capability methods return escape sequence STRINGS, not actions.
+# The `_seq` suffix indicates this clearly.
 class Termisu::Terminfo
   @caps : Hash(String, String)
 
@@ -28,11 +31,6 @@ class Termisu::Terminfo
   end
 
   # Loads capabilities from the terminfo database.
-  #
-  # Attempts to locate and parse the terminfo file for the given terminal,
-  # extracting all required function and key capabilities.
-  #
-  # Returns empty hash if database is unavailable or parsing fails.
   private def load_from_database(term_name : String) : Hash(String, String)
     data = Database.new(term_name).load
     required = Capabilities::REQUIRED_FUNCS + Capabilities::REQUIRED_KEYS
@@ -42,9 +40,6 @@ class Termisu::Terminfo
   end
 
   # Fills in missing capabilities with hardcoded fallback values.
-  #
-  # Uses built-in escape sequences for xterm and linux terminals to ensure
-  # basic functionality even when terminfo database is unavailable.
   private def fill_missing_with_builtins(term_name : String)
     fill_capability_group(Capabilities::REQUIRED_FUNCS, Builtin.funcs_for(term_name))
     fill_capability_group(Capabilities::REQUIRED_KEYS, Builtin.keys_for(term_name))
@@ -58,61 +53,75 @@ class Termisu::Terminfo
   end
 
   # Retrieves a capability value by name.
-  #
-  # Returns empty string if capability is not found.
   private def get_cap(name : String) : String
     @caps.fetch(name, "")
   end
 
-  # Terminal Control Capabilities
-  #
-  # The following methods provide access to terminal control sequences
-  # for screen management, cursor control, and text attributes.
-  def enter_ca : String
+  # --- Screen Control Sequences ---
+
+  # Returns escape sequence to enter alternate screen (smcup).
+  def enter_ca_seq : String
     get_cap("smcup")
   end
 
-  def exit_ca : String
+  # Returns escape sequence to exit alternate screen (rmcup).
+  def exit_ca_seq : String
     get_cap("rmcup")
   end
 
-  def show_cursor : String
-    get_cap("cnorm")
-  end
-
-  def hide_cursor : String
-    get_cap("civis")
-  end
-
-  def clear_screen : String
+  # Returns escape sequence to clear screen (clear).
+  def clear_screen_seq : String
     get_cap("clear")
   end
 
-  def sgr0 : String
+  # --- Cursor Control Sequences ---
+
+  # Returns escape sequence to show cursor (cnorm).
+  def show_cursor_seq : String
+    get_cap("cnorm")
+  end
+
+  # Returns escape sequence to hide cursor (civis).
+  def hide_cursor_seq : String
+    get_cap("civis")
+  end
+
+  # --- Text Attribute Sequences ---
+
+  # Returns escape sequence to reset all attributes (sgr0).
+  def reset_attrs_seq : String
     get_cap("sgr0")
   end
 
-  def underline : String
+  # Returns escape sequence to enable underline (smul).
+  def underline_seq : String
     get_cap("smul")
   end
 
-  def bold : String
+  # Returns escape sequence to enable bold (bold).
+  def bold_seq : String
     get_cap("bold")
   end
 
-  def blink : String
+  # Returns escape sequence to enable blink (blink).
+  def blink_seq : String
     get_cap("blink")
   end
 
-  def reverse : String
+  # Returns escape sequence to enable reverse video (rev).
+  def reverse_seq : String
     get_cap("rev")
   end
 
-  def enter_keypad : String
+  # --- Keypad Control Sequences ---
+
+  # Returns escape sequence to enter keypad mode (smkx).
+  def enter_keypad_seq : String
     get_cap("smkx")
   end
 
-  def exit_keypad : String
+  # Returns escape sequence to exit keypad mode (rmkx).
+  def exit_keypad_seq : String
     get_cap("rmkx")
   end
 end
