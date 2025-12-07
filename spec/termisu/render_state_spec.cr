@@ -1,78 +1,5 @@
 require "../spec_helper"
 
-# Mock renderer for testing RenderState
-class MockRenderStateRenderer < Termisu::Renderer
-  property fg_calls : Array(Termisu::Color) = [] of Termisu::Color
-  property bg_calls : Array(Termisu::Color) = [] of Termisu::Color
-  property move_calls : Array({Int32, Int32}) = [] of {Int32, Int32}
-  property reset_count : Int32 = 0
-  property bold_count : Int32 = 0
-  property underline_count : Int32 = 0
-  property reverse_count : Int32 = 0
-  property blink_count : Int32 = 0
-  property dim_count : Int32 = 0
-  property cursive_count : Int32 = 0
-  property hidden_count : Int32 = 0
-
-  def write(data : String); end
-
-  def move_cursor(x : Int32, y : Int32)
-    @move_calls << {x, y}
-  end
-
-  def foreground=(color : Termisu::Color)
-    @fg_calls << color
-  end
-
-  def background=(color : Termisu::Color)
-    @bg_calls << color
-  end
-
-  def flush; end
-
-  def reset_attributes
-    @reset_count += 1
-  end
-
-  def enable_bold
-    @bold_count += 1
-  end
-
-  def enable_underline
-    @underline_count += 1
-  end
-
-  def enable_blink
-    @blink_count += 1
-  end
-
-  def enable_reverse
-    @reverse_count += 1
-  end
-
-  def enable_dim
-    @dim_count += 1
-  end
-
-  def enable_cursive
-    @cursive_count += 1
-  end
-
-  def enable_hidden
-    @hidden_count += 1
-  end
-
-  def write_show_cursor; end
-
-  def write_hide_cursor; end
-
-  def size : {Int32, Int32}
-    {80, 24}
-  end
-
-  def close; end
-end
-
 describe Termisu::RenderState do
   describe ".new" do
     it "initializes with nil/unknown state" do
@@ -106,7 +33,7 @@ describe Termisu::RenderState do
 
   describe "#apply_style" do
     it "emits all sequences when state is unknown" do
-      renderer = MockRenderStateRenderer.new
+      renderer = MockRenderer.new
       state = Termisu::RenderState.new
 
       changed = state.apply_style(renderer, Termisu::Color.green, Termisu::Color.blue, Termisu::Attribute::None)
@@ -117,7 +44,7 @@ describe Termisu::RenderState do
     end
 
     it "skips emission when style unchanged" do
-      renderer = MockRenderStateRenderer.new
+      renderer = MockRenderer.new
       state = Termisu::RenderState.new
 
       # First call - should emit
@@ -135,7 +62,7 @@ describe Termisu::RenderState do
     end
 
     it "only emits foreground when only foreground changes" do
-      renderer = MockRenderStateRenderer.new
+      renderer = MockRenderer.new
       state = Termisu::RenderState.new
 
       state.apply_style(renderer, Termisu::Color.green, Termisu::Color.blue, Termisu::Attribute::None)
@@ -150,7 +77,7 @@ describe Termisu::RenderState do
     end
 
     it "only emits background when only background changes" do
-      renderer = MockRenderStateRenderer.new
+      renderer = MockRenderer.new
       state = Termisu::RenderState.new
 
       state.apply_style(renderer, Termisu::Color.green, Termisu::Color.blue, Termisu::Attribute::None)
@@ -165,7 +92,7 @@ describe Termisu::RenderState do
     end
 
     it "enables bold attribute when added" do
-      renderer = MockRenderStateRenderer.new
+      renderer = MockRenderer.new
       state = Termisu::RenderState.new
 
       state.apply_style(renderer, Termisu::Color.white, Termisu::Color.default, Termisu::Attribute::Bold)
@@ -174,7 +101,7 @@ describe Termisu::RenderState do
     end
 
     it "enables underline attribute when added" do
-      renderer = MockRenderStateRenderer.new
+      renderer = MockRenderer.new
       state = Termisu::RenderState.new
 
       state.apply_style(renderer, Termisu::Color.white, Termisu::Color.default, Termisu::Attribute::Underline)
@@ -183,7 +110,7 @@ describe Termisu::RenderState do
     end
 
     it "enables multiple attributes at once" do
-      renderer = MockRenderStateRenderer.new
+      renderer = MockRenderer.new
       state = Termisu::RenderState.new
 
       state.apply_style(
@@ -198,7 +125,7 @@ describe Termisu::RenderState do
     end
 
     it "resets attributes when removing any" do
-      renderer = MockRenderStateRenderer.new
+      renderer = MockRenderer.new
       state = Termisu::RenderState.new
 
       # Set bold
@@ -211,7 +138,7 @@ describe Termisu::RenderState do
     end
 
     it "resets then re-applies when changing attributes" do
-      renderer = MockRenderStateRenderer.new
+      renderer = MockRenderer.new
       state = Termisu::RenderState.new
 
       # Set bold
@@ -225,7 +152,7 @@ describe Termisu::RenderState do
     end
 
     it "clears color state on reset" do
-      renderer = MockRenderStateRenderer.new
+      renderer = MockRenderer.new
       state = Termisu::RenderState.new
 
       # Set colors and bold
@@ -244,7 +171,7 @@ describe Termisu::RenderState do
 
   describe "#move_cursor" do
     it "emits move when cursor position is unknown" do
-      renderer = MockRenderStateRenderer.new
+      renderer = MockRenderer.new
       state = Termisu::RenderState.new
 
       moved = state.move_cursor(renderer, 10, 5)
@@ -254,7 +181,7 @@ describe Termisu::RenderState do
     end
 
     it "skips move when cursor already at position" do
-      renderer = MockRenderStateRenderer.new
+      renderer = MockRenderer.new
       state = Termisu::RenderState.new
 
       state.move_cursor(renderer, 10, 5)
@@ -267,7 +194,7 @@ describe Termisu::RenderState do
     end
 
     it "emits move when cursor moves to new position" do
-      renderer = MockRenderStateRenderer.new
+      renderer = MockRenderer.new
       state = Termisu::RenderState.new
 
       state.move_cursor(renderer, 10, 5)
@@ -280,7 +207,7 @@ describe Termisu::RenderState do
     end
 
     it "updates internal state" do
-      renderer = MockRenderStateRenderer.new
+      renderer = MockRenderer.new
       state = Termisu::RenderState.new
 
       state.move_cursor(renderer, 10, 5)
@@ -337,7 +264,7 @@ describe Termisu::RenderState do
 
   describe "extended attribute handling" do
     it "enables dim attribute when added" do
-      renderer = MockRenderStateRenderer.new
+      renderer = MockRenderer.new
       state = Termisu::RenderState.new
 
       state.apply_style(renderer, Termisu::Color.white, Termisu::Color.default, Termisu::Attribute::Dim)
@@ -346,7 +273,7 @@ describe Termisu::RenderState do
     end
 
     it "enables cursive attribute when added" do
-      renderer = MockRenderStateRenderer.new
+      renderer = MockRenderer.new
       state = Termisu::RenderState.new
 
       state.apply_style(renderer, Termisu::Color.white, Termisu::Color.default, Termisu::Attribute::Cursive)
@@ -355,7 +282,7 @@ describe Termisu::RenderState do
     end
 
     it "enables hidden attribute when added" do
-      renderer = MockRenderStateRenderer.new
+      renderer = MockRenderer.new
       state = Termisu::RenderState.new
 
       state.apply_style(renderer, Termisu::Color.white, Termisu::Color.default, Termisu::Attribute::Hidden)
@@ -364,7 +291,7 @@ describe Termisu::RenderState do
     end
 
     it "enables multiple extended attributes at once" do
-      renderer = MockRenderStateRenderer.new
+      renderer = MockRenderer.new
       state = Termisu::RenderState.new
 
       state.apply_style(
@@ -380,7 +307,7 @@ describe Termisu::RenderState do
     end
 
     it "combines basic and extended attributes" do
-      renderer = MockRenderStateRenderer.new
+      renderer = MockRenderer.new
       state = Termisu::RenderState.new
 
       state.apply_style(
@@ -396,7 +323,7 @@ describe Termisu::RenderState do
     end
 
     it "does not re-enable already set extended attributes" do
-      renderer = MockRenderStateRenderer.new
+      renderer = MockRenderer.new
       state = Termisu::RenderState.new
 
       state.apply_style(renderer, Termisu::Color.white, Termisu::Color.default, Termisu::Attribute::Dim)
@@ -409,7 +336,7 @@ describe Termisu::RenderState do
     end
 
     it "resets when removing extended attributes" do
-      renderer = MockRenderStateRenderer.new
+      renderer = MockRenderer.new
       state = Termisu::RenderState.new
 
       # Set dim

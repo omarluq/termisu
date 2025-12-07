@@ -1,58 +1,5 @@
 require "../spec_helper"
 
-# Mock renderer for testing abstract interface
-class MockRenderer < Termisu::Renderer
-  property write_calls : Array(String) = [] of String
-  property flush_called : Int32 = 0
-  property close_called : Int32 = 0
-  property mock_size : {Int32, Int32} = {80, 24}
-
-  def write(data : String)
-    @write_calls << data
-  end
-
-  def flush
-    @flush_called += 1
-  end
-
-  def size : {Int32, Int32}
-    @mock_size
-  end
-
-  def close
-    @close_called += 1
-  end
-
-  # Cursor control
-  def move_cursor(x : Int32, y : Int32); end
-
-  def write_show_cursor; end
-
-  def write_hide_cursor; end
-
-  # Color control
-  def foreground=(color : Termisu::Color); end
-
-  def background=(color : Termisu::Color); end
-
-  # Text attributes
-  def reset_attributes; end
-
-  def enable_bold; end
-
-  def enable_underline; end
-
-  def enable_reverse; end
-
-  def enable_blink; end
-
-  def enable_dim; end
-
-  def enable_cursive; end
-
-  def enable_hidden; end
-end
-
 describe Termisu::Renderer do
   describe "abstract interface" do
     it "can be subclassed" do
@@ -69,7 +16,7 @@ describe Termisu::Renderer do
     it "requires flush implementation" do
       renderer = MockRenderer.new
       renderer.flush
-      renderer.flush_called.should eq(1)
+      renderer.flush_count.should eq(1)
     end
 
     it "requires size implementation" do
@@ -80,7 +27,7 @@ describe Termisu::Renderer do
     it "requires close implementation" do
       renderer = MockRenderer.new
       renderer.close
-      renderer.close_called.should eq(1)
+      renderer.close_count.should eq(1)
     end
   end
 end

@@ -1,82 +1,5 @@
 require "../spec_helper"
 
-# Mock renderer for testing buffer rendering
-class MockBufferRenderer < Termisu::Renderer
-  property write_calls : Array(String) = [] of String
-  property move_calls : Array({Int32, Int32}) = [] of {Int32, Int32}
-  property fg_calls : Array(Termisu::Color) = [] of Termisu::Color
-  property bg_calls : Array(Termisu::Color) = [] of Termisu::Color
-  property flush_count : Int32 = 0
-  property reset_count : Int32 = 0
-  property bold_count : Int32 = 0
-  property underline_count : Int32 = 0
-  property show_cursor_count : Int32 = 0
-  property hide_cursor_count : Int32 = 0
-
-  def write(data : String)
-    @write_calls << data
-  end
-
-  def move_cursor(x : Int32, y : Int32)
-    @move_calls << {x, y}
-  end
-
-  def foreground=(color : Termisu::Color)
-    @fg_calls << color
-  end
-
-  def background=(color : Termisu::Color)
-    @bg_calls << color
-  end
-
-  def flush
-    @flush_count += 1
-  end
-
-  def reset_attributes
-    @reset_count += 1
-  end
-
-  def enable_bold
-    @bold_count += 1
-  end
-
-  def enable_underline
-    @underline_count += 1
-  end
-
-  def enable_blink; end
-
-  def enable_reverse; end
-
-  def enable_dim; end
-
-  def enable_cursive; end
-
-  def enable_hidden; end
-
-  def write_show_cursor
-    @show_cursor_count += 1
-  end
-
-  def write_hide_cursor
-    @hide_cursor_count += 1
-  end
-
-  def size : {Int32, Int32}
-    {80, 24}
-  end
-
-  def close; end
-
-  def clear
-    @write_calls.clear
-    @move_calls.clear
-    @fg_calls.clear
-    @bg_calls.clear
-  end
-end
-
 describe Termisu::Buffer do
   describe ".new" do
     it "creates a buffer with specified dimensions" do
@@ -162,7 +85,7 @@ describe Termisu::Buffer do
 
   describe "#render_to (diff-based rendering)" do
     it "only renders changed cells" do
-      renderer = MockBufferRenderer.new
+      renderer = MockRenderer.new
       buffer = Termisu::Buffer.new(5, 3)
 
       # First render - set up initial state
@@ -182,7 +105,7 @@ describe Termisu::Buffer do
     end
 
     it "skips cursor movement when cursor is already at correct position" do
-      renderer = MockBufferRenderer.new
+      renderer = MockRenderer.new
       buffer = Termisu::Buffer.new(5, 3)
 
       # First render - set up initial state
@@ -202,7 +125,7 @@ describe Termisu::Buffer do
     end
 
     it "calls renderer.flush after rendering" do
-      renderer = MockBufferRenderer.new
+      renderer = MockRenderer.new
       buffer = Termisu::Buffer.new(5, 3)
 
       buffer.render_to(renderer)
@@ -210,7 +133,7 @@ describe Termisu::Buffer do
     end
 
     it "renders colors for changed cells" do
-      renderer = MockBufferRenderer.new
+      renderer = MockRenderer.new
       buffer = Termisu::Buffer.new(5, 3)
 
       buffer.set_cell(2, 1, 'X', fg: Termisu::Color.yellow, bg: Termisu::Color.magenta)
@@ -221,7 +144,7 @@ describe Termisu::Buffer do
     end
 
     it "renders attributes for changed cells" do
-      renderer = MockBufferRenderer.new
+      renderer = MockRenderer.new
       buffer = Termisu::Buffer.new(5, 3)
 
       buffer.set_cell(2, 1, 'B', attr: Termisu::Attribute::Bold)
@@ -231,7 +154,7 @@ describe Termisu::Buffer do
     end
 
     it "batches consecutive cells with same styling" do
-      renderer = MockBufferRenderer.new
+      renderer = MockRenderer.new
       buffer = Termisu::Buffer.new(10, 3)
 
       # Set 3 consecutive cells with same styling
@@ -257,7 +180,7 @@ describe Termisu::Buffer do
     end
 
     it "splits batches when styling changes" do
-      renderer = MockBufferRenderer.new
+      renderer = MockRenderer.new
       buffer = Termisu::Buffer.new(10, 3)
 
       # Set cells with different colors
@@ -274,7 +197,7 @@ describe Termisu::Buffer do
 
   describe "#sync_to (full redraw)" do
     it "renders all cells regardless of changes" do
-      renderer = MockBufferRenderer.new
+      renderer = MockRenderer.new
       buffer = Termisu::Buffer.new(3, 2)
 
       # Set one cell
@@ -297,7 +220,7 @@ describe Termisu::Buffer do
     end
 
     it "batches cells with same styling on sync" do
-      renderer = MockBufferRenderer.new
+      renderer = MockRenderer.new
       buffer = Termisu::Buffer.new(5, 1)
 
       # All default cells - should batch into single write
@@ -449,7 +372,7 @@ describe Termisu::Buffer do
 
   describe "cursor rendering" do
     it "renders visible cursor" do
-      renderer = MockBufferRenderer.new
+      renderer = MockRenderer.new
       buffer = Termisu::Buffer.new(5, 3)
       buffer.set_cursor(2, 1)
 
@@ -460,7 +383,7 @@ describe Termisu::Buffer do
     end
 
     it "renders hidden cursor" do
-      renderer = MockBufferRenderer.new
+      renderer = MockRenderer.new
       buffer = Termisu::Buffer.new(5, 3)
       buffer.hide_cursor
 
