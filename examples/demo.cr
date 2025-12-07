@@ -100,8 +100,8 @@ begin
     termisu.set_cell(idx, 14, char, fg: Termisu::Color::Yellow, attr: Termisu::Attribute::Bold)
   end
 
-  # Initial flush - renders all cells
-  termisu.flush
+  # Initial render - renders all cells
+  termisu.render
 
   # Wait for input
   if termisu.wait_for_input(5000)
@@ -110,14 +110,14 @@ begin
       response.each_char_with_index do |char, idx|
         termisu.set_cell(idx, 15, char, fg: Termisu::Color::Green)
       end
-      termisu.flush # Only the new cells are rendered (diff-based)
+      termisu.render # Only the changed cells are rendered (diff-based)
     end
   else
     timeout_msg = "Timeout! No input received."
     timeout_msg.each_char_with_index do |char, idx|
       termisu.set_cell(idx, 15, char, fg: Termisu::Color::Red)
     end
-    termisu.flush
+    termisu.render
   end
 
   # Animated goodbye with cursor following the text
@@ -125,30 +125,30 @@ begin
 
   # Show cursor before animation
   termisu.set_cursor(0, 17)
-  termisu.flush
+  termisu.render
   sleep 0.3.seconds
 
   # Animate text with cursor following
   goodbye.each_char_with_index do |char, idx|
     termisu.set_cell(idx, 17, char, fg: Termisu::Color::Blue, attr: Termisu::Attribute::Bold)
     termisu.set_cursor(idx + 1, 17) # Position cursor after current character
-    termisu.flush                   # Each character triggers a flush (shows animation)
+    termisu.render                  # Each character triggers a render (shows animation)
     sleep 0.05.seconds
   end
 
   # Blink cursor a few times at the end
   3.times do
     termisu.hide_cursor
-    termisu.flush
+    termisu.render
     sleep 0.2.seconds
     termisu.set_cursor(goodbye.size, 17)
-    termisu.flush
+    termisu.render
     sleep 0.2.seconds
   end
 
   # Hide cursor before closing
   termisu.hide_cursor
-  termisu.flush
+  termisu.render
 
   sleep 1.seconds
 ensure

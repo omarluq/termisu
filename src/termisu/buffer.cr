@@ -17,7 +17,7 @@
 # buffer = Termisu::Buffer.new(80, 24)
 # buffer.set_cell(10, 5, 'A', fg: Color.green, bg: Color.black)
 # buffer.set_cursor(10, 5)
-# buffer.flush(backend) # Only changed cells and cursor are redrawn
+# buffer.render_to(renderer) # Only changed cells and cursor are redrawn
 # ```
 class Termisu::Buffer
   getter width : Int32
@@ -91,7 +91,7 @@ class Termisu::Buffer
   def set_cursor(x : Int32, y : Int32)
     clamped_x = x.clamp(0, @width - 1)
     clamped_y = y.clamp(0, @height - 1)
-    @cursor.move(clamped_x, clamped_y)
+    @cursor.set_position(clamped_x, clamped_y)
   end
 
   # Hides the cursor.
@@ -104,9 +104,9 @@ class Termisu::Buffer
     @cursor.show
   end
 
-  # Flushes changes to the backend by diffing front and back buffers.
+  # Renders changes to the renderer by diffing front and back buffers.
   #
-  # Only cells that have changed are redrawn. After flushing,
+  # Only cells that have changed are redrawn. After rendering,
   # the back buffer becomes the new front buffer.
   # Cursor position and visibility are also updated.
   #
@@ -116,19 +116,30 @@ class Termisu::Buffer
   # - Minimizes cursor movement by tracking position
   #
   # Parameters:
-  # - backend: The backend to render cells to
-  def flush(backend : Backend)
+  # - renderer: The renderer to render cells to
+  def render_to(renderer : Renderer)
     @height.times do |row|
       render_row_diff(backend, row)
+      @width.times do |col|
+        idx = row * @width + col
+        front_cell = @front[idx]
+        back_cell = @back[idx]
+
+        # Only redraw if cell has changed
+        if front_cell != back_cell
+          render_cell(renderer, col, row, back_cell)
+          @front[idx] = back_cell
+        end
+      end
     end
 
     # Render cursor
-    render_cursor(backend)
+    render_cursor(renderer)
 
-    backend.flush
+    renderer.flush
   end
 
-  # Forces a full redraw of all cells, ignoring the diff.
+  # Forces a full redraw of all cells to the renderer, ignoring the diff.
   #
   # Useful after terminal resize or corruption.
   def sync(backend : Backend)
@@ -137,12 +148,20 @@ class Termisu::Buffer
 
     @height.times do |row|
       render_row_full(backend, row)
+  def sync_to(renderer : Renderer)
+    @height.times do |row|
+      @width.times do |col|
+        idx = row * @width + col
+        back_cell = @back[idx]
+        render_cell(renderer, col, row, back_cell)
+        @front[idx] = back_cell
+      end
     end
 
     # Render cursor
-    render_cursor(backend)
+    render_cursor(renderer)
 
-    backend.flush
+    renderer.flush
   end
 
   # Resizes the buffer to new dimensions.
@@ -183,45 +202,45 @@ class Termisu::Buffer
     x < 0 || x >= @width || y < 0 || y >= @height
   end
 
-  # Renders a single cell to the backend.
-  private def render_cell(backend : Backend, x : Int32, y : Int32, cell : Cell)
-    backend.move_cursor(x, y)
+  # Renders a single cell to the renderer.
+  private def render_cell(renderer : Renderer, x : Int32, y : Int32, cell : Cell)
+    renderer.move_cursor(x, y)
 
     # Set colors explicitly for each cell
-    backend.foreground = cell.fg
-    backend.background = cell.bg
+    renderer.foreground = cell.fg
+    renderer.background = cell.bg
 
     # Apply attributes
-    apply_attributes(backend, cell.attr)
+    apply_attributes(renderer, cell.attr)
 
     # Write character
-    backend.write(cell.ch.to_s)
+    renderer.write(cell.ch.to_s)
 
     # Reset after writing if attributes were used
     if cell.attr != Attribute::None
-      backend.reset_attributes
+      renderer.reset_attributes
       # Restore default colors after reset
-      backend.foreground = Color.white
-      backend.background = Color.default
+      renderer.foreground = Color.white
+      renderer.background = Color.default
     end
   end
 
-  # Applies cell attributes to the backend.
-  private def apply_attributes(backend : Backend, attr : Attribute)
-    backend.enable_bold if attr.bold?
-    backend.enable_underline if attr.underline?
-    backend.enable_reverse if attr.reverse?
-    backend.enable_blink if attr.blink?
-    # Dim, Cursive, Hidden not yet supported in backend
+  # Applies cell attributes to the renderer.
+  private def apply_attributes(renderer : Renderer, attr : Attribute)
+    renderer.enable_bold if attr.bold?
+    renderer.enable_underline if attr.underline?
+    renderer.enable_reverse if attr.reverse?
+    renderer.enable_blink if attr.blink?
+    # Dim, Cursive, Hidden not yet supported in renderer
   end
 
-  # Renders cursor position and visibility to the backend.
-  private def render_cursor(backend : Backend)
+  # Renders cursor position and visibility to the renderer.
+  private def render_cursor(renderer : Renderer)
     if @cursor.visible?
-      backend.move_cursor(@cursor.x, @cursor.y)
-      backend.show_cursor
+      renderer.move_cursor(@cursor.x, @cursor.y)
+      renderer.write_show_cursor
     else
-      backend.hide_cursor
+      renderer.write_hide_cursor
     end
   end
 

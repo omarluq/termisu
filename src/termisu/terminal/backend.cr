@@ -1,157 +1,140 @@
-# Terminal-based backend implementation.
+# Low-level terminal I/O combining TTY and Termios state management.
 #
-# Combines Terminal I/O with Terminfo capabilities to provide
-# high-level rendering operations like cursor movement and colors.
-# Used by Buffer for cell-based rendering.
+# Provides basic terminal operations, managing both the underlying
+# TTY file descriptors and terminal attributes (raw mode).
+# Used internally by Terminal for I/O operations.
 #
 # Example:
 # ```
-# terminal = Termisu::Terminal.new
-# terminfo = Termisu::Terminfo.new
-# backend = Termisu::Terminal::Backend.new(terminal, terminfo)
-#
-# backend.move_cursor(10, 5)
-# backend.foreground = Color.green
-# backend.write("Hello!")
+# backend = Termisu::Terminal::Backend.new
+# backend.enable_raw_mode
+# backend.write("Hello, terminal!")
 # backend.flush
 # backend.close
 # ```
-class Termisu::Terminal::Backend < Termisu::Backend
-  @terminal : Terminal
-  @terminfo : Terminfo
-  @alternate_screen : Bool = false
+class Termisu::Terminal::Backend
+  @tty : TTY
+  @termios : Termios
+  @raw_mode_enabled : Bool = false
 
-  # Creates a new terminal backend.
+  getter infd : Int32
+  getter outfd : Int32
+
+  # Creates a new terminal backend, opening `/dev/tty` for I/O.
   #
-  # - `terminal` - Terminal instance for I/O operations
-  # - `terminfo` - Terminfo instance for capability strings
-  def initialize(@terminal : Terminal, @terminfo : Terminfo)
+  # Raises `IO::Error` if the TTY cannot be opened.
+  def initialize
+    @tty = TTY.new
+    @termios = Termios.new(@tty.outfd)
+    @infd = @tty.infd
+    @outfd = @tty.outfd
   end
 
-  # Enters alternate screen mode.
+  # Enables raw mode for the terminal.
   #
-  # Switches to alternate screen buffer, enters keypad mode,
-  # and hides cursor.
-  def enter_alternate_screen
-    return if @alternate_screen
-    write(@terminfo.enter_ca)
-    write(@terminfo.enter_keypad)
-    hide_cursor
-    flush
-    @alternate_screen = true
-  end
-
-  # Exits alternate screen mode.
+  # Raw mode disables input processing, canonical mode, echo, and signals,
+  # allowing direct character-by-character input without line buffering.
   #
-  # Shows cursor, exits keypad mode, and returns to main screen buffer.
-  def exit_alternate_screen
-    return unless @alternate_screen
-    show_cursor
-    write(@terminfo.exit_keypad)
-    write(@terminfo.exit_ca)
-    flush
-    @alternate_screen = false
+  # This method is idempotent - calling it multiple times has no effect
+  # if raw mode is already enabled.
+  def enable_raw_mode
+    return if @raw_mode_enabled
+    @termios.enable_raw_mode
+    @raw_mode_enabled = true
   end
 
-  # Returns whether alternate screen mode is active.
-  def alternate_screen? : Bool
-    @alternate_screen
-  end
-
-  # Moves cursor to the specified position.
+  # Disables raw mode, restoring original terminal attributes.
   #
-  # Note: This uses a simplified cursor addressing approach.
-  # For full parametrized capability support, implement tparm.
-  def move_cursor(x : Int32, y : Int32)
-    # Using ANSI escape sequence as fallback
-    # Full terminfo support would require tparm implementation
-    write("\e[#{y + 1};#{x + 1}H")
+  # This method is idempotent - calling it multiple times has no effect
+  # if raw mode is already disabled.
+  def disable_raw_mode
+    return unless @raw_mode_enabled
+    @termios.restore
+    @raw_mode_enabled = false
   end
 
-  # Sets the foreground color with full ANSI-8, ANSI-256, and RGB support.
-  def foreground=(color : Color)
-    if color.default?
-      write("\e[39m") # Default foreground
-    else
-      case color.mode
-      when .ansi8?
-        write("\e[3#{color.index}m")
-      when .ansi256?
-        write("\e[38;5;#{color.index}m")
-      when .rgb?
-        write("\e[38;2;#{color.r};#{color.g};#{color.b}m")
-      end
-    end
+  # Returns whether raw mode is currently enabled.
+  def raw_mode? : Bool
+    @raw_mode_enabled
   end
 
-  # Sets the background color with full ANSI-8, ANSI-256, and RGB support.
-  def background=(color : Color)
-    if color.default?
-      write("\e[49m") # Default background
-    else
-      case color.mode
-      when .ansi8?
-        write("\e[4#{color.index}m")
-      when .ansi256?
-        write("\e[48;5;#{color.index}m")
-      when .rgb?
-        write("\e[48;2;#{color.r};#{color.g};#{color.b}m")
-      end
-    end
-  end
-
-  # Shows the cursor using terminfo capability.
-  def show_cursor
-    write(@terminfo.show_cursor)
-  end
-
-  # Hides the cursor using terminfo capability.
-  def hide_cursor
-    write(@terminfo.hide_cursor)
-  end
-
-  # Resets all attributes to default.
-  def reset_attributes
-    write(@terminfo.sgr0)
-  end
-
-  # Enables bold text.
-  def enable_bold
-    write(@terminfo.bold)
-  end
-
-  # Enables underline.
-  def enable_underline
-    write(@terminfo.underline)
-  end
-
-  # Enables blink.
-  def enable_blink
-    write(@terminfo.blink)
-  end
-
-  # Enables reverse video.
-  def enable_reverse
-    write(@terminfo.reverse)
-  end
-
-  # Delegates write to terminal.
+  # Writes data to the terminal output.
   def write(data : String)
-    @terminal.write(data)
+    @tty.write(data)
   end
 
-  # Delegates flush to terminal.
+  # Flushes the output buffer to the terminal.
   def flush
-    @terminal.flush
+    @tty.flush
   end
 
-  # Delegates size to terminal.
+  # Reads data from the terminal into the provided buffer.
+  #
+  # Returns the number of bytes read, or 0 on EOF.
+  # Raises `IO::Error` on read failure.
+  def read(buffer : Bytes) : Int32
+    bytes_read = LibC.read(@infd, buffer, buffer.size)
+    raise IO::Error.from_errno("read failed") if bytes_read < 0
+    bytes_read.to_i32
+  end
+
+  # Returns the terminal size as {width, height}.
+  #
+  # Uses the TIOCGWINSZ ioctl to query the terminal dimensions.
+  # Raises `IO::Error` if the size cannot be determined.
   def size : {Int32, Int32}
-    @terminal.size
+    winsize = uninitialized LibC::Winsize
+    if LibC.ioctl(@outfd, LibC::TIOCGWINSZ, pointerof(winsize)) == -1
+      raise IO::Error.from_errno("ioctl TIOCGWINSZ failed")
+    end
+    {winsize.ws_col.to_i32, winsize.ws_row.to_i32}
   end
 
-  # Closes the backend and underlying terminal.
-  def close
-    @terminal.close
+  # Executes a block with raw mode enabled, ensuring cleanup.
+  #
+  # Example:
+  # ```
+  # backend.with_raw_mode do
+  #   # Raw mode operations here
+  # end
+  # # Raw mode automatically disabled
+  # ```
+  def with_raw_mode(&)
+    enable_raw_mode
+    yield
+  ensure
+    disable_raw_mode
   end
+
+  # Closes the terminal backend, disabling raw mode and closing TTY.
+  def close
+    disable_raw_mode
+    @tty.close
+  end
+end
+
+# Add Winsize struct to LibC if not already defined
+lib LibC
+  {% unless LibC.has_constant?(:Winsize) %}
+    struct Winsize
+      ws_row : UInt16
+      ws_col : UInt16
+      ws_xpixel : UInt16
+      ws_ypixel : UInt16
+    end
+  {% end %}
+
+  {% unless LibC.has_constant?(:TIOCGWINSZ) %}
+    {% if flag?(:linux) %}
+      TIOCGWINSZ = 0x5413
+    {% elsif flag?(:darwin) %}
+      TIOCGWINSZ = 0x40087468
+    {% elsif flag?(:freebsd) || flag?(:openbsd) %}
+      TIOCGWINSZ = 0x40087468
+    {% else %}
+      TIOCGWINSZ = 0x5413
+    {% end %}
+  {% end %}
+
+  fun ioctl(fd : Int32, request : UInt64, ...) : Int32
 end
