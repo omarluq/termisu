@@ -1,28 +1,27 @@
-name: Tests
+name: Format
 on:
   push:
     branches: [main]
     paths:
       - "src/**/*.cr"
       - "spec/**/*.cr"
-      - "shard.yml"
-      - "shard.lock"
-      - ".github/workflows/test.yml"
+      - ".github/workflows/format.yml"
       - ".github/actions/**"
   pull_request:
     branches: [main]
   workflow_dispatch:
 jobs:
-  test:
-    name: Run Tests
+  format:
+    name: Check Formatting
     runs-on: ubuntu-latest
     permissions:
-      checks: write
       contents: read
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v4
       - name: Setup Crystal Environment
         uses: ./.github/actions/setup-crystal
-      - name: Run tests
-        run: task spec
+        with:
+          install-shards: "false"
+      - name: Check formatting
+        run: task format -- --check

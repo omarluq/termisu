@@ -1,0 +1,41 @@
+name: Setup Crystal Environment
+description: Install Crystal, shards, and Task runner with caching
+inputs:
+  crystal-version:
+    description: Crystal version to install
+    required: false
+    default: latest
+  install-shards:
+    description: Whether to run shards install
+    required: false
+    default: "true"
+  install-task:
+    description: Whether to install Task runner
+    required: false
+    default: "true"
+runs:
+  using: composite
+  steps:
+    - name: Install Crystal
+      uses: crystal-lang/install-crystal@v1
+      with:
+        crystal: ${{ inputs.crystal-version }}
+    - name: Cache shards
+      if: inputs.install-shards == 'true'
+      uses: actions/cache@v4
+      with:
+        path: |
+          lib
+          ~/.cache/shards
+        key: ${{ runner.os }}-shards-${{ hashFiles('shard.lock', 'shard.yml') }}
+        restore-keys: |
+          ${{ runner.os }}-shards-
+    - name: Install shards
+      if: inputs.install-shards == 'true'
+      shell: bash
+      run: shards install
+    - name: Install Task
+      if: inputs.install-task == 'true'
+      uses: arduino/setup-task@v2
+      with:
+        version: 3.x
