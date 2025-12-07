@@ -9,13 +9,13 @@
 # state = Termisu::RenderState.new
 #
 # # First cell - emits all sequences
-# state.apply_style(backend, fg: Color.green, bg: Color.black, attr: Attribute::Bold)
+# state.apply_style(renderer, fg: Color.green, bg: Color.black, attr: Attribute::Bold)
 #
 # # Second cell with same style - no sequences emitted
-# state.apply_style(backend, fg: Color.green, bg: Color.black, attr: Attribute::Bold)
+# state.apply_style(renderer, fg: Color.green, bg: Color.black, attr: Attribute::Bold)
 #
 # # Third cell with different color - only color change emitted
-# state.apply_style(backend, fg: Color.red, bg: Color.black, attr: Attribute::Bold)
+# state.apply_style(renderer, fg: Color.red, bg: Color.black, attr: Attribute::Bold)
 # ```
 struct Termisu::RenderState
   # Current foreground color (nil = unknown/reset)
@@ -50,11 +50,11 @@ struct Termisu::RenderState
     @cursor_y = nil
   end
 
-  # Applies style to backend, only emitting changes.
+  # Applies style to renderer, only emitting changes.
   #
   # Returns true if any escape sequences were emitted.
   def apply_style(
-    backend : Backend,
+    renderer : Renderer,
     fg : Color,
     bg : Color,
     attr : Attribute,
@@ -63,20 +63,20 @@ struct Termisu::RenderState
 
     # Handle attribute changes
     if attr != @attr
-      apply_attribute_change(backend, attr)
+      apply_attribute_change(renderer, attr)
       changed = true
     end
 
     # Handle foreground color change
     if fg != @fg
-      backend.foreground = fg
+      renderer.foreground = fg
       @fg = fg
       changed = true
     end
 
     # Handle background color change
     if bg != @bg
-      backend.background = bg
+      renderer.background = bg
       @bg = bg
       changed = true
     end
@@ -87,9 +87,9 @@ struct Termisu::RenderState
   # Moves cursor only if position changed.
   #
   # Returns true if cursor was moved.
-  def move_cursor(backend : Backend, x : Int32, y : Int32) : Bool
+  def move_cursor(renderer : Renderer, x : Int32, y : Int32) : Bool
     if x != @cursor_x || y != @cursor_y
-      backend.move_cursor(x, y)
+      renderer.move_cursor(x, y)
       @cursor_x = x
       @cursor_y = y
       true
@@ -111,19 +111,19 @@ struct Termisu::RenderState
     @cursor_x == x && @cursor_y == y
   end
 
-  private def apply_attribute_change(backend : Backend, new_attr : Attribute)
+  private def apply_attribute_change(renderer : Renderer, new_attr : Attribute)
     # If any attributes are being removed, we need to reset first
     if (@attr & ~new_attr) != Attribute::None
-      backend.reset_attributes
+      renderer.reset_attributes
       @fg = nil # Reset clears colors too
       @bg = nil
     end
 
     # Apply new attributes
-    backend.enable_bold if new_attr.bold? && !@attr.bold?
-    backend.enable_underline if new_attr.underline? && !@attr.underline?
-    backend.enable_reverse if new_attr.reverse? && !@attr.reverse?
-    backend.enable_blink if new_attr.blink? && !@attr.blink?
+    renderer.enable_bold if new_attr.bold? && !@attr.bold?
+    renderer.enable_underline if new_attr.underline? && !@attr.underline?
+    renderer.enable_reverse if new_attr.reverse? && !@attr.reverse?
+    renderer.enable_blink if new_attr.blink? && !@attr.blink?
 
     @attr = new_attr
   end
