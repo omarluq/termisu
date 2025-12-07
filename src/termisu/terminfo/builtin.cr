@@ -1,36 +1,38 @@
 module Termisu::Terminfo::Builtin
   private XTERM_FUNCS = [
-    "\e[?1049h",      # enter_ca
-    "\e[?1049l",      # exit_ca
-    "\e[?12l\e[?25h", # show_cursor
-    "\e[?25l",        # hide_cursor
-    "\e[H\e[2J",      # clear_screen
-    "\e[m\e(B",       # sgr0
-    "\e[4m",          # underline
-    "\e[1m",          # bold
-    "\e[5m",          # blink
-    "\e[7m",          # reverse
-    "\e[?1h\e=",      # enter_keypad
-    "\e[?1l\e>",      # exit_keypad
-    "\e[38;5;%p1%dm", # setaf (256-color foreground)
-    "\e[48;5;%p1%dm", # setab (256-color background)
+    "\e[?1049h",         # enter_ca
+    "\e[?1049l",         # exit_ca
+    "\e[?12l\e[?25h",    # show_cursor
+    "\e[?25l",           # hide_cursor
+    "\e[H\e[2J",         # clear_screen
+    "\e[m\e(B",          # sgr0
+    "\e[4m",             # underline
+    "\e[1m",             # bold
+    "\e[5m",             # blink
+    "\e[7m",             # reverse
+    "\e[?1h\e=",         # enter_keypad
+    "\e[?1l\e>",         # exit_keypad
+    "\e[38;5;%p1%dm",    # setaf (256-color foreground)
+    "\e[48;5;%p1%dm",    # setab (256-color background)
+    "\e[%i%p1%d;%p2%dH", # cup (cursor position, row;col)
   ]
 
   private LINUX_FUNCS = [
-    "",               # enter_ca
-    "",               # exit_ca
-    "\e[?25h\e[?0c",  # show_cursor
-    "\e[?25l\e[?1c",  # hide_cursor
-    "\e[H\e[J",       # clear_screen
-    "\e[m",           # sgr0
-    "\e[4m",          # underline
-    "\e[1m",          # bold
-    "\e[5m",          # blink
-    "\e[7m",          # reverse
-    "",               # enter_keypad
-    "",               # exit_keypad
-    "\e[38;5;%p1%dm", # setaf (256-color foreground)
-    "\e[48;5;%p1%dm", # setab (256-color background)
+    "",                  # enter_ca
+    "",                  # exit_ca
+    "\e[?25h\e[?0c",     # show_cursor
+    "\e[?25l\e[?1c",     # hide_cursor
+    "\e[H\e[J",          # clear_screen
+    "\e[m",              # sgr0
+    "\e[4m",             # underline
+    "\e[1m",             # bold
+    "\e[5m",             # blink
+    "\e[7m",             # reverse
+    "",                  # enter_keypad
+    "",                  # exit_keypad
+    "\e[38;5;%p1%dm",    # setaf (256-color foreground)
+    "\e[48;5;%p1%dm",    # setab (256-color background)
+    "\e[%i%p1%d;%p2%dH", # cup (cursor position, row;col)
   ]
 
   private XTERM_KEYS = [

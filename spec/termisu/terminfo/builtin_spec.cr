@@ -6,18 +6,18 @@ describe Termisu::Terminfo::Builtin do
       it "returns XTERM_FUNCS for xterm" do
         funcs = Termisu::Terminfo::Builtin.funcs_for("xterm")
         funcs.should be_a(Array(String))
-        funcs.size.should eq(14) # Now includes setaf and setab
+        funcs.size.should eq(15) # Includes setaf, setab, and cup
       end
 
       it "returns XTERM_FUNCS for xterm-256color" do
         funcs = Termisu::Terminfo::Builtin.funcs_for("xterm-256color")
-        funcs.size.should eq(14)        # Now includes setaf and setab
+        funcs.size.should eq(15)        # Includes setaf, setab, and cup
         funcs[0].should eq("\e[?1049h") # enter_ca
       end
 
       it "returns XTERM_FUNCS for xterm-color" do
         funcs = Termisu::Terminfo::Builtin.funcs_for("xterm-color")
-        funcs.size.should eq(14) # Now includes setaf and setab
+        funcs.size.should eq(15) # Includes setaf, setab, and cup
       end
     end
 
@@ -25,7 +25,7 @@ describe Termisu::Terminfo::Builtin do
       it "returns LINUX_FUNCS for linux" do
         funcs = Termisu::Terminfo::Builtin.funcs_for("linux")
         funcs.should be_a(Array(String))
-        funcs.size.should eq(14) # Now includes setaf and setab
+        funcs.size.should eq(15) # Includes setaf, setab, and cup
       end
 
       it "has empty strings for enter/exit_ca on linux" do

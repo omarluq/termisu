@@ -327,4 +327,191 @@ describe Termisu::Terminfo do
       end
     end
   end
+
+  describe "cursor positioning (cup capability)" do
+    it "provides cup_seq accessor" do
+      original_term = ENV["TERM"]?
+
+      begin
+        ENV["TERM"] = "xterm"
+        term = Termisu::Terminfo.new
+        term.cup_seq.should be_a(String)
+        term.cup_seq.should_not be_empty
+      ensure
+        ENV["TERM"] = original_term if original_term
+      end
+    end
+
+    it "generates cursor position sequence for origin" do
+      original_term = ENV["TERM"]?
+
+      begin
+        ENV["TERM"] = "xterm"
+        term = Termisu::Terminfo.new
+        # 0-based coordinates, cup has %i which increments to 1-based
+        seq = term.cursor_position_seq(0, 0)
+        seq.should eq("\e[1;1H")
+      ensure
+        ENV["TERM"] = original_term if original_term
+      end
+    end
+
+    it "generates cursor position sequence for arbitrary position" do
+      original_term = ENV["TERM"]?
+
+      begin
+        ENV["TERM"] = "xterm"
+        term = Termisu::Terminfo.new
+        # Row 9, Col 19 (0-based) -> 10;20 (1-based)
+        seq = term.cursor_position_seq(9, 19)
+        seq.should eq("\e[10;20H")
+      ensure
+        ENV["TERM"] = original_term if original_term
+      end
+    end
+
+    it "generates cursor position sequence for bottom-right of 80x24 terminal" do
+      original_term = ENV["TERM"]?
+
+      begin
+        ENV["TERM"] = "xterm"
+        term = Termisu::Terminfo.new
+        # Row 23, Col 79 (0-based) -> 24;80 (1-based)
+        seq = term.cursor_position_seq(23, 79)
+        seq.should eq("\e[24;80H")
+      ensure
+        ENV["TERM"] = original_term if original_term
+      end
+    end
+
+    it "uses builtin cup for unknown terminals" do
+      original_term = ENV["TERM"]?
+
+      begin
+        ENV["TERM"] = "fake-unknown-terminal"
+        term = Termisu::Terminfo.new
+        seq = term.cursor_position_seq(4, 9)
+        # Should still work with builtin fallback
+        seq.should eq("\e[5;10H")
+      ensure
+        ENV["TERM"] = original_term if original_term
+      end
+    end
+  end
+
+  describe "color sequence methods" do
+    it "provides setaf_seq accessor" do
+      original_term = ENV["TERM"]?
+
+      begin
+        ENV["TERM"] = "xterm"
+        term = Termisu::Terminfo.new
+        term.setaf_seq.should be_a(String)
+        term.setaf_seq.should_not be_empty
+      ensure
+        ENV["TERM"] = original_term if original_term
+      end
+    end
+
+    it "provides setab_seq accessor" do
+      original_term = ENV["TERM"]?
+
+      begin
+        ENV["TERM"] = "xterm"
+        term = Termisu::Terminfo.new
+        term.setab_seq.should be_a(String)
+        term.setab_seq.should_not be_empty
+      ensure
+        ENV["TERM"] = original_term if original_term
+      end
+    end
+
+    it "generates foreground color sequence" do
+      original_term = ENV["TERM"]?
+
+      begin
+        # Use a fake terminal to ensure builtin fallback is used
+        ENV["TERM"] = "fake-unknown-terminal"
+        term = Termisu::Terminfo.new
+        seq = term.foreground_color_seq(1)
+        seq.should eq("\e[38;5;1m")
+      ensure
+        ENV["TERM"] = original_term if original_term
+      end
+    end
+
+    it "generates background color sequence" do
+      original_term = ENV["TERM"]?
+
+      begin
+        # Use a fake terminal to ensure builtin fallback is used
+        ENV["TERM"] = "fake-unknown-terminal"
+        term = Termisu::Terminfo.new
+        seq = term.background_color_seq(4)
+        seq.should eq("\e[48;5;4m")
+      ensure
+        ENV["TERM"] = original_term if original_term
+      end
+    end
+
+    it "handles 256 color indices with builtin" do
+      original_term = ENV["TERM"]?
+
+      begin
+        # Use a fake terminal to ensure builtin fallback is used
+        ENV["TERM"] = "fake-unknown-terminal"
+        term = Termisu::Terminfo.new
+        term.foreground_color_seq(196).should eq("\e[38;5;196m")
+        term.background_color_seq(255).should eq("\e[48;5;255m")
+      ensure
+        ENV["TERM"] = original_term if original_term
+      end
+    end
+  end
+
+  describe "capability caching" do
+    it "caches cup capability for performance" do
+      original_term = ENV["TERM"]?
+
+      begin
+        ENV["TERM"] = "xterm"
+        term = Termisu::Terminfo.new
+        # Multiple calls should return same value (cached)
+        cup1 = term.cup_seq
+        cup2 = term.cup_seq
+        cup1.should eq(cup2)
+        cup1.should_not be_empty
+      ensure
+        ENV["TERM"] = original_term if original_term
+      end
+    end
+
+    it "caches setaf capability for performance" do
+      original_term = ENV["TERM"]?
+
+      begin
+        ENV["TERM"] = "xterm"
+        term = Termisu::Terminfo.new
+        setaf1 = term.setaf_seq
+        setaf2 = term.setaf_seq
+        setaf1.should eq(setaf2)
+      ensure
+        ENV["TERM"] = original_term if original_term
+      end
+    end
+
+    it "caches setab capability for performance" do
+      original_term = ENV["TERM"]?
+
+      begin
+        ENV["TERM"] = "xterm"
+        term = Termisu::Terminfo.new
+        setab1 = term.setab_seq
+        setab2 = term.setab_seq
+        setab1.should eq(setab2)
+      ensure
+        ENV["TERM"] = original_term if original_term
+      end
+    end
+  end
 end

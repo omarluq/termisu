@@ -85,6 +85,7 @@ module Termisu::Terminfo::Capabilities
     "rmkx",  # Disable keypad transmission mode
     "setaf", # Set foreground color (ANSI)
     "setab", # Set background color (ANSI)
+    "cup",   # Cursor position (parametrized: row, col)
   ]
 
   # Keyboard input capabilities required by Termisu.
