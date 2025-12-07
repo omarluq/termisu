@@ -39,8 +39,8 @@ begin
   # Position and show cursor
   termisu.set_cursor(3, 0)
 
-  # Flush renders only changed cells (diff-based)
-  termisu.flush
+  # Render only changed cells (diff-based)
+  termisu.render
 
   # Wait for input
   if termisu.wait_for_input(5000)
@@ -62,21 +62,26 @@ See `examples/demo.cr` for a complete demonstration.
 - Terminal I/O primitives (raw mode, alternate screen)
 - Terminfo database parser with builtin fallbacks
 - Cell-based rendering with double buffering
-- Color support (8 basic ANSI colors)
+- Full color support (ANSI-8, ANSI-256, RGB/TrueColor)
+- Color conversions between all modes
 - Text attributes (bold, underline, blink, reverse)
 - Cursor control (position, visibility)
 - Input reading (bytes, with timeout)
-- 256-color and RGB support
+- Modular color architecture
 
 ### In Progress
 
 - Mouse input handling
 - Event system (keyboard, mouse, resize)
+- Performance optimizations (attribute batching)
 
 ### Planned
 
+- Extended attribute support (dim, italic, hidden)
+- tparm() implementation for full terminfo support
 - Higher-level widgets and layout system (Maybe)
-- Performance optimizations
+
+See [TODO.md](TODO.md) for detailed development tasks.
 
 ## Inspiration
 
