@@ -51,7 +51,9 @@ ensure
 end
 ```
 
-See `examples/demo.cr` for a complete demonstration.
+See `examples/showcase.cr` for a complete demonstration.
+
+![Termisu Showcase](assets/demo-screenshot.png)
 
 ## Roadmap
 
@@ -64,11 +66,12 @@ See `examples/demo.cr` for a complete demonstration.
 - Cell-based rendering with double buffering
 - Full color support (ANSI-8, ANSI-256, RGB/TrueColor)
 - Color conversions between all modes
-- Text attributes (bold, underline, blink, reverse)
+- Text attributes (bold, underline, blink, reverse, dim, italic, hidden)
 - Cursor control (position, visibility)
 - Input reading (bytes, with timeout)
 - Modular color architecture
 - Performance optimizations (RenderState batching, cursor tracking)
+- tparm() processor for parametrized terminfo capabilities
 
 ### In Progress
 
@@ -77,11 +80,7 @@ See `examples/demo.cr` for a complete demonstration.
 
 ### Planned
 
-- Extended attribute support (dim, italic, hidden)
-- tparm() implementation for full terminfo support
 - Higher-level widgets and layout system (Maybe)
-
-See [TODO.md](TODO.md) for detailed development tasks.
 
 ## Inspiration
 
