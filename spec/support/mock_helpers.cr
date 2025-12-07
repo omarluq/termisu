@@ -6,12 +6,12 @@ module MockHelpers
     io = IO::Memory.new
 
     # Write header (6 Int16 values)
-    io.write_bytes(magic, IO::ByteFormat::LittleEndian)   # magic
-    io.write_bytes(10_i16, IO::ByteFormat::LittleEndian)  # names section length
-    io.write_bytes(0_i16, IO::ByteFormat::LittleEndian)   # boolean section length
-    io.write_bytes(5_i16, IO::ByteFormat::LittleEndian)   # numbers section length
-    io.write_bytes(10_i16, IO::ByteFormat::LittleEndian)  # string count
-    io.write_bytes(100_i16, IO::ByteFormat::LittleEndian) # string table size
+    io.write_bytes(magic, IO::ByteFormat::LittleEndian)  # magic
+    io.write_bytes(10_i16, IO::ByteFormat::LittleEndian) # names section length
+    io.write_bytes(0_i16, IO::ByteFormat::LittleEndian)  # boolean section length
+    io.write_bytes(5_i16, IO::ByteFormat::LittleEndian)  # numbers section length
+    io.write_bytes(10_i16, IO::ByteFormat::LittleEndian) # string count
+    io.write_bytes(50_i16, IO::ByteFormat::LittleEndian) # string table size (10 strings * 5 bytes)
 
     # Write terminal names section (10 bytes)
     io.write("xterm-test".to_slice)
@@ -31,7 +31,7 @@ module MockHelpers
       io.write_bytes((idx * 5).to_i16, IO::ByteFormat::LittleEndian)
     end
 
-    # Write string table (10 strings of "test\0")
+    # Write string table (10 strings of "test\0" = 50 bytes total)
     10.times do
       io.write("test\0".to_slice)
     end
