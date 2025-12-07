@@ -23,11 +23,25 @@
 class Termisu::Terminfo
   @caps : Hash(String, String)
 
+  # Cached capability strings for frequently-used parametrized capabilities.
+  # These avoid repeated hash lookups during rendering.
+  @cached_cup : String?
+  @cached_setaf : String?
+  @cached_setab : String?
+
   def initialize
     term_name = ENV["TERM"]? || raise Termisu::Error.new("TERM environment variable not set")
 
     @caps = load_from_database(term_name)
     fill_missing_with_builtins(term_name)
+    cache_frequent_capabilities
+  end
+
+  # Pre-caches frequently-used parametrized capability strings.
+  private def cache_frequent_capabilities
+    @cached_cup = get_cap("cup")
+    @cached_setaf = get_cap("setaf")
+    @cached_setab = get_cap("setab")
   end
 
   # Loads capabilities from the terminfo database.
@@ -84,6 +98,55 @@ class Termisu::Terminfo
   # Returns escape sequence to hide cursor (civis).
   def hide_cursor_seq : String
     get_cap("civis")
+  end
+
+  # Returns the raw cup capability string (parametrized).
+  #
+  # Use `cursor_position_seq` to get a ready-to-use sequence with coordinates.
+  # Uses cached value to avoid hash lookup overhead.
+  def cup_seq : String
+    @cached_cup || get_cap("cup")
+  end
+
+  # Returns escape sequence to move cursor to position (row, col).
+  #
+  # Uses the terminfo `cup` capability with tparm processing.
+  # Coordinates are 0-based and will be converted to 1-based by the %i
+  # operation in the capability string.
+  def cursor_position_seq(row : Int32, col : Int32) : String
+    cap = @cached_cup || get_cap("cup")
+    return "" if cap.empty?
+    Tparm.process(cap, row.to_i64, col.to_i64)
+  end
+
+  # Returns the raw setaf capability string (parametrized foreground color).
+  # Uses cached value to avoid hash lookup overhead.
+  def setaf_seq : String
+    @cached_setaf || get_cap("setaf")
+  end
+
+  # Returns the raw setab capability string (parametrized background color).
+  # Uses cached value to avoid hash lookup overhead.
+  def setab_seq : String
+    @cached_setab || get_cap("setab")
+  end
+
+  # Returns escape sequence to set foreground color.
+  #
+  # Uses the terminfo `setaf` capability with tparm processing.
+  def foreground_color_seq(color_index : Int32) : String
+    cap = @cached_setaf || get_cap("setaf")
+    return "" if cap.empty?
+    Tparm.process(cap, color_index.to_i64)
+  end
+
+  # Returns escape sequence to set background color.
+  #
+  # Uses the terminfo `setab` capability with tparm processing.
+  def background_color_seq(color_index : Int32) : String
+    cap = @cached_setab || get_cap("setab")
+    return "" if cap.empty?
+    Tparm.process(cap, color_index.to_i64)
   end
 
   # --- Text Attribute Sequences ---

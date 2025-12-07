@@ -115,12 +115,22 @@ class Termisu::Terminal < Termisu::Renderer
 
   # Moves cursor to the specified position.
   #
-  # Note: This uses a simplified cursor addressing approach.
-  # For full parametrized capability support, implement tparm.
+  # Uses the terminfo `cup` capability with tparm processing for proper
+  # terminal-specific cursor addressing. The cup capability handles the
+  # 0-to-1 based coordinate conversion via the %i operation.
+  #
+  # Parameters:
+  # - x: Column position (0-based)
+  # - y: Row position (0-based)
   def move_cursor(x : Int32, y : Int32)
-    # Using ANSI escape sequence as fallback
-    # Full terminfo support would require tparm implementation
-    write("\e[#{y + 1};#{x + 1}H")
+    # Note: cup uses (row, col) order, so y comes first
+    seq = @terminfo.cursor_position_seq(y, x)
+    if seq.empty?
+      # Fallback to hardcoded ANSI if cup unavailable
+      write("\e[#{y + 1};#{x + 1}H")
+    else
+      write(seq)
+    end
   end
 
   # Sets the foreground color with full ANSI-8, ANSI-256, and RGB support.
