@@ -1,5 +1,12 @@
 version: "3"
+vars:
+  BENCH_BIN: bin/bench
+  PROFILE_BIN: bin/profile
+  PROFILE_DIR: .profile
 tasks:
+  # ===========================================
+  # Core Development Tasks
+  # ===========================================
   spec:
     desc: Run crystal spec
     cmds:
@@ -35,10 +42,136 @@ tasks:
   clean:
     desc: Clean build artifacts
     cmds:
-      - rm -rf bin/termisu lib .crystal
+      - rm -rf bin/termisu bin/bench bin/profile lib .crystal {{.PROFILE_DIR}}
   all:
     desc: Format, lint, and test
     cmds:
       - task: format
       - task: ameba
       - task: spec
+  # ===========================================
+  # Benchmarking Tasks
+  # ===========================================
+  bench:
+    desc: Run all benchmarks (release mode)
+    cmds:
+      - mkdir -p bin
+      - crystal build bench/run.cr -o {{.BENCH_BIN}} --release
+      - ./{{.BENCH_BIN}}
+  bench:quick:
+    desc: Run benchmarks in dev mode (faster compile)
+    cmds:
+      - crystal run bench/run.cr
+  # ===========================================
+  # Profiling Tasks (Linux perf)
+  # ===========================================
+  profile:build:
+    desc: Build profiling binary with debug symbols
+    cmds:
+      - mkdir -p bin {{.PROFILE_DIR}}
+      - crystal build bench/run.cr -o {{.PROFILE_BIN}} --release --debug
+    sources:
+      - bench/**/*.cr
+      - src/**/*.cr
+    generates:
+      - "{{.PROFILE_BIN}}"
+  profile:perf:
+    desc: Profile with Linux perf (CPU sampling)
+    deps: ['profile:build']
+    cmds:
+      - perf record -g -o {{.PROFILE_DIR}}/perf.data ./{{.PROFILE_BIN}}
+      - perf report -i {{.PROFILE_DIR}}/perf.data
+  profile:perf:record:
+    desc: Record perf data without viewing
+    deps: ['profile:build']
+    cmds:
+      - perf record -g -o {{.PROFILE_DIR}}/perf.data ./{{.PROFILE_BIN}}
+      - 'echo "Profile saved to {{.PROFILE_DIR}}/perf.data"'
+      - 'echo "View with: perf report -i {{.PROFILE_DIR}}/perf.data"'
+  profile:perf:report:
+    desc: View existing perf recording
+    cmds:
+      - perf report -i {{.PROFILE_DIR}}/perf.data
+  profile:stat:
+    desc: Quick CPU stats with perf stat
+    deps: ['profile:build']
+    cmds:
+      - perf stat ./{{.PROFILE_BIN}}
+  # ===========================================
+  # Valgrind Profiling Tasks
+  # ===========================================
+  profile:callgrind:
+    desc: Profile with Valgrind Callgrind (call graph)
+    deps: ['profile:build']
+    cmds:
+      - mkdir -p {{.PROFILE_DIR}}
+      - valgrind --tool=callgrind --callgrind-out-file={{.PROFILE_DIR}}/callgrind.out ./{{.PROFILE_BIN}}
+      - 'echo "Profile saved to {{.PROFILE_DIR}}/callgrind.out"'
+      - 'echo "View with: kcachegrind {{.PROFILE_DIR}}/callgrind.out"'
+  profile:callgrind:view:
+    desc: Open callgrind output in KCachegrind
+    cmds:
+      - kcachegrind {{.PROFILE_DIR}}/callgrind.out
+  profile:cachegrind:
+    desc: Profile cache usage with Valgrind Cachegrind
+    deps: ['profile:build']
+    cmds:
+      - mkdir -p {{.PROFILE_DIR}}
+      - valgrind --tool=cachegrind --cachegrind-out-file={{.PROFILE_DIR}}/cachegrind.out ./{{.PROFILE_BIN}}
+      - cg_annotate {{.PROFILE_DIR}}/cachegrind.out
+  # ===========================================
+  # Memory Profiling Tasks
+  # ===========================================
+  profile:massif:
+    desc: Profile heap usage with Valgrind Massif
+    deps: ['profile:build']
+    cmds:
+      - mkdir -p {{.PROFILE_DIR}}
+      - valgrind --tool=massif --massif-out-file={{.PROFILE_DIR}}/massif.out ./{{.PROFILE_BIN}}
+      - ms_print {{.PROFILE_DIR}}/massif.out
+  profile:heaptrack:
+    desc: Profile memory with Heaptrack
+    deps: ['profile:build']
+    cmds:
+      - mkdir -p {{.PROFILE_DIR}}
+      - heaptrack -o {{.PROFILE_DIR}}/heaptrack ./{{.PROFILE_BIN}}
+      - 'echo "View with: heaptrack_gui {{.PROFILE_DIR}}/heaptrack.*.zst"'
+  profile:memcheck:
+    desc: Check for memory leaks with Valgrind
+    deps: ['profile:build']
+    cmds:
+      - valgrind --leak-check=full --show-leak-kinds=all ./{{.PROFILE_BIN}}
+  # ===========================================
+  # Compiler Analysis Tasks
+  # ===========================================
+  compile:stats:
+    desc: Show compiler statistics
+    cmds:
+      - crystal build bench/run.cr -o /dev/null --stats --progress
+  compile:llvm-ir:
+    desc: Generate LLVM IR for analysis
+    cmds:
+      - mkdir -p {{.PROFILE_DIR}}
+      - crystal build src/termisu.cr --emit llvm-ir -o {{.PROFILE_DIR}}/termisu
+      - echo "LLVM IR saved to {{.PROFILE_DIR}}/termisu.ll"
+  compile:asm:
+    desc: Generate assembly output
+    cmds:
+      - mkdir -p {{.PROFILE_DIR}}
+      - crystal build src/termisu.cr --emit asm -o {{.PROFILE_DIR}}/termisu
+      - echo "Assembly saved to {{.PROFILE_DIR}}/termisu.s"
+  # ===========================================
+  # Convenience Aliases
+  # ===========================================
+  perf:
+    desc: Alias for profile:perf
+    cmds:
+      - task: profile:perf
+  callgrind:
+    desc: Alias for profile:callgrind
+    cmds:
+      - task: profile:callgrind
+  memcheck:
+    desc: Alias for profile:memcheck
+    cmds:
+      - task: profile:memcheck
