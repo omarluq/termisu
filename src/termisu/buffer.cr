@@ -77,8 +77,13 @@ class Termisu::Buffer
   end
 
   # Sets cursor position and makes it visible.
+  #
+  # Coordinates are clamped to buffer bounds. Negative values are clamped to 0.
+  # Values exceeding buffer dimensions are clamped to max valid position.
   def set_cursor(x : Int32, y : Int32)
-    @cursor.move(x, y)
+    clamped_x = x.clamp(0, @width - 1)
+    clamped_y = y.clamp(0, @height - 1)
+    @cursor.move(clamped_x, clamped_y)
   end
 
   # Hides the cursor.
@@ -167,6 +172,9 @@ class Termisu::Buffer
     @height = new_height
     @back = new_back
     @front = new_front
+
+    # Clamp cursor position to new bounds
+    @cursor.clamp(@width, @height)
   end
 
   # Checks if coordinates are within buffer bounds.

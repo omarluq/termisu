@@ -271,5 +271,92 @@ describe Termisu::Buffer do
       cell = buffer.get_cell(3, 2)
       cell.as(Termisu::Cell).ch.should eq('C')
     end
+
+    it "clamps cursor position when shrinking" do
+      buffer = Termisu::Buffer.new(10, 8)
+      buffer.set_cursor(8, 6)
+
+      buffer.resize(5, 4)
+
+      buffer.cursor.x.should eq(4)
+      buffer.cursor.y.should eq(3)
+      buffer.cursor.visible?.should be_true
+    end
+
+    it "preserves cursor position when growing" do
+      buffer = Termisu::Buffer.new(10, 8)
+      buffer.set_cursor(5, 4)
+
+      buffer.resize(20, 16)
+
+      buffer.cursor.x.should eq(5)
+      buffer.cursor.y.should eq(4)
+    end
+
+    it "clamps hidden cursor's last position when shrinking" do
+      buffer = Termisu::Buffer.new(10, 8)
+      buffer.set_cursor(8, 6)
+      buffer.hide_cursor
+
+      buffer.resize(5, 4)
+
+      buffer.cursor.hidden?.should be_true
+
+      # When shown, should be at clamped position
+      buffer.show_cursor
+      buffer.cursor.x.should eq(4)
+      buffer.cursor.y.should eq(3)
+    end
+  end
+
+  describe "#set_cursor" do
+    it "sets cursor to valid position" do
+      buffer = Termisu::Buffer.new(10, 8)
+      buffer.set_cursor(5, 4)
+
+      buffer.cursor.x.should eq(5)
+      buffer.cursor.y.should eq(4)
+      buffer.cursor.visible?.should be_true
+    end
+
+    it "clamps cursor x to buffer width" do
+      buffer = Termisu::Buffer.new(10, 8)
+      buffer.set_cursor(15, 4)
+
+      buffer.cursor.x.should eq(9)
+      buffer.cursor.y.should eq(4)
+    end
+
+    it "clamps cursor y to buffer height" do
+      buffer = Termisu::Buffer.new(10, 8)
+      buffer.set_cursor(5, 12)
+
+      buffer.cursor.x.should eq(5)
+      buffer.cursor.y.should eq(7)
+    end
+
+    it "clamps negative x to 0" do
+      buffer = Termisu::Buffer.new(10, 8)
+      buffer.set_cursor(-5, 4)
+
+      buffer.cursor.x.should eq(0)
+      buffer.cursor.y.should eq(4)
+    end
+
+    it "clamps negative y to 0" do
+      buffer = Termisu::Buffer.new(10, 8)
+      buffer.set_cursor(5, -3)
+
+      buffer.cursor.x.should eq(5)
+      buffer.cursor.y.should eq(0)
+    end
+
+    it "clamps both coordinates when both out of bounds" do
+      buffer = Termisu::Buffer.new(10, 8)
+      buffer.set_cursor(100, 100)
+
+      buffer.cursor.x.should eq(9)
+      buffer.cursor.y.should eq(7)
+    end
   end
 end
