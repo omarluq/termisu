@@ -8,30 +8,33 @@ require "log"
 # ## Configuration
 #
 # Environment variables:
-# - `TERMISU_LOG_LEVEL`: trace, debug, info, warn, error, fatal, none (default: none)
-# - `TERMISU_LOG_FILE`: Path to log file (default: termisu.log in current directory)
-# - `TERMISU_LOG_SYNC`: Dispatch mode (default: true)
+# - `TERMISU_LOG_LEVEL`: trace, debug, info, warn, error, fatal, none (default: debug)
+# - `TERMISU_LOG_FILE`: Path to log file (default: /tmp/termisu.log)
+# - `TERMISU_LOG_SYNC`: Dispatch mode (default: false)
 #   - `true`: Sync/direct mode - logs written immediately, ideal for debugging
 #   - `false`: Async mode - logs queued to fiber, better performance
 #
 # ## Dispatch Modes
 #
-# **Sync mode** (default): Uses `Log::DispatchMode::Direct` for real-time logging.
-# Logs appear immediately in the file, making it ideal for debugging crashes.
-#
-# **Async mode**: Uses `Log::DispatchMode::Async` for better performance.
+# **Async mode** (default): Uses `Log::DispatchMode::Async` for better performance.
 # Logs are queued to a fiber and written asynchronously. Uses SafeFileIO
 # wrapper to handle writes after file close, and Fiber.yield on close to
 # allow pending logs to be processed.
 #
+# **Sync mode**: Uses `Log::DispatchMode::Direct` for real-time logging.
+# Logs appear immediately in the file, ideal for debugging crashes.
+#
 # ## Example
 #
 # ```
-# # Enable debug logging (sync mode for real-time output)
-# TERMISU_LOG_LEVEL=debug TERMISU_LOG_FILE=/tmp/termisu.log ./my_app
+# # Use defaults (debug level, /tmp/termisu.log, async mode)
+# ./my_app
 #
-# # Enable async mode for better performance
-# TERMISU_LOG_LEVEL=debug TERMISU_LOG_FILE=/tmp/termisu.log TERMISU_LOG_SYNC=false ./my_app
+# # Disable logging
+# TERMISU_LOG_LEVEL=none ./my_app
+#
+# # Enable sync mode for real-time debugging
+# TERMISU_LOG_SYNC=true ./my_app
 # ```
 #
 # ## Usage in Termisu code
@@ -132,13 +135,13 @@ class Termisu
     # Reads TERMISU_LOG_LEVEL, TERMISU_LOG_FILE, and TERMISU_LOG_SYNC
     # to configure the logging backend. Called automatically by Termisu.new.
     #
-    # In sync mode (default), uses direct dispatch for real-time logging.
-    # In async mode, uses async dispatch with SafeFileIO wrapper.
+    # In async mode (default), uses async dispatch with SafeFileIO wrapper.
+    # In sync mode, uses direct dispatch for real-time logging.
     def self.setup
       return if configured?
 
-      level_str = ENV.fetch("TERMISU_LOG_LEVEL", "none").downcase
-      level = LEVELS[level_str]? || ::Log::Severity::None
+      level_str = ENV.fetch("TERMISU_LOG_LEVEL", "debug").downcase
+      level = LEVELS[level_str]? || ::Log::Severity::Debug
 
       # Don't set up file logging if level is none
       if level == ::Log::Severity::None
@@ -147,15 +150,15 @@ class Termisu
       end
 
       # Get log file path
-      file_path = ENV.fetch("TERMISU_LOG_FILE", "termisu.log")
+      file_path = ENV.fetch("TERMISU_LOG_FILE", "/tmp/termisu.log")
 
       begin
         file = File.open(file_path, "a")
         file.sync = true
         self.log_file = file
 
-        # Choose dispatch mode: sync (direct) for real-time, async for performance
-        sync_mode = ENV.fetch("TERMISU_LOG_SYNC", "true").downcase
+        # Choose dispatch mode: async (default) for performance, sync for debugging
+        sync_mode = ENV.fetch("TERMISU_LOG_SYNC", "false").downcase
         is_sync = sync_mode == "true"
         self.async_mode = !is_sync
         dispatch_mode = is_sync ? ::Log::DispatchMode::Direct : ::Log::DispatchMode::Async
