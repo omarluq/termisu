@@ -1,38 +1,56 @@
 module Termisu::Terminfo::Builtin
   private XTERM_FUNCS = [
-    "\e[?1049h",         # enter_ca
-    "\e[?1049l",         # exit_ca
-    "\e[?12l\e[?25h",    # show_cursor
-    "\e[?25l",           # hide_cursor
-    "\e[H\e[2J",         # clear_screen
-    "\e[m\e(B",          # sgr0
-    "\e[4m",             # underline
+    "\e[?1049h",         # smcup - enter alternate screen
+    "\e[?1049l",         # rmcup - exit alternate screen
+    "\e[?12l\e[?25h",    # cnorm - show cursor
+    "\e[?25l",           # civis - hide cursor
+    "\e[H\e[2J",         # clear - clear screen
+    "\e[m\e(B",          # sgr0 - reset attributes
+    "\e[4m",             # smul - underline
     "\e[1m",             # bold
     "\e[5m",             # blink
-    "\e[7m",             # reverse
-    "\e[?1h\e=",         # enter_keypad
-    "\e[?1l\e>",         # exit_keypad
-    "\e[38;5;%p1%dm",    # setaf (256-color foreground)
-    "\e[48;5;%p1%dm",    # setab (256-color background)
-    "\e[%i%p1%d;%p2%dH", # cup (cursor position, row;col)
+    "\e[7m",             # rev - reverse
+    "\e[?1h\e=",         # smkx - enter keypad
+    "\e[?1l\e>",         # rmkx - exit keypad
+    "\e[38;5;%p1%dm",    # setaf - foreground color
+    "\e[48;5;%p1%dm",    # setab - background color
+    "\e[%i%p1%d;%p2%dH", # cup - cursor position (row, col)
+    "\e[%p1%dC",         # cuf - cursor forward N
+    "\e[%p1%dD",         # cub - cursor backward N
+    "\e[%p1%dA",         # cuu - cursor up N
+    "\e[%p1%dB",         # cud - cursor down N
+    "\e[%i%p1%dG",       # hpa - horizontal position (column)
+    "\e[%i%p1%dd",       # vpa - vertical position (row)
+    "\e[%p1%dX",         # ech - erase N characters
+    "\e[%p1%dL",         # il - insert N lines
+    "\e[%p1%dM",         # dl - delete N lines
   ]
 
   private LINUX_FUNCS = [
-    "",                  # enter_ca
-    "",                  # exit_ca
-    "\e[?25h\e[?0c",     # show_cursor
-    "\e[?25l\e[?1c",     # hide_cursor
-    "\e[H\e[J",          # clear_screen
-    "\e[m",              # sgr0
-    "\e[4m",             # underline
+    "",                  # smcup - enter alternate screen (not supported)
+    "",                  # rmcup - exit alternate screen (not supported)
+    "\e[?25h\e[?0c",     # cnorm - show cursor
+    "\e[?25l\e[?1c",     # civis - hide cursor
+    "\e[H\e[J",          # clear - clear screen
+    "\e[m",              # sgr0 - reset attributes
+    "\e[4m",             # smul - underline
     "\e[1m",             # bold
     "\e[5m",             # blink
-    "\e[7m",             # reverse
-    "",                  # enter_keypad
-    "",                  # exit_keypad
-    "\e[38;5;%p1%dm",    # setaf (256-color foreground)
-    "\e[48;5;%p1%dm",    # setab (256-color background)
-    "\e[%i%p1%d;%p2%dH", # cup (cursor position, row;col)
+    "\e[7m",             # rev - reverse
+    "",                  # smkx - enter keypad (not supported)
+    "",                  # rmkx - exit keypad (not supported)
+    "\e[38;5;%p1%dm",    # setaf - foreground color
+    "\e[48;5;%p1%dm",    # setab - background color
+    "\e[%i%p1%d;%p2%dH", # cup - cursor position (row, col)
+    "\e[%p1%dC",         # cuf - cursor forward N
+    "\e[%p1%dD",         # cub - cursor backward N
+    "\e[%p1%dA",         # cuu - cursor up N
+    "\e[%p1%dB",         # cud - cursor down N
+    "\e[%i%p1%dG",       # hpa - horizontal position (column)
+    "\e[%i%p1%dd",       # vpa - vertical position (row)
+    "\e[%p1%dX",         # ech - erase N characters
+    "\e[%p1%dL",         # il - insert N lines
+    "\e[%p1%dM",         # dl - delete N lines
   ]
 
   private XTERM_KEYS = [

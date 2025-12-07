@@ -86,6 +86,15 @@ module Termisu::Terminfo::Capabilities
     "setaf", # Set foreground color (ANSI)
     "setab", # Set background color (ANSI)
     "cup",   # Cursor position (parametrized: row, col)
+    "cuf",   # Cursor forward N columns (parametrized)
+    "cub",   # Cursor backward N columns (parametrized)
+    "cuu",   # Cursor up N rows (parametrized)
+    "cud",   # Cursor down N rows (parametrized)
+    "hpa",   # Horizontal position absolute - column N (parametrized)
+    "vpa",   # Vertical position absolute - row N (parametrized)
+    "ech",   # Erase N characters (parametrized)
+    "il",    # Insert N lines (parametrized)
+    "dl",    # Delete N lines (parametrized)
   ]
 
   # Keyboard input capabilities required by Termisu.

@@ -28,6 +28,15 @@ class Termisu::Terminfo
   @cached_cup : String?
   @cached_setaf : String?
   @cached_setab : String?
+  @cached_cuf : String?
+  @cached_cub : String?
+  @cached_cuu : String?
+  @cached_cud : String?
+  @cached_hpa : String?
+  @cached_vpa : String?
+  @cached_ech : String?
+  @cached_il : String?
+  @cached_dl : String?
 
   def initialize
     term_name = ENV["TERM"]? || raise Termisu::Error.new("TERM environment variable not set")
@@ -42,6 +51,15 @@ class Termisu::Terminfo
     @cached_cup = get_cap("cup")
     @cached_setaf = get_cap("setaf")
     @cached_setab = get_cap("setab")
+    @cached_cuf = get_cap("cuf")
+    @cached_cub = get_cap("cub")
+    @cached_cuu = get_cap("cuu")
+    @cached_cud = get_cap("cud")
+    @cached_hpa = get_cap("hpa")
+    @cached_vpa = get_cap("vpa")
+    @cached_ech = get_cap("ech")
+    @cached_il = get_cap("il")
+    @cached_dl = get_cap("dl")
   end
 
   # Loads capabilities from the terminfo database.
@@ -147,6 +165,62 @@ class Termisu::Terminfo
     cap = @cached_setab || get_cap("setab")
     return "" if cap.empty?
     Tparm.process(cap, color_index.to_i64)
+  end
+
+  # --- Cursor Movement Sequences (Parametrized) ---
+
+  # Returns escape sequence to move cursor forward N columns.
+  def cursor_forward_seq(n : Int32) : String
+    process_param_cap(@cached_cuf, "cuf", n)
+  end
+
+  # Returns escape sequence to move cursor backward N columns.
+  def cursor_backward_seq(n : Int32) : String
+    process_param_cap(@cached_cub, "cub", n)
+  end
+
+  # Returns escape sequence to move cursor up N rows.
+  def cursor_up_seq(n : Int32) : String
+    process_param_cap(@cached_cuu, "cuu", n)
+  end
+
+  # Returns escape sequence to move cursor down N rows.
+  def cursor_down_seq(n : Int32) : String
+    process_param_cap(@cached_cud, "cud", n)
+  end
+
+  # Returns escape sequence to move cursor to column N (0-based).
+  def column_address_seq(col : Int32) : String
+    process_param_cap(@cached_hpa, "hpa", col)
+  end
+
+  # Returns escape sequence to move cursor to row N (0-based).
+  def row_address_seq(row : Int32) : String
+    process_param_cap(@cached_vpa, "vpa", row)
+  end
+
+  # --- Line Editing Sequences (Parametrized) ---
+
+  # Returns escape sequence to erase N characters at cursor.
+  def erase_chars_seq(n : Int32) : String
+    process_param_cap(@cached_ech, "ech", n)
+  end
+
+  # Returns escape sequence to insert N blank lines at cursor.
+  def insert_lines_seq(n : Int32) : String
+    process_param_cap(@cached_il, "il", n)
+  end
+
+  # Returns escape sequence to delete N lines at cursor.
+  def delete_lines_seq(n : Int32) : String
+    process_param_cap(@cached_dl, "dl", n)
+  end
+
+  # Processes a single-parameter capability with tparm.
+  private def process_param_cap(cached : String?, name : String, param : Int32) : String
+    cap = cached || get_cap(name)
+    return "" if cap.empty?
+    Tparm.process(cap, param.to_i64)
   end
 
   # --- Text Attribute Sequences ---

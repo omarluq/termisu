@@ -514,4 +514,118 @@ describe Termisu::Terminfo do
       end
     end
   end
+
+  describe "cursor movement sequences (parametrized)" do
+    it "generates cursor forward sequence" do
+      original_term = ENV["TERM"]?
+
+      begin
+        ENV["TERM"] = "fake-unknown-terminal"
+        term = Termisu::Terminfo.new
+        term.cursor_forward_seq(5).should eq("\e[5C")
+      ensure
+        ENV["TERM"] = original_term if original_term
+      end
+    end
+
+    it "generates cursor backward sequence" do
+      original_term = ENV["TERM"]?
+
+      begin
+        ENV["TERM"] = "fake-unknown-terminal"
+        term = Termisu::Terminfo.new
+        term.cursor_backward_seq(3).should eq("\e[3D")
+      ensure
+        ENV["TERM"] = original_term if original_term
+      end
+    end
+
+    it "generates cursor up sequence" do
+      original_term = ENV["TERM"]?
+
+      begin
+        ENV["TERM"] = "fake-unknown-terminal"
+        term = Termisu::Terminfo.new
+        term.cursor_up_seq(2).should eq("\e[2A")
+      ensure
+        ENV["TERM"] = original_term if original_term
+      end
+    end
+
+    it "generates cursor down sequence" do
+      original_term = ENV["TERM"]?
+
+      begin
+        ENV["TERM"] = "fake-unknown-terminal"
+        term = Termisu::Terminfo.new
+        term.cursor_down_seq(4).should eq("\e[4B")
+      ensure
+        ENV["TERM"] = original_term if original_term
+      end
+    end
+
+    it "generates column address sequence (0-based to 1-based)" do
+      original_term = ENV["TERM"]?
+
+      begin
+        ENV["TERM"] = "fake-unknown-terminal"
+        term = Termisu::Terminfo.new
+        # Column 9 (0-based) -> 10 (1-based)
+        term.column_address_seq(9).should eq("\e[10G")
+      ensure
+        ENV["TERM"] = original_term if original_term
+      end
+    end
+
+    it "generates row address sequence (0-based to 1-based)" do
+      original_term = ENV["TERM"]?
+
+      begin
+        ENV["TERM"] = "fake-unknown-terminal"
+        term = Termisu::Terminfo.new
+        # Row 14 (0-based) -> 15 (1-based)
+        term.row_address_seq(14).should eq("\e[15d")
+      ensure
+        ENV["TERM"] = original_term if original_term
+      end
+    end
+  end
+
+  describe "line editing sequences (parametrized)" do
+    it "generates erase characters sequence" do
+      original_term = ENV["TERM"]?
+
+      begin
+        ENV["TERM"] = "fake-unknown-terminal"
+        term = Termisu::Terminfo.new
+        term.erase_chars_seq(10).should eq("\e[10X")
+      ensure
+        ENV["TERM"] = original_term if original_term
+      end
+    end
+
+    it "generates insert lines sequence" do
+      original_term = ENV["TERM"]?
+
+      begin
+        ENV["TERM"] = "fake-unknown-terminal"
+        term = Termisu::Terminfo.new
+        term.insert_lines_seq(3).should eq("\e[3L")
+      ensure
+        ENV["TERM"] = original_term if original_term
+      end
+    end
+
+    it "generates delete lines sequence" do
+      original_term = ENV["TERM"]?
+
+      begin
+        ENV["TERM"] = "fake-unknown-terminal"
+        term = Termisu::Terminfo.new
+        term.delete_lines_seq(2).should eq("\e[2M")
+      ensure
+        ENV["TERM"] = original_term if original_term
+      end
+    end
+  end
 end
