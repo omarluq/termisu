@@ -3,6 +3,11 @@
 # Provides buffered, non-blocking input operations with support
 # for peeking, timeouts, and availability checking.
 #
+# EINTR Handling:
+# All system calls (select, read) are wrapped with retry logic to handle
+# interrupted system calls (EINTR). This ensures reliable operation when
+# signals are delivered during I/O operations.
+#
 # Example:
 # ```
 # terminal = Termisu::Terminal.new
@@ -19,6 +24,10 @@ class Termisu::Reader
   @buffer : Bytes
   @buffer_pos : Int32 = 0
   @buffer_len : Int32 = 0
+
+  # Maximum retry attempts for EINTR before giving up.
+  # This prevents infinite loops in pathological signal storms.
+  MAX_EINTR_RETRIES = 100
 
   # Creates a new reader for the given file descriptor.
   #
@@ -93,30 +102,48 @@ class Termisu::Reader
     check_fd_readable(timeout_sec, timeout_usec)
   end
 
-  # Checks if file descriptor is readable using select(2)
+  # Checks if file descriptor is readable using select(2).
+  #
+  # Handles EINTR by retrying the select() call automatically.
+  # Other errors raise Termisu::IOError.
   private def check_fd_readable(timeout_sec : Int32 = 0, timeout_usec : Int32 = 0) : Bool
-    timeval = uninitialized LibC::Timeval
-    timeval.tv_sec = timeout_sec.to_i64
-    timeval.tv_usec = timeout_usec.to_i64
+    retries = 0
 
-    # Initialize fd_set
-    fd_set = uninitialized LibC::FdSet
-    # Zero out the set
-    fd_set.fds_bits.fill(0_i64)
-    # Set the bit for our file descriptor
-    word_index = @fd // 64
-    bit_index = @fd % 64
-    fd_set.fds_bits[word_index] = 1_i64 << bit_index
+    loop do
+      timeval = uninitialized LibC::Timeval
+      timeval.tv_sec = timeout_sec.to_i64
+      timeval.tv_usec = timeout_usec.to_i64
 
-    # Call select with proper error handling
-    result = LibC.select(@fd + 1, pointerof(fd_set), nil, nil, pointerof(timeval))
+      # Initialize fd_set - must be reset on each retry
+      fd_set = uninitialized LibC::FdSet
+      fd_set.fds_bits.fill(0_i64)
+      word_index = @fd // 64
+      bit_index = @fd % 64
+      fd_set.fds_bits[word_index] = 1_i64 << bit_index
 
-    # Check for errors
-    if result < 0
-      raise IO::Error.from_errno("select failed")
+      result = LibC.select(@fd + 1, pointerof(fd_set), nil, nil, pointerof(timeval))
+
+      if result >= 0
+        return result > 0
+      end
+
+      # Handle error cases
+      errno = Errno.value
+
+      if errno.eintr?
+        # Interrupted by signal - retry
+        retries += 1
+        if retries >= MAX_EINTR_RETRIES
+          raise Termisu::IOError.select_failed(errno)
+        end
+        next
+      end
+
+      # EBADF: Bad file descriptor - fd was closed or invalid
+      # EINVAL: Invalid timeout or nfds
+      # ENOMEM: Unable to allocate memory
+      raise Termisu::IOError.select_failed(errno)
     end
-
-    result > 0
   end
 
   # Clears any buffered data.
@@ -130,14 +157,52 @@ class Termisu::Reader
     clear_buffer
   end
 
-  private def fill_buffer
-    bytes_read = LibC.read(@fd, @buffer, @buffer.size)
-    if bytes_read > 0
-      @buffer_pos = 0
-      @buffer_len = bytes_read.to_i32
-    else
-      @buffer_pos = 0
-      @buffer_len = 0
+  # Fills the internal buffer from the file descriptor.
+  #
+  # Handles EINTR by retrying the read() call automatically.
+  # Returns true if data was read, false on EOF or no data available.
+  # Raises Termisu::IOError on unrecoverable errors.
+  private def fill_buffer : Bool
+    retries = 0
+
+    loop do
+      bytes_read = LibC.read(@fd, @buffer, @buffer.size)
+
+      if bytes_read > 0
+        @buffer_pos = 0
+        @buffer_len = bytes_read.to_i32
+        return true
+      elsif bytes_read == 0
+        # EOF
+        @buffer_pos = 0
+        @buffer_len = 0
+        return false
+      end
+
+      # bytes_read < 0: error occurred
+      errno = Errno.value
+
+      if errno.eintr?
+        # Interrupted by signal - retry
+        retries += 1
+        if retries >= MAX_EINTR_RETRIES
+          raise Termisu::IOError.read_failed(errno)
+        end
+        next
+      end
+
+      if errno.eagain?
+        # Non-blocking I/O would block - no data available
+        @buffer_pos = 0
+        @buffer_len = 0
+        return false
+      end
+
+      # EBADF: Bad file descriptor
+      # EIO: I/O error
+      # EISDIR: fd refers to a directory
+      # Other errors are unrecoverable
+      raise Termisu::IOError.read_failed(errno)
     end
   end
 end
