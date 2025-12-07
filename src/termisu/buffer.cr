@@ -119,18 +119,7 @@ class Termisu::Buffer
   # - renderer: The renderer to render cells to
   def render_to(renderer : Renderer)
     @height.times do |row|
-      render_row_diff(backend, row)
-      @width.times do |col|
-        idx = row * @width + col
-        front_cell = @front[idx]
-        back_cell = @back[idx]
-
-        # Only redraw if cell has changed
-        if front_cell != back_cell
-          render_cell(renderer, col, row, back_cell)
-          @front[idx] = back_cell
-        end
-      end
+      render_row_diff(renderer, row)
     end
 
     # Render cursor
@@ -142,20 +131,12 @@ class Termisu::Buffer
   # Forces a full redraw of all cells to the renderer, ignoring the diff.
   #
   # Useful after terminal resize or corruption.
-  def sync(backend : Backend)
+  def sync_to(renderer : Renderer)
     # Reset render state to force all sequences to be emitted
     @render_state.reset
 
     @height.times do |row|
-      render_row_full(backend, row)
-  def sync_to(renderer : Renderer)
-    @height.times do |row|
-      @width.times do |col|
-        idx = row * @width + col
-        back_cell = @back[idx]
-        render_cell(renderer, col, row, back_cell)
-        @front[idx] = back_cell
-      end
+      render_row_full(renderer, row)
     end
 
     # Render cursor
@@ -202,38 +183,6 @@ class Termisu::Buffer
     x < 0 || x >= @width || y < 0 || y >= @height
   end
 
-  # Renders a single cell to the renderer.
-  private def render_cell(renderer : Renderer, x : Int32, y : Int32, cell : Cell)
-    renderer.move_cursor(x, y)
-
-    # Set colors explicitly for each cell
-    renderer.foreground = cell.fg
-    renderer.background = cell.bg
-
-    # Apply attributes
-    apply_attributes(renderer, cell.attr)
-
-    # Write character
-    renderer.write(cell.ch.to_s)
-
-    # Reset after writing if attributes were used
-    if cell.attr != Attribute::None
-      renderer.reset_attributes
-      # Restore default colors after reset
-      renderer.foreground = Color.white
-      renderer.background = Color.default
-    end
-  end
-
-  # Applies cell attributes to the renderer.
-  private def apply_attributes(renderer : Renderer, attr : Attribute)
-    renderer.enable_bold if attr.bold?
-    renderer.enable_underline if attr.underline?
-    renderer.enable_reverse if attr.reverse?
-    renderer.enable_blink if attr.blink?
-    # Dim, Cursive, Hidden not yet supported in renderer
-  end
-
   # Renders cursor position and visibility to the renderer.
   private def render_cursor(renderer : Renderer)
     if @cursor.visible?
@@ -248,7 +197,7 @@ class Termisu::Buffer
   #
   # Batches consecutive changed cells with same styling for efficiency.
   # Updates front buffer to match back buffer after rendering.
-  private def render_row_diff(backend : Backend, row : Int32)
+  private def render_row_diff(renderer : Renderer, row : Int32)
     row_start = row * @width
     col = 0
 
@@ -287,7 +236,7 @@ class Termisu::Buffer
       end
 
       # Render the batch
-      render_batch(backend, batch_start, row, batch_chars, batch_fg, batch_bg, batch_attr)
+      render_batch(renderer, batch_start, row, batch_chars, batch_fg, batch_bg, batch_attr)
     end
   end
 
@@ -295,7 +244,7 @@ class Termisu::Buffer
   #
   # Batches consecutive cells with same styling for efficiency.
   # Updates front buffer to match back buffer after rendering.
-  private def render_row_full(backend : Backend, row : Int32)
+  private def render_row_full(renderer : Renderer, row : Int32)
     row_start = row * @width
     col = 0
 
@@ -325,7 +274,7 @@ class Termisu::Buffer
       end
 
       # Render the batch
-      render_batch(backend, batch_start, row, batch_chars, batch_fg, batch_bg, batch_attr)
+      render_batch(renderer, batch_start, row, batch_chars, batch_fg, batch_bg, batch_attr)
     end
   end
 
@@ -335,7 +284,7 @@ class Termisu::Buffer
   # - Only moves cursor if not at expected position
   # - Only emits color/attribute sequences when they change
   private def render_batch(
-    backend : Backend,
+    renderer : Renderer,
     x : Int32,
     y : Int32,
     chars : String,
@@ -346,13 +295,13 @@ class Termisu::Buffer
     return if chars.empty?
 
     # Move cursor only if needed
-    @render_state.move_cursor(backend, x, y)
+    @render_state.move_cursor(renderer, x, y)
 
     # Apply style only if changed
-    @render_state.apply_style(backend, fg, bg, attr)
+    @render_state.apply_style(renderer, fg, bg, attr)
 
     # Write all characters in the batch
-    backend.write(chars)
+    renderer.write(chars)
 
     # Update cursor position in render state (cursor advances with each char)
     chars.each_char do

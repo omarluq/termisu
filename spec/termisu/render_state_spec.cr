@@ -1,7 +1,7 @@
 require "../spec_helper"
 
-# Mock backend for testing RenderState
-class MockRenderStateBackend < Termisu::Backend
+# Mock renderer for testing RenderState
+class MockRenderStateRenderer < Termisu::Renderer
   property fg_calls : Array(Termisu::Color) = [] of Termisu::Color
   property bg_calls : Array(Termisu::Color) = [] of Termisu::Color
   property move_calls : Array({Int32, Int32}) = [] of {Int32, Int32}
@@ -47,9 +47,9 @@ class MockRenderStateBackend < Termisu::Backend
     @reverse_count += 1
   end
 
-  def show_cursor; end
+  def write_show_cursor; end
 
-  def hide_cursor; end
+  def write_hide_cursor; end
 
   def size : {Int32, Int32}
     {80, 24}
@@ -91,184 +91,184 @@ describe Termisu::RenderState do
 
   describe "#apply_style" do
     it "emits all sequences when state is unknown" do
-      backend = MockRenderStateBackend.new
+      renderer = MockRenderStateRenderer.new
       state = Termisu::RenderState.new
 
-      changed = state.apply_style(backend, Termisu::Color.green, Termisu::Color.blue, Termisu::Attribute::None)
+      changed = state.apply_style(renderer, Termisu::Color.green, Termisu::Color.blue, Termisu::Attribute::None)
 
       changed.should be_true
-      backend.fg_calls.should eq([Termisu::Color.green])
-      backend.bg_calls.should eq([Termisu::Color.blue])
+      renderer.fg_calls.should eq([Termisu::Color.green])
+      renderer.bg_calls.should eq([Termisu::Color.blue])
     end
 
     it "skips emission when style unchanged" do
-      backend = MockRenderStateBackend.new
+      renderer = MockRenderStateRenderer.new
       state = Termisu::RenderState.new
 
       # First call - should emit
-      state.apply_style(backend, Termisu::Color.green, Termisu::Color.blue, Termisu::Attribute::None)
+      state.apply_style(renderer, Termisu::Color.green, Termisu::Color.blue, Termisu::Attribute::None)
 
-      backend.fg_calls.clear
-      backend.bg_calls.clear
+      renderer.fg_calls.clear
+      renderer.bg_calls.clear
 
       # Second call with same style - should not emit
-      changed = state.apply_style(backend, Termisu::Color.green, Termisu::Color.blue, Termisu::Attribute::None)
+      changed = state.apply_style(renderer, Termisu::Color.green, Termisu::Color.blue, Termisu::Attribute::None)
 
       changed.should be_false
-      backend.fg_calls.should be_empty
-      backend.bg_calls.should be_empty
+      renderer.fg_calls.should be_empty
+      renderer.bg_calls.should be_empty
     end
 
     it "only emits foreground when only foreground changes" do
-      backend = MockRenderStateBackend.new
+      renderer = MockRenderStateRenderer.new
       state = Termisu::RenderState.new
 
-      state.apply_style(backend, Termisu::Color.green, Termisu::Color.blue, Termisu::Attribute::None)
-      backend.fg_calls.clear
-      backend.bg_calls.clear
+      state.apply_style(renderer, Termisu::Color.green, Termisu::Color.blue, Termisu::Attribute::None)
+      renderer.fg_calls.clear
+      renderer.bg_calls.clear
 
-      changed = state.apply_style(backend, Termisu::Color.red, Termisu::Color.blue, Termisu::Attribute::None)
+      changed = state.apply_style(renderer, Termisu::Color.red, Termisu::Color.blue, Termisu::Attribute::None)
 
       changed.should be_true
-      backend.fg_calls.should eq([Termisu::Color.red])
-      backend.bg_calls.should be_empty
+      renderer.fg_calls.should eq([Termisu::Color.red])
+      renderer.bg_calls.should be_empty
     end
 
     it "only emits background when only background changes" do
-      backend = MockRenderStateBackend.new
+      renderer = MockRenderStateRenderer.new
       state = Termisu::RenderState.new
 
-      state.apply_style(backend, Termisu::Color.green, Termisu::Color.blue, Termisu::Attribute::None)
-      backend.fg_calls.clear
-      backend.bg_calls.clear
+      state.apply_style(renderer, Termisu::Color.green, Termisu::Color.blue, Termisu::Attribute::None)
+      renderer.fg_calls.clear
+      renderer.bg_calls.clear
 
-      changed = state.apply_style(backend, Termisu::Color.green, Termisu::Color.yellow, Termisu::Attribute::None)
+      changed = state.apply_style(renderer, Termisu::Color.green, Termisu::Color.yellow, Termisu::Attribute::None)
 
       changed.should be_true
-      backend.fg_calls.should be_empty
-      backend.bg_calls.should eq([Termisu::Color.yellow])
+      renderer.fg_calls.should be_empty
+      renderer.bg_calls.should eq([Termisu::Color.yellow])
     end
 
     it "enables bold attribute when added" do
-      backend = MockRenderStateBackend.new
+      renderer = MockRenderStateRenderer.new
       state = Termisu::RenderState.new
 
-      state.apply_style(backend, Termisu::Color.white, Termisu::Color.default, Termisu::Attribute::Bold)
+      state.apply_style(renderer, Termisu::Color.white, Termisu::Color.default, Termisu::Attribute::Bold)
 
-      backend.bold_count.should eq(1)
+      renderer.bold_count.should eq(1)
     end
 
     it "enables underline attribute when added" do
-      backend = MockRenderStateBackend.new
+      renderer = MockRenderStateRenderer.new
       state = Termisu::RenderState.new
 
-      state.apply_style(backend, Termisu::Color.white, Termisu::Color.default, Termisu::Attribute::Underline)
+      state.apply_style(renderer, Termisu::Color.white, Termisu::Color.default, Termisu::Attribute::Underline)
 
-      backend.underline_count.should eq(1)
+      renderer.underline_count.should eq(1)
     end
 
     it "enables multiple attributes at once" do
-      backend = MockRenderStateBackend.new
+      renderer = MockRenderStateRenderer.new
       state = Termisu::RenderState.new
 
       state.apply_style(
-        backend,
+        renderer,
         Termisu::Color.white,
         Termisu::Color.default,
         Termisu::Attribute::Bold | Termisu::Attribute::Underline
       )
 
-      backend.bold_count.should eq(1)
-      backend.underline_count.should eq(1)
+      renderer.bold_count.should eq(1)
+      renderer.underline_count.should eq(1)
     end
 
     it "resets attributes when removing any" do
-      backend = MockRenderStateBackend.new
+      renderer = MockRenderStateRenderer.new
       state = Termisu::RenderState.new
 
       # Set bold
-      state.apply_style(backend, Termisu::Color.white, Termisu::Color.default, Termisu::Attribute::Bold)
-      backend.reset_count.should eq(0)
+      state.apply_style(renderer, Termisu::Color.white, Termisu::Color.default, Termisu::Attribute::Bold)
+      renderer.reset_count.should eq(0)
 
       # Remove bold - should reset
-      state.apply_style(backend, Termisu::Color.white, Termisu::Color.default, Termisu::Attribute::None)
-      backend.reset_count.should eq(1)
+      state.apply_style(renderer, Termisu::Color.white, Termisu::Color.default, Termisu::Attribute::None)
+      renderer.reset_count.should eq(1)
     end
 
     it "resets then re-applies when changing attributes" do
-      backend = MockRenderStateBackend.new
+      renderer = MockRenderStateRenderer.new
       state = Termisu::RenderState.new
 
       # Set bold
-      state.apply_style(backend, Termisu::Color.white, Termisu::Color.default, Termisu::Attribute::Bold)
+      state.apply_style(renderer, Termisu::Color.white, Termisu::Color.default, Termisu::Attribute::Bold)
 
       # Change to underline only - should reset then apply underline
-      state.apply_style(backend, Termisu::Color.white, Termisu::Color.default, Termisu::Attribute::Underline)
+      state.apply_style(renderer, Termisu::Color.white, Termisu::Color.default, Termisu::Attribute::Underline)
 
-      backend.reset_count.should eq(1)
-      backend.underline_count.should eq(1)
+      renderer.reset_count.should eq(1)
+      renderer.underline_count.should eq(1)
     end
 
     it "clears color state on reset" do
-      backend = MockRenderStateBackend.new
+      renderer = MockRenderStateRenderer.new
       state = Termisu::RenderState.new
 
       # Set colors and bold
-      state.apply_style(backend, Termisu::Color.green, Termisu::Color.blue, Termisu::Attribute::Bold)
-      backend.fg_calls.clear
-      backend.bg_calls.clear
+      state.apply_style(renderer, Termisu::Color.green, Termisu::Color.blue, Termisu::Attribute::Bold)
+      renderer.fg_calls.clear
+      renderer.bg_calls.clear
 
       # Remove bold - resets, which clears color state
-      state.apply_style(backend, Termisu::Color.green, Termisu::Color.blue, Termisu::Attribute::None)
+      state.apply_style(renderer, Termisu::Color.green, Termisu::Color.blue, Termisu::Attribute::None)
 
       # Colors should be re-emitted because reset clears them
-      backend.fg_calls.should eq([Termisu::Color.green])
-      backend.bg_calls.should eq([Termisu::Color.blue])
+      renderer.fg_calls.should eq([Termisu::Color.green])
+      renderer.bg_calls.should eq([Termisu::Color.blue])
     end
   end
 
   describe "#move_cursor" do
     it "emits move when cursor position is unknown" do
-      backend = MockRenderStateBackend.new
+      renderer = MockRenderStateRenderer.new
       state = Termisu::RenderState.new
 
-      moved = state.move_cursor(backend, 10, 5)
+      moved = state.move_cursor(renderer, 10, 5)
 
       moved.should be_true
-      backend.move_calls.should eq([{10, 5}])
+      renderer.move_calls.should eq([{10, 5}])
     end
 
     it "skips move when cursor already at position" do
-      backend = MockRenderStateBackend.new
+      renderer = MockRenderStateRenderer.new
       state = Termisu::RenderState.new
 
-      state.move_cursor(backend, 10, 5)
-      backend.move_calls.clear
+      state.move_cursor(renderer, 10, 5)
+      renderer.move_calls.clear
 
-      moved = state.move_cursor(backend, 10, 5)
+      moved = state.move_cursor(renderer, 10, 5)
 
       moved.should be_false
-      backend.move_calls.should be_empty
+      renderer.move_calls.should be_empty
     end
 
     it "emits move when cursor moves to new position" do
-      backend = MockRenderStateBackend.new
+      renderer = MockRenderStateRenderer.new
       state = Termisu::RenderState.new
 
-      state.move_cursor(backend, 10, 5)
-      backend.move_calls.clear
+      state.move_cursor(renderer, 10, 5)
+      renderer.move_calls.clear
 
-      moved = state.move_cursor(backend, 20, 10)
+      moved = state.move_cursor(renderer, 20, 10)
 
       moved.should be_true
-      backend.move_calls.should eq([{20, 10}])
+      renderer.move_calls.should eq([{20, 10}])
     end
 
     it "updates internal state" do
-      backend = MockRenderStateBackend.new
+      renderer = MockRenderStateRenderer.new
       state = Termisu::RenderState.new
 
-      state.move_cursor(backend, 10, 5)
+      state.move_cursor(renderer, 10, 5)
 
       state.cursor_x.should eq(10)
       state.cursor_y.should eq(5)

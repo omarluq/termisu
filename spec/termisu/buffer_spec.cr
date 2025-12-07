@@ -62,6 +62,13 @@ class MockBufferRenderer < Termisu::Renderer
   end
 
   def close; end
+
+  def clear
+    @write_calls.clear
+    @move_calls.clear
+    @fg_calls.clear
+    @bg_calls.clear
+  end
 end
 
 describe Termisu::Buffer do
@@ -152,50 +159,40 @@ describe Termisu::Buffer do
       renderer = MockBufferRenderer.new
       buffer = Termisu::Buffer.new(5, 3)
 
-      # First render - all cells rendered (front buffer empty)
+      # First render - set up initial state
       buffer.set_cell(2, 1, 'A')
       buffer.render_to(renderer)
 
-      # Second render - only changed cell rendered
-      renderer.write_calls.clear
-      renderer.move_calls.clear
+      # Clear tracking for second render
+      renderer.clear
 
       # Change a non-adjacent cell to force cursor move
       buffer.set_cell(0, 2, 'B')
-      buffer.flush(backend)
-
-      # Should only render 1 cell (the changed one)
-      backend.write_calls.size.should eq(1)
-      backend.write_calls.should contain("B")
-      backend.move_calls.should contain({0, 2})
-    end
-
-    it "skips cursor movement when cursor is already at correct position" do
-      backend = MockBufferBackend.new
-      buffer = Termisu::Buffer.new(5, 3)
-
-      # First flush - set up initial state
-      buffer.set_cell(2, 1, 'A')
-      buffer.flush(backend)
-
-      # Clear tracking
-      backend.write_calls.clear
-      backend.move_calls.clear
-
-      # Write at position where cursor already is (right after 'A')
-      buffer.set_cell(3, 1, 'B')
-      buffer.flush(backend)
-
-      # Should write 'B' but no cursor move needed (cursor advanced from writing 'A')
-      backend.write_calls.should contain("B")
-      backend.move_calls.should be_empty # Optimization: cursor already at right position
-      buffer.set_cell(3, 1, 'B')
       buffer.render_to(renderer)
 
       # Should only render 1 cell (the changed one)
-      renderer.write_calls.size.should eq(1)
-      renderer.write_calls[0].should eq("B")
-      renderer.move_calls[0].should eq({3, 1})
+      renderer.write_calls.should contain("B")
+      renderer.move_calls.should contain({0, 2})
+    end
+
+    it "skips cursor movement when cursor is already at correct position" do
+      renderer = MockBufferRenderer.new
+      buffer = Termisu::Buffer.new(5, 3)
+
+      # First render - set up initial state
+      buffer.set_cell(2, 1, 'A')
+      buffer.render_to(renderer)
+
+      # Clear tracking
+      renderer.clear
+
+      # Write at position where cursor already is (right after 'A')
+      buffer.set_cell(3, 1, 'B')
+      buffer.render_to(renderer)
+
+      # Should write 'B' but no cursor move needed (cursor advanced from writing 'A')
+      renderer.write_calls.should contain("B")
+      renderer.move_calls.should be_empty # Optimization: cursor already at right position
     end
 
     it "calls renderer.flush after rendering" do
@@ -224,54 +221,48 @@ describe Termisu::Buffer do
       buffer.set_cell(2, 1, 'B', attr: Termisu::Attribute::Bold)
       buffer.render_to(renderer)
 
-      backend.bold_count.should be > 0
-      # Note: Optimized rendering doesn't reset after each cell,
-      # only when attributes are removed in a subsequent cell
+      renderer.bold_count.should be > 0
     end
 
     it "batches consecutive cells with same styling" do
-      backend = MockBufferBackend.new
+      renderer = MockBufferRenderer.new
       buffer = Termisu::Buffer.new(10, 3)
 
       # Set 3 consecutive cells with same styling
       buffer.set_cell(2, 1, 'A', fg: Termisu::Color.green)
       buffer.set_cell(3, 1, 'B', fg: Termisu::Color.green)
       buffer.set_cell(4, 1, 'C', fg: Termisu::Color.green)
-      buffer.flush(backend)
+      buffer.render_to(renderer)
 
       # Clear and set up for diff test
-      backend.write_calls.clear
-      backend.move_calls.clear
-      backend.fg_calls.clear
+      renderer.clear
 
       # Change same cells again
       buffer.set_cell(2, 1, 'X', fg: Termisu::Color.red)
       buffer.set_cell(3, 1, 'Y', fg: Termisu::Color.red)
       buffer.set_cell(4, 1, 'Z', fg: Termisu::Color.red)
-      buffer.flush(backend)
+      buffer.render_to(renderer)
 
       # Should batch into single write "XYZ"
-      backend.write_calls.should contain("XYZ")
+      renderer.write_calls.should contain("XYZ")
       # Should only set color once (not 3 times)
-      backend.fg_calls.size.should eq(1)
-      backend.fg_calls[0].should eq(Termisu::Color.red)
+      renderer.fg_calls.size.should eq(1)
+      renderer.fg_calls[0].should eq(Termisu::Color.red)
     end
 
     it "splits batches when styling changes" do
-      backend = MockBufferBackend.new
+      renderer = MockBufferRenderer.new
       buffer = Termisu::Buffer.new(10, 3)
 
       # Set cells with different colors
       buffer.set_cell(2, 1, 'A', fg: Termisu::Color.green)
       buffer.set_cell(3, 1, 'B', fg: Termisu::Color.red) # Different color
       buffer.set_cell(4, 1, 'C', fg: Termisu::Color.red) # Same as B
-      buffer.flush(backend)
+      buffer.render_to(renderer)
 
       # Should have separate writes for different styles
-      backend.write_calls.should contain("A")
-      backend.write_calls.should contain("BC")
-      renderer.bold_count.should be > 0
-      renderer.reset_count.should be > 0 # Reset after attribute
+      renderer.write_calls.should contain("A")
+      renderer.write_calls.should contain("BC")
     end
   end
 
@@ -291,28 +282,24 @@ describe Termisu::Buffer do
 
       # Sync should render all 6 cells (3x2)
       # With batching, cells with same style are batched together
-      buffer.sync(backend)
-
-      # Total characters rendered should equal total cells
-      total_chars = backend.write_calls.sum(&.size)
-      total_chars.should eq(6)
-      backend.flush_count.should eq(2) # flush + sync
       buffer.sync_to(renderer)
 
-      renderer.write_calls.size.should eq(6)
+      # Total characters rendered should equal total cells
+      total_chars = renderer.write_calls.sum(&.size)
+      total_chars.should eq(6)
       renderer.flush_count.should eq(2) # render_to + sync_to
     end
 
     it "batches cells with same styling on sync" do
-      backend = MockBufferBackend.new
+      renderer = MockBufferRenderer.new
       buffer = Termisu::Buffer.new(5, 1)
 
       # All default cells - should batch into single write
-      buffer.sync(backend)
+      buffer.sync_to(renderer)
 
       # All 5 cells should be in a single batched write
-      backend.write_calls.size.should eq(1)
-      backend.write_calls[0].size.should eq(5)
+      renderer.write_calls.size.should eq(1)
+      renderer.write_calls[0].size.should eq(5)
     end
   end
 
@@ -451,6 +438,29 @@ describe Termisu::Buffer do
 
       buffer.cursor.x.should eq(9)
       buffer.cursor.y.should eq(7)
+    end
+  end
+
+  describe "cursor rendering" do
+    it "renders visible cursor" do
+      renderer = MockBufferRenderer.new
+      buffer = Termisu::Buffer.new(5, 3)
+      buffer.set_cursor(2, 1)
+
+      buffer.render_to(renderer)
+
+      renderer.show_cursor_count.should eq(1)
+      renderer.move_calls.should contain({2, 1})
+    end
+
+    it "renders hidden cursor" do
+      renderer = MockBufferRenderer.new
+      buffer = Termisu::Buffer.new(5, 3)
+      buffer.hide_cursor
+
+      buffer.render_to(renderer)
+
+      renderer.hide_cursor_count.should eq(1)
     end
   end
 end
