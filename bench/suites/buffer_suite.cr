@@ -1,11 +1,11 @@
 require "../bench_runner"
 
 module Termisu::Bench
-  # Mock backend for benchmarking flush operations
-  class NullBackend < Backend
+  # Mock renderer for benchmarking flush operations
+  class NullRenderer < Renderer
     def write(data : String); end
 
-    def move_cursor(col : Int32, row : Int32); end
+    def move_cursor(x : Int32, y : Int32); end
 
     def foreground=(color : Color); end
 
@@ -23,9 +23,9 @@ module Termisu::Bench
 
     def enable_reverse; end
 
-    def show_cursor; end
+    def write_show_cursor; end
 
-    def hide_cursor; end
+    def write_hide_cursor; end
 
     def size : {Int32, Int32}
       {80, 24}
@@ -44,13 +44,13 @@ module Termisu::Bench
       small_buffer = Buffer.new(80, 24)
       medium_buffer = Buffer.new(120, 40)
       large_buffer = Buffer.new(200, 60)
-      backend = NullBackend.new
+      renderer = NullRenderer.new
 
       groups << run_cell_operations(small_buffer, large_buffer)
       groups << run_clear_operations(small_buffer, medium_buffer, large_buffer)
       groups << run_fill_operations(small_buffer, medium_buffer)
-      groups << run_flush_operations(small_buffer, backend)
-      groups << run_sync_operations(small_buffer, medium_buffer, large_buffer, backend)
+      groups << run_render_operations(small_buffer, renderer)
+      groups << run_sync_operations(small_buffer, medium_buffer, large_buffer, renderer)
       groups << run_resize_operations
       groups << run_cursor_operations(small_buffer)
 
@@ -112,32 +112,32 @@ module Termisu::Bench
       BenchGroup.new("Full Screen Fill", capture.results)
     end
 
-    private def run_flush_operations(buffer : Buffer, backend : Backend) : BenchGroup
+    private def run_render_operations(buffer : Buffer, renderer : Renderer) : BenchGroup
       capture = BenchCapture.new
 
-      capture.report("flush (no changes)") do
-        buffer.flush(backend)
+      capture.report("render_to (no changes)") do
+        buffer.render_to(renderer)
       end
 
-      capture.report("flush (1 cell changed)") do
+      capture.report("render_to (1 cell changed)") do
         buffer.set_cell(40, 12, ((rand(26) + 65).to_u8).unsafe_chr)
-        buffer.flush(backend)
+        buffer.render_to(renderer)
       end
 
-      capture.report("flush (10% changed)") do
+      capture.report("render_to (10% changed)") do
         192.times { buffer.set_cell(rand(80), rand(24), 'X') }
-        buffer.flush(backend)
+        buffer.render_to(renderer)
       end
 
-      BenchGroup.new("Flush Operations (Diff-Based)", capture.results)
+      BenchGroup.new("Render Operations (Diff-Based)", capture.results)
     end
 
-    private def run_sync_operations(small : Buffer, medium : Buffer, large : Buffer, backend : Backend) : BenchGroup
+    private def run_sync_operations(small : Buffer, medium : Buffer, large : Buffer, renderer : Renderer) : BenchGroup
       capture = BenchCapture.new
 
-      capture.report("sync (small)") { small.sync(backend) }
-      capture.report("sync (medium)") { medium.sync(backend) }
-      capture.report("sync (large)") { large.sync(backend) }
+      capture.report("sync (small)") { small.sync_to(renderer) }
+      capture.report("sync (medium)") { medium.sync_to(renderer) }
+      capture.report("sync (large)") { large.sync_to(renderer) }
 
       BenchGroup.new("Sync Operations (Full Redraw)", capture.results)
     end
