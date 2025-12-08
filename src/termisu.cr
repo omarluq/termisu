@@ -18,8 +18,6 @@
 # termisu.close
 # ```
 class Termisu
-  VERSION = "0.0.1.alpha"
-
   # Initializes Termisu with all required components.
   #
   # Sets up terminal I/O, rendering, and input reader.
