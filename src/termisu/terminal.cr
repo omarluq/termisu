@@ -26,6 +26,8 @@ class Termisu::Terminal < Termisu::Renderer
   @terminfo : Terminfo
   @buffer : Buffer
   @alternate_screen : Bool = false
+  @mouse_enabled : Bool = false
+  @enhanced_keyboard : Bool = false
 
   # Cached render state for direct API optimization.
   # Prevents redundant escape sequences when the same style is set repeatedly.
@@ -412,6 +414,119 @@ class Termisu::Terminal < Termisu::Renderer
   def resize_buffer(width : Int32, height : Int32)
     Log.info { "Resizing buffer to #{width}x#{height}" }
     @buffer.resize(width, height)
+  end
+
+  # --- Mouse Support ---
+
+  # Mouse protocol escape sequences.
+  # Using CSI ? sequences for xterm-compatible mouse tracking.
+  MOUSE_ENABLE_NORMAL  = "\e[?1000h" # Normal mouse tracking (mode 1000)
+  MOUSE_ENABLE_SGR     = "\e[?1006h" # SGR extended mouse protocol (mode 1006)
+  MOUSE_DISABLE_NORMAL = "\e[?1000l"
+  MOUSE_DISABLE_SGR    = "\e[?1006l"
+
+  # Enhanced keyboard protocol escape sequences.
+  # These protocols disambiguate keys that normally send the same bytes
+  # (e.g., Tab vs Ctrl+I, Enter vs Ctrl+M).
+  #
+  # Kitty keyboard protocol (most comprehensive):
+  #   https://sw.kovidgoyal.net/kitty/keyboard-protocol/
+  #   Flags: 1=disambiguate, 2=report_event_types, 4=report_alternate_keys
+  #         8=report_all_keys, 16=report_text
+  KITTY_KEYBOARD_ENABLE  = "\e[>1u" # Enable with disambiguate flag
+  KITTY_KEYBOARD_DISABLE = "\e[<u"  # Pop keyboard mode
+  KITTY_KEYBOARD_QUERY   = "\e[?u"  # Query current mode
+
+  # modifyOtherKeys (xterm, widely supported):
+  #   Mode 2 reports modified keys as CSI 27 ; modifier ; keycode ~
+  MODIFY_OTHER_KEYS_ENABLE  = "\e[>4;2m" # Enable mode 2
+  MODIFY_OTHER_KEYS_DISABLE = "\e[>4;0m" # Disable
+
+  # Enables mouse input tracking.
+  #
+  # Enables SGR extended mouse protocol (mode 1006) for better coordinate
+  # support and unambiguous button detection. Falls back to normal mode
+  # (1000) on older terminals that don't support SGR.
+  #
+  # Example:
+  # ```
+  # terminal.enable_mouse
+  # # Now mouse events will be reported via poll_event
+  # terminal.disable_mouse # When done
+  # ```
+  def enable_mouse
+    return if @mouse_enabled
+    Log.debug { "Enabling mouse tracking" }
+    # Enable SGR mode first (preferred), then normal mode as fallback
+    write(MOUSE_ENABLE_SGR)
+    write(MOUSE_ENABLE_NORMAL)
+    flush
+    @mouse_enabled = true
+  end
+
+  # Disables mouse input tracking.
+  #
+  # Disables both SGR and normal mouse protocols.
+  def disable_mouse
+    return unless @mouse_enabled
+    Log.debug { "Disabling mouse tracking" }
+    write(MOUSE_DISABLE_SGR)
+    write(MOUSE_DISABLE_NORMAL)
+    flush
+    @mouse_enabled = false
+  end
+
+  # Returns whether mouse tracking is currently enabled.
+  def mouse_enabled? : Bool
+    @mouse_enabled
+  end
+
+  # --- Enhanced Keyboard Support ---
+
+  # Enables enhanced keyboard protocol for disambiguated key reporting.
+  #
+  # This enables the Kitty keyboard protocol (if supported) and falls back
+  # to modifyOtherKeys. Enhanced mode allows distinguishing between keys
+  # that normally send the same bytes:
+  # - Tab vs Ctrl+I
+  # - Enter vs Ctrl+M
+  # - Backspace vs Ctrl+H
+  #
+  # Not all terminals support these protocols. Unsupported terminals will
+  # simply ignore the escape sequences and continue with legacy behavior.
+  #
+  # Example:
+  # ```
+  # terminal.enable_enhanced_keyboard
+  # # Now Ctrl+I and Tab are distinguishable
+  # terminal.disable_enhanced_keyboard # When done
+  # ```
+  def enable_enhanced_keyboard
+    return if @enhanced_keyboard
+    Log.debug { "Enabling enhanced keyboard protocol" }
+    # Try Kitty first (most comprehensive), then modifyOtherKeys as fallback
+    write(KITTY_KEYBOARD_ENABLE)
+    write(MODIFY_OTHER_KEYS_ENABLE)
+    flush
+    @enhanced_keyboard = true
+  end
+
+  # Disables enhanced keyboard protocol.
+  #
+  # Returns to legacy keyboard mode where Tab/Ctrl+I, Enter/Ctrl+M, etc.
+  # are indistinguishable.
+  def disable_enhanced_keyboard
+    return unless @enhanced_keyboard
+    Log.debug { "Disabling enhanced keyboard protocol" }
+    write(KITTY_KEYBOARD_DISABLE)
+    write(MODIFY_OTHER_KEYS_DISABLE)
+    flush
+    @enhanced_keyboard = false
+  end
+
+  # Returns whether enhanced keyboard protocol is enabled.
+  def enhanced_keyboard? : Bool
+    @enhanced_keyboard
   end
 end
 

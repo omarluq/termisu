@@ -125,6 +125,145 @@ class Termisu
   def wait_for_input(timeout_ms : Int32) : Bool
     @reader.wait_for_data(timeout_ms)
   end
+
+  # --- Event-Based Input API ---
+
+  # Lazy-initialized input parser for event-based input.
+  @input_parser : Input::Parser?
+
+  # Returns the input parser, creating it if needed.
+  private def input_parser : Input::Parser
+    @input_parser ||= Input::Parser.new(@reader)
+  end
+
+  # Polls for an input event with optional timeout.
+  #
+  # This is the recommended way to handle keyboard and mouse input. Returns
+  # structured Event objects (Events::Key, Events::Mouse, Events::Resize)
+  # instead of raw bytes.
+  #
+  # Parameters:
+  # - timeout_ms: Timeout in milliseconds (-1 for blocking, 0 for non-blocking)
+  #
+  # Returns an Event or nil if timeout/no data.
+  #
+  # Example:
+  # ```
+  # loop do
+  #   if event = termisu.poll_event(100)
+  #     case event
+  #     when Termisu::Events::Key
+  #       break if event.ctrl_c? || event.key.escape?
+  #       puts "Key: #{event.key}"
+  #     when Termisu::Events::Mouse
+  #       puts "Mouse: #{event.x},#{event.y}"
+  #     end
+  #   end
+  #   termisu.render
+  # end
+  # ```
+  def poll_event(timeout_ms : Int32 = -1) : Event?
+    input_parser.poll_event(timeout_ms)
+  end
+
+  # Waits for and returns the next input event (blocking).
+  #
+  # This method blocks until an event is available.
+  #
+  # Example:
+  # ```
+  # event = termisu.wait_event
+  # puts "Got event: #{event}"
+  # ```
+  def wait_event : Event
+    loop do
+      if event = poll_event(-1)
+        return event
+      end
+    end
+  end
+
+  # Yields each event as it becomes available.
+  #
+  # This is a convenient way to process events in a loop.
+  # Use timeout_ms to control polling behavior.
+  #
+  # Example:
+  # ```
+  # termisu.each_event(100) do |event|
+  #   case event
+  #   when Termisu::Events::Key
+  #     break if event.key.escape?
+  #   end
+  #   termisu.render
+  # end
+  # ```
+  def each_event(timeout_ms : Int32 = -1, &)
+    loop do
+      if event = poll_event(timeout_ms)
+        yield event
+      end
+    end
+  end
+
+  # --- Mouse Support ---
+
+  # Enables mouse input tracking.
+  #
+  # Once enabled, mouse events will be reported via poll_event.
+  # Supports SGR extended protocol (mode 1006) for large terminals
+  # and falls back to normal mode (1000) for compatibility.
+  #
+  # Example:
+  # ```
+  # termisu.enable_mouse
+  # loop do
+  #   if event = termisu.poll_event(100)
+  #     case event
+  #     when Termisu::Events::Mouse
+  #       puts "Click at #{event.x},#{event.y}"
+  #     end
+  #   end
+  # end
+  # termisu.disable_mouse
+  # ```
+  delegate enable_mouse, disable_mouse, mouse_enabled?, to: @terminal
+
+  # --- Enhanced Keyboard Support ---
+
+  # Enables enhanced keyboard protocol for disambiguated key reporting.
+  #
+  # In standard terminal mode, certain keys are indistinguishable:
+  # - Tab sends the same byte as Ctrl+I (0x09)
+  # - Enter sends the same byte as Ctrl+M (0x0D)
+  # - Backspace may send the same byte as Ctrl+H (0x08)
+  #
+  # Enhanced mode enables the Kitty keyboard protocol and/or modifyOtherKeys,
+  # which report keys in a way that preserves the distinction.
+  #
+  # Note: Not all terminals support these protocols. Unsupported terminals
+  # will silently ignore the escape sequences and continue with legacy mode.
+  # Supported terminals include: Kitty, WezTerm, foot, Ghostty, recent xterm.
+  #
+  # Example:
+  # ```
+  # termisu.enable_enhanced_keyboard
+  # loop do
+  #   if event = termisu.poll_event(100)
+  #     case event
+  #     when Termisu::Events::Key
+  #       # Now Ctrl+I and Tab are distinguishable!
+  #       if event.ctrl? && event.key.lower_i?
+  #         puts "Ctrl+I pressed"
+  #       elsif event.key.tab?
+  #         puts "Tab pressed"
+  #       end
+  #     end
+  #   end
+  # end
+  # termisu.disable_enhanced_keyboard
+  # ```
+  delegate enable_enhanced_keyboard, disable_enhanced_keyboard, enhanced_keyboard?, to: @terminal
 end
 
 require "./termisu/*"
