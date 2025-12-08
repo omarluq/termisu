@@ -72,14 +72,16 @@ See `examples/showcase.cr` for a complete demonstration.
 - Modular color architecture
 - Performance optimizations (RenderState batching, cursor tracking)
 - tparm() processor for parametrized terminfo capabilities
+- Structured logging system (file-based, async/sync modes)
 
 ### In Progress
 
+- Key sequence parsing (function keys, arrows, modifiers)
 - Mouse input handling
-- Event system (keyboard, mouse, resize)
 
 ### Planned
 
+- Event system (keyboard, mouse, resize)
 - Higher-level widgets and layout system (Maybe)
 
 ## Inspiration
@@ -90,6 +92,8 @@ Termisu is inspired by and follows the design philosophy of:
 - [nsf/termbox-go](https://github.com/nsf/termbox-go) - Go implementation of termbox
 
 ## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed guidelines.
 
 1. Fork it (<https://github.com/omarluq/termisu/fork>)
 2. Create your feature branch (`git checkout -b my-new-feature`)
