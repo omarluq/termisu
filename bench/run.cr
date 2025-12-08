@@ -1,3 +1,10 @@
+# Disable logging during benchmarks for clean output
+ENV["TERMISU_LOG_LEVEL"] = "none"
+
+require "log"
+
+Log.setup(:none)
+
 require "./bench_runner"
 require "./suites/buffer_suite"
 require "./suites/color_suite"
