@@ -5,6 +5,7 @@
 [![Tests](https://img.shields.io/github/actions/workflow/status/omarluq/termisu/format.yml?style=flat-square&logo=github&label=Formatting)](https://github.com/omarluq/termisu/actions/workflows/format.yml)
 [![Tests](https://img.shields.io/github/actions/workflow/status/omarluq/termisu/ameba.yml?style=flat-square&logo=github&label=Ameba)](https://github.com/omarluq/termisu/actions/workflows/ameba.yml)
 [![Tests](https://img.shields.io/github/actions/workflow/status/omarluq/termisu/pages.yml?style=flat-square&logo=github&label=Pages)](https://github.com/omarluq/termisu/actions/workflows/pages.yml)
+[![GitHub release](https://img.shields.io/github/release/omarluq/termisu.svg?style=flat-square&logo=github&label=Release)](https://github.com/omarluq/termisu/releases)
 
 # Termisu
 
