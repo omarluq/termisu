@@ -1,6 +1,10 @@
-[![Crystal Version](https://img.shields.io/badge/crystal-%3E%3D1.18.2-000000.svg?style=flat-square)](https://crystal-lang.org/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square)](LICENSE)
+[![Crystal Version](https://img.shields.io/badge/crystal-%3E%3D1.18.2-000000.svg?style=flat-square&logo=crystal)](https://crystal-lang.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square&logo=opensourceinitiative)](LICENSE)
 ![Cooking](https://img.shields.io/badge/🍳-cooking-orange?style=flat-square)
+[![Tests](https://img.shields.io/github/actions/workflow/status/omarluq/termisu/test.yml?style=flat-square&logo=github&label=Tests)](https://github.com/omarluq/termisu/actions/workflows/test.yml)
+[![Tests](https://img.shields.io/github/actions/workflow/status/omarluq/termisu/format.yml?style=flat-square&logo=github&label=Formatting)](https://github.com/omarluq/termisu/actions/workflows/format.yml)
+[![Tests](https://img.shields.io/github/actions/workflow/status/omarluq/termisu/ameba.yml?style=flat-square&logo=github&label=Ameba)](https://github.com/omarluq/termisu/actions/workflows/ameba.yml)
+[![Tests](https://img.shields.io/github/actions/workflow/status/omarluq/termisu/pages.yml?style=flat-square&logo=github&label=Pages)](https://github.com/omarluq/termisu/actions/workflows/pages.yml)
 
 # Termisu
 
