@@ -50,8 +50,6 @@ class Termisu::Reader
     byte = @buffer[@buffer_pos]
     @buffer_pos += 1
 
-    Termisu::Logs::Input.trace { "read_byte: #{byte} (0x#{byte.to_s(16)}) '#{byte.chr.printable? ? byte.chr : '?'}'" }
-
     byte
   end
 
@@ -153,7 +151,6 @@ class Termisu::Reader
 
   # Clears any buffered data.
   def clear_buffer
-    Log.trace { "Clearing buffer (#{@buffer_len - @buffer_pos} bytes discarded)" } if @buffer_len > @buffer_pos
     @buffer_pos = 0
     @buffer_len = 0
   end

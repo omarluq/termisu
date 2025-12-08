@@ -113,8 +113,6 @@ class Termisu::Input::Parser
     byte = @reader.read_byte
     return nil unless byte
 
-    Log.trace { "poll_event: first byte=#{byte} (0x#{byte.to_s(16)})" }
-
     parse_byte(byte)
   end
 
@@ -144,7 +142,6 @@ class Termisu::Input::Parser
       Events::Key.new(Key::Enter)
     when 0x01..0x1A # Ctrl+A through Ctrl+Z (excluding special cases above)
       key = Key.from_char(('a'.ord + byte - 1).chr)
-      Log.trace { "Ctrl+#{('a'.ord + byte - 1).chr}" }
       Events::Key.new(key, Modifier::Ctrl)
     when 0x7F # DEL (Backspace on most terminals)
       Events::Key.new(Key::Backspace)
@@ -159,17 +156,13 @@ class Termisu::Input::Parser
   private def parse_escape_sequence : Event
     # Check if more data follows (escape sequence) or just ESC key
     unless @reader.wait_for_data(ESCAPE_TIMEOUT_MS)
-      Log.trace { "ESC timeout - returning Escape key" }
       return Events::Key.new(Key::Escape)
     end
 
     byte = @reader.peek_byte
     unless byte
-      Log.trace { "ESC with no following byte - returning Escape key" }
       return Events::Key.new(Key::Escape)
     end
-
-    Log.trace { "ESC followed by #{byte} (0x#{byte.to_s(16)})" }
 
     case byte
     when '['.ord.to_u8  # CSI sequence: \e[...
@@ -182,7 +175,6 @@ class Termisu::Input::Parser
       # Alt+key: \e followed by printable char
       @reader.read_byte # consume the char
       key = Key.from_char(byte.chr)
-      Log.trace { "Alt+#{byte.chr}" }
       Events::Key.new(key, Modifier::Alt)
     end
   end
@@ -210,7 +202,6 @@ class Termisu::Input::Parser
       if byte >= 0x40 && byte <= 0x7E
         # Final character - determines the key
         params = buffer.to_s
-        Log.trace { "CSI sequence: params='#{params}' final='#{char}'" }
         return decode_csi_key(params, char)
       end
 
@@ -281,7 +272,6 @@ class Termisu::Input::Parser
     # Convert codepoint to key
     key = codepoint_to_key(codepoint)
 
-    Log.trace { "Kitty key: codepoint=#{codepoint} modifiers=#{modifiers} key=#{key}" }
     Events::Key.new(key, modifiers)
   end
 
@@ -294,7 +284,6 @@ class Termisu::Input::Parser
     modifiers = Modifier.from_xterm_code(mod_code)
     key = codepoint_to_key(keycode)
 
-    Log.trace { "modifyOtherKeys: keycode=#{keycode} modifiers=#{modifiers} key=#{key}" }
     Events::Key.new(key, modifiers)
   end
 
@@ -366,8 +355,6 @@ class Termisu::Input::Parser
       return Events::Key.new(Key::Unknown)
     end
 
-    Log.trace { "SS3 sequence: #{byte.chr}" }
-
     key = SS3_KEYS[byte.chr]? || Key::Unknown
     Events::Key.new(key)
   end
@@ -395,7 +382,6 @@ class Termisu::Input::Parser
           modifiers = Modifier.from_mouse_cb(cb)
           motion = (cb & MOUSE_MOTION_BIT) != 0
 
-          Log.trace { "SGR mouse: button=#{button} x=#{cx} y=#{cy} mods=#{modifiers} motion=#{motion}" }
           return Events::Mouse.new(cx, cy, button, modifiers, motion)
         end
 
@@ -438,7 +424,6 @@ class Termisu::Input::Parser
     modifiers = Modifier.from_mouse_cb(cb)
     motion = (cb & MOUSE_MOTION_BIT) != 0
 
-    Log.trace { "Normal mouse: button=#{button} x=#{cx} y=#{cy} mods=#{modifiers} motion=#{motion}" }
     Events::Mouse.new(cx, cy, button, modifiers, motion)
   end
 end

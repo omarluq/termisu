@@ -378,7 +378,6 @@ class Termisu::Terminal < Termisu::Renderer
   # Only cells that have changed since the last render are redrawn (diff-based).
   # This is more efficient than full redraws for partial updates.
   def render
-    Log.trace { "Rendering buffer" }
     @buffer.render_to(self)
   end
 
@@ -386,7 +385,6 @@ class Termisu::Terminal < Termisu::Renderer
   #
   # Useful after terminal resize or screen corruption.
   def sync
-    Log.debug { "Forcing full buffer sync" }
     @buffer.sync_to(self)
   end
 
@@ -412,7 +410,6 @@ class Termisu::Terminal < Termisu::Renderer
   #
   # Preserves existing content where possible.
   def resize_buffer(width : Int32, height : Int32)
-    Log.info { "Resizing buffer to #{width}x#{height}" }
     @buffer.resize(width, height)
   end
 
