@@ -1,6 +1,6 @@
 # Operations lookup tables for tparm processor.
 #
-# This module provides O(1) dispatch tables for the tparm stack machine.
+# This module provides dispatch tables for the tparm stack machine.
 # The terminfo parametrized string format uses a stack-based language where
 # operations pop operands from the stack, compute results, and push them back.
 #

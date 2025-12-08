@@ -184,13 +184,13 @@ class Termisu::Terminfo::Parser
 
   # Extracts requested capabilities from the parsed capability set.
   #
-  # Uses STRING_CAPS ordering to map capability names to their indices,
-  # then looks up the corresponding values.
+  # Uses hash lookup to map capability names to their indices,
+  # then retrieves the corresponding values.
   private def extract_requested_capabilities(all_caps, requested)
     result = {} of String => String
 
     requested.each do |cap_name|
-      if index = Capabilities::STRING_CAPS.index(cap_name)
+      if index = Capabilities.string_cap_index(cap_name)
         result[cap_name] = all_caps[index] if all_caps.has_key?(index)
       end
     end

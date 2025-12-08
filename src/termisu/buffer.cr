@@ -28,6 +28,7 @@ class Termisu::Buffer
   @front : Array(Cell)        # Currently displayed buffer
   @back : Array(Cell)         # Buffer being written to
   @render_state : RenderState # Tracks current terminal state for optimization
+  @batch_buffer : IO::Memory  # Reusable buffer for character batching
 
   # Creates a new Buffer with the specified dimensions.
   #
@@ -40,6 +41,7 @@ class Termisu::Buffer
     @back = Array(Cell).new(size) { Cell.default }
     @cursor = Cursor.new # Hidden by default
     @render_state = RenderState.new
+    @batch_buffer = IO::Memory.new(@width) # Pre-sized for typical row batches
     Log.debug { "Buffer initialized: #{@width}x#{@height} (#{size} cells)" }
   end
 
@@ -224,25 +226,24 @@ class Termisu::Buffer
       batch_bg = back_cell.bg
       batch_attr = back_cell.attr
 
-      # Collect consecutive changed cells with same styling
-      batch_chars = String.build do |str|
-        while col < @width
-          idx = row_start + col
-          back_cell = @back[idx]
-          front_cell = @front[idx]
+      # Collect consecutive changed cells with same styling (reuse buffer)
+      @batch_buffer.clear
+      while col < @width
+        idx = row_start + col
+        back_cell = @back[idx]
+        front_cell = @front[idx]
 
-          # Stop if unchanged or different styling
-          break if back_cell == front_cell
-          break if back_cell.fg != batch_fg || back_cell.bg != batch_bg || back_cell.attr != batch_attr
+        # Stop if unchanged or different styling
+        break if back_cell == front_cell
+        break if back_cell.fg != batch_fg || back_cell.bg != batch_bg || back_cell.attr != batch_attr
 
-          str << back_cell.ch
-          @front[idx] = back_cell # Update front buffer
-          col += 1
-        end
+        @batch_buffer << back_cell.ch
+        @front[idx] = back_cell # Update front buffer
+        col += 1
       end
 
       # Render the batch
-      render_batch(renderer, batch_start, row, batch_chars, batch_fg, batch_bg, batch_attr)
+      render_batch(renderer, batch_start, row, @batch_buffer.to_s, batch_fg, batch_bg, batch_attr)
     end
   end
 
@@ -264,23 +265,22 @@ class Termisu::Buffer
       batch_bg = cell.bg
       batch_attr = cell.attr
 
-      # Collect consecutive cells with same styling
-      batch_chars = String.build do |str|
-        while col < @width
-          idx = row_start + col
-          cell = @back[idx]
+      # Collect consecutive cells with same styling (reuse buffer)
+      @batch_buffer.clear
+      while col < @width
+        idx = row_start + col
+        cell = @back[idx]
 
-          # Stop if different styling
-          break if cell.fg != batch_fg || cell.bg != batch_bg || cell.attr != batch_attr
+        # Stop if different styling
+        break if cell.fg != batch_fg || cell.bg != batch_bg || cell.attr != batch_attr
 
-          str << cell.ch
-          @front[idx] = cell # Update front buffer
-          col += 1
-        end
+        @batch_buffer << cell.ch
+        @front[idx] = cell # Update front buffer
+        col += 1
       end
 
       # Render the batch
-      render_batch(renderer, batch_start, row, batch_chars, batch_fg, batch_bg, batch_attr)
+      render_batch(renderer, batch_start, row, @batch_buffer.to_s, batch_fg, batch_bg, batch_attr)
     end
   end
 

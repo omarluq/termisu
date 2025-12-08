@@ -1,3 +1,30 @@
+# Hardcoded fallback terminal capabilities for common terminal types.
+#
+# Provides built-in escape sequences when the terminfo database is unavailable
+# or doesn't contain required capabilities. Supports two terminal families:
+#
+# - **xterm**: Modern terminal emulators (xterm, gnome-terminal, konsole, etc.)
+# - **linux**: Linux virtual console (framebuffer console)
+#
+# ## Capability Categories
+#
+# **Function Capabilities** (XTERM_FUNCS, LINUX_FUNCS):
+# - Screen control: alternate screen, clear, cursor visibility
+# - Attributes: bold, underline, blink, reverse, dim, italic
+# - Cursor movement: positioning, forward, backward, up, down
+# - Colors: 256-color foreground/background
+#
+# **Key Capabilities** (XTERM_KEYS, LINUX_KEYS):
+# - Function keys F1-F12
+# - Navigation: Insert, Delete, Home, End, PgUp, PgDn
+# - Arrow keys: Up, Down, Left, Right
+#
+# ## Usage
+#
+# ```
+# funcs = Termisu::Terminfo::Builtin.funcs_for("xterm-256color")
+# keys = Termisu::Terminfo::Builtin.keys_for("linux")
+# ```
 module Termisu::Terminfo::Builtin
   private XTERM_FUNCS = [
     "\e[?1049h",         # smcup - enter alternate screen
@@ -77,14 +104,23 @@ module Termisu::Terminfo::Builtin
     "\e[A", "\e[B", "\e[D", "\e[C",                   # Up, Down, Left, Right
   ]
 
+  # Returns function capability sequences for the given terminal name.
+  #
+  # Selects linux-specific sequences if name contains "linux",
+  # otherwise returns xterm sequences (suitable for most modern terminals).
   def self.funcs_for(name : String) : Array(String)
     linux?(name) ? LINUX_FUNCS : XTERM_FUNCS
   end
 
+  # Returns key capability sequences for the given terminal name.
+  #
+  # Selects linux-specific sequences if name contains "linux",
+  # otherwise returns xterm sequences (suitable for most modern terminals).
   def self.keys_for(name : String) : Array(String)
     linux?(name) ? LINUX_KEYS : XTERM_KEYS
   end
 
+  # Checks if the terminal name indicates a Linux console.
   private def self.linux?(name : String) : Bool
     name.includes?("linux")
   end

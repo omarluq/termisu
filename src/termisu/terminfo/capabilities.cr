@@ -117,4 +117,24 @@ module Termisu::Terminfo::Capabilities
     "kcub1",                                     # Left arrow key
     "kcuf1",                                     # Right arrow key
   ]
+
+  # Lookup table for capability name to index mapping.
+  # Lazily initialized from STRING_CAPS array.
+  def self.string_cap_index(name : String) : Int32?
+    string_cap_indices[name]?
+  end
+
+  # Returns the capability name to index hash, building it if needed.
+  def self.string_cap_indices : Hash(String, Int32)
+    @@string_cap_indices ||= build_string_cap_indices
+  end
+
+  # Builds the capability name to index hash.
+  private def self.build_string_cap_indices : Hash(String, Int32)
+    hash = Hash(String, Int32).new(initial_capacity: STRING_CAPS.size)
+    STRING_CAPS.each_with_index { |cap, idx| hash[cap] = idx }
+    hash
+  end
+
+  @@string_cap_indices : Hash(String, Int32)?
 end
