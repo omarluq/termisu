@@ -68,20 +68,20 @@ See `examples/showcase.cr` and `examples/keyboard_and_mouse.cr` for complete dem
 
 ## Roadmap
 
-**Current Status: Alpha (v0.1.0)**
+**Current Status: (v0.0.1-rc)**
 
-| Component | Status |
-|-----------|--------|
-| Terminal I/O | ✅ Complete |
-| Terminfo | ✅ Complete |
-| Double Buffering | ✅ Complete |
-| Colors | ✅ Complete |
-| Attributes | ✅ Complete |
-| Keyboard Input | ✅ Complete |
-| Mouse Input | ✅ Complete |
-| Event System | ✅ Complete |
-| Async Channels | 🔄 Planned (v0.2) |
-| Resize Events | 🔄 Planned (v0.2) |
+| Component          | Status            |
+| ------------------ | ----------------- |
+| Terminal I/O       | ✅ Complete       |
+| Terminfo           | ✅ Complete       |
+| Double Buffering   | ✅ Complete       |
+| Colors             | ✅ Complete       |
+| Attributes         | ✅ Complete       |
+| Keyboard Input     | ✅ Complete       |
+| Mouse Input        | ✅ Complete       |
+| Event System       | ✅ Complete       |
+| Async Channels     | 🔄 Planned (v0.2) |
+| Resize Events      | 🔄 Planned (v0.2) |
 | Unicode/Wide Chars | 🔄 Planned (v0.2) |
 
 ### Completed
@@ -98,14 +98,14 @@ See `examples/showcase.cr` and `examples/keyboard_and_mouse.cr` for complete dem
 - **Terminfo tparm** - Full processor with conditionals, stack, variables
 - **Logging** - Structured async/sync dispatch, zero hot-path overhead
 
-### Planned (v0.2.0) - Async Architecture
+### Planned (v0.1.0) - Async Architecture
 
 - **Async event channels** - Crystal fiber/channel-based event system
 - **SIGWINCH resize events** - Channel-based resize notification
 - **Unicode/wide character support** - CJK, emoji (wcwidth)
 - **Synchronized updates** - DEC mode 2026 (prevents screen tearing)
 
-### Future (v0.3.0+)
+### Future (v0.2.0+)
 
 - Async input reader fiber
 - Timer/tick channels for animations
