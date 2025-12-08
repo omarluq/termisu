@@ -23,6 +23,14 @@ tasks:
     desc: Run demo example
     cmds:
       - crystal run examples/demo.cr
+  showcase:
+    desc: Run demo example
+    cmds:
+      - crystal run examples/showcase.cr
+  kmd:
+    desc: Run demo example
+    cmds:
+      - crystal run examples/keyboard_and_mouse.cr
   colors:
     desc: Run colors example
     cmds:
@@ -35,10 +43,6 @@ tasks:
     desc: Run Ameba linter (use -- to pass flags)
     cmds:
       - bin/ameba {{.CLI_ARGS}}
-  console:
-    desc: Start Crystal REPL with library loaded
-    cmds:
-      - crystal i -r ./src/termisu.cr
   clean:
     desc: Clean build artifacts
     cmds:
@@ -77,13 +81,13 @@ tasks:
       - "{{.PROFILE_BIN}}"
   profile:perf:
     desc: Profile with Linux perf (CPU sampling)
-    deps: ['profile:build']
+    deps: ["profile:build"]
     cmds:
       - perf record -g -o {{.PROFILE_DIR}}/perf.data ./{{.PROFILE_BIN}}
       - perf report -i {{.PROFILE_DIR}}/perf.data
   profile:perf:record:
     desc: Record perf data without viewing
-    deps: ['profile:build']
+    deps: ["profile:build"]
     cmds:
       - perf record -g -o {{.PROFILE_DIR}}/perf.data ./{{.PROFILE_BIN}}
       - 'echo "Profile saved to {{.PROFILE_DIR}}/perf.data"'
@@ -94,7 +98,7 @@ tasks:
       - perf report -i {{.PROFILE_DIR}}/perf.data
   profile:stat:
     desc: Quick CPU stats with perf stat
-    deps: ['profile:build']
+    deps: ["profile:build"]
     cmds:
       - perf stat ./{{.PROFILE_BIN}}
   # ===========================================
@@ -102,7 +106,7 @@ tasks:
   # ===========================================
   profile:callgrind:
     desc: Profile with Valgrind Callgrind (call graph)
-    deps: ['profile:build']
+    deps: ["profile:build"]
     cmds:
       - mkdir -p {{.PROFILE_DIR}}
       - valgrind --tool=callgrind --callgrind-out-file={{.PROFILE_DIR}}/callgrind.out ./{{.PROFILE_BIN}}
@@ -114,7 +118,7 @@ tasks:
       - kcachegrind {{.PROFILE_DIR}}/callgrind.out
   profile:cachegrind:
     desc: Profile cache usage with Valgrind Cachegrind
-    deps: ['profile:build']
+    deps: ["profile:build"]
     cmds:
       - mkdir -p {{.PROFILE_DIR}}
       - valgrind --tool=cachegrind --cachegrind-out-file={{.PROFILE_DIR}}/cachegrind.out ./{{.PROFILE_BIN}}
@@ -124,21 +128,21 @@ tasks:
   # ===========================================
   profile:massif:
     desc: Profile heap usage with Valgrind Massif
-    deps: ['profile:build']
+    deps: ["profile:build"]
     cmds:
       - mkdir -p {{.PROFILE_DIR}}
       - valgrind --tool=massif --massif-out-file={{.PROFILE_DIR}}/massif.out ./{{.PROFILE_BIN}}
       - ms_print {{.PROFILE_DIR}}/massif.out
   profile:heaptrack:
     desc: Profile memory with Heaptrack
-    deps: ['profile:build']
+    deps: ["profile:build"]
     cmds:
       - mkdir -p {{.PROFILE_DIR}}
       - heaptrack -o {{.PROFILE_DIR}}/heaptrack ./{{.PROFILE_BIN}}
       - 'echo "View with: heaptrack_gui {{.PROFILE_DIR}}/heaptrack.*.zst"'
   profile:memcheck:
     desc: Check for memory leaks with Valgrind
-    deps: ['profile:build']
+    deps: ["profile:build"]
     cmds:
       - valgrind --leak-check=full --show-leak-kinds=all ./{{.PROFILE_BIN}}
   # ===========================================

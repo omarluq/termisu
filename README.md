@@ -36,57 +36,72 @@ require "termisu"
 termisu = Termisu.new
 
 begin
-  # Set individual cells with colors and attributes
+  # Set cells with colors and attributes
   termisu.set_cell(0, 0, 'H', fg: Termisu::Color.red, attr: Termisu::Attribute::Bold)
   termisu.set_cell(1, 0, 'i', fg: Termisu::Color.green)
-
-  # Position and show cursor
-  termisu.set_cursor(3, 0)
-
-  # Render only changed cells (diff-based)
+  termisu.set_cursor(2, 0)
   termisu.render
 
-  # Wait for input
-  if termisu.wait_for_input(5000)
-    byte = termisu.read_byte
+  # Event loop with keyboard and mouse support
+  termisu.enable_mouse
+  loop do
+    if event = termisu.poll_event(100)
+      case event
+      when Termisu::Events::Key
+        break if event.key.escape?
+        break if event.key.lower_q?
+      when Termisu::Events::Mouse
+        termisu.set_cell(event.x, event.y, '*', fg: Termisu::Color.cyan)
+        termisu.render
+      end
+    end
   end
 ensure
   termisu.close
 end
 ```
 
-See `examples/showcase.cr` for a complete demonstration.
+See `examples/showcase.cr` and `examples/keyboard_and_mouse.cr` for complete demonstrations.
 
 ![Termisu Showcase](assets/demo-screenshot.png)
 
 ## Roadmap
 
-**Current Status: Alpha**
+**Current Status: Alpha (v0.1.0)**
+
+| Component | Status |
+|-----------|--------|
+| Terminal I/O | ✅ Complete |
+| Terminfo | ✅ Complete |
+| Double Buffering | ✅ Complete |
+| Colors | ✅ Complete |
+| Attributes | ✅ Complete |
+| Keyboard Input | ✅ Complete |
+| Mouse Input | ✅ Complete |
+| Event System | ✅ Complete |
+| Resize Events | 🔄 Planned |
+| Unicode/Wide Chars | 🔄 Planned |
 
 ### Completed
 
-- Terminal I/O primitives (raw mode, alternate screen)
-- Terminfo database parser with builtin fallbacks
-- Cell-based rendering with double buffering
-- Full color support (ANSI-8, ANSI-256, RGB/TrueColor)
-- Color conversions between all modes
-- Text attributes (bold, underline, blink, reverse, dim, italic, hidden)
-- Cursor control (position, visibility)
-- Input reading (bytes, with timeout)
-- Modular color architecture
-- Performance optimizations (RenderState batching, cursor tracking)
-- tparm() processor for parametrized terminfo capabilities
-- Structured logging system (file-based, async/sync modes)
+- **Terminal I/O** - Raw mode, alternate screen, EINTR handling
+- **Terminfo** - Binary parser (16/32-bit), 414 capabilities, builtin fallbacks
+- **Double Buffering** - Diff-based rendering, cell batching, state caching
+- **Colors** - ANSI-8, ANSI-256, RGB/TrueColor with conversions
+- **Attributes** - Bold, underline, blink, reverse, dim, italic, hidden
+- **Keyboard Input** - 170+ keys, F1-F24, modifiers (Ctrl/Alt/Shift/Meta)
+- **Mouse Input** - SGR (mode 1006), normal (mode 1000), motion events
+- **Event System** - Unified Key/Mouse events, Kitty protocol, modifyOtherKeys
+- **Performance** - RenderState optimization, escape sequence batching
+- **Terminfo tparm** - Full processor with conditionals, stack, variables
+- **Logging** - Structured async/sync dispatch, zero hot-path overhead
 
-### In Progress
+### Planned (v0.2.0)
 
-- Key sequence parsing (function keys, arrows, modifiers)
-- Mouse input handling
-
-### Planned
-
-- Event system (keyboard, mouse, resize)
-- Higher-level widgets and layout system (Maybe)
+- SIGWINCH resize event handling
+- Unicode/wide character support (CJK, emoji)
+- Synchronized updates (DEC mode 2026)
+- Strikethrough attribute
 
 ## Inspiration
 
