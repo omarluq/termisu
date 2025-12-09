@@ -1,41 +1,5 @@
 require "../../spec_helper"
 
-# Mock implementation of Event::Source for testing.
-# Demonstrates the expected interface contract.
-private class MockSource < Termisu::Event::Source
-  @running = Atomic(Bool).new(false)
-  @output : Channel(Termisu::Event::Any)?
-  @fiber : Fiber?
-  @events : Array(Termisu::Event::Any)
-
-  def initialize(@source_name : String = "mock", events : Array(Termisu::Event::Any)? = nil)
-    @events = events || [] of Termisu::Event::Any
-  end
-
-  def start(output : Channel(Termisu::Event::Any)) : Nil
-    return unless @running.compare_and_set(false, true)
-    @output = output
-    @fiber = spawn(name: "mock-#{@source_name}") do
-      @events.each do |event|
-        break unless @running.get
-        output.send(event) rescue break
-      end
-    end
-  end
-
-  def stop : Nil
-    @running.set(false)
-  end
-
-  def running? : Bool
-    @running.get
-  end
-
-  def name : String
-    @source_name
-  end
-end
-
 describe Termisu::Event::Source do
   describe "abstract class contract" do
     it "can be subclassed with all abstract methods implemented" do

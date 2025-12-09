@@ -1,14 +1,7 @@
 require "../../spec_helper"
 
-# Helper to create a pipe
-private def create_pipe : {Int32, Int32}
-  fds = uninitialized StaticArray(Int32, 2)
-  result = LibC.pipe(fds)
-  raise "pipe() failed" if result != 0
-  {fds[0], fds[1]}
-end
-
-# Helper to write bytes to pipe and parse event
+# Helper to write bytes to pipe and parse event.
+# Specific to parser tests - uses create_pipe from PipeHelpers.
 private def parse_sequence(bytes : Bytes) : Termisu::Event::Any?
   read_fd, write_fd = create_pipe
   reader = nil
@@ -22,21 +15,6 @@ private def parse_sequence(bytes : Bytes) : Termisu::Event::Any?
     LibC.close(read_fd)
     LibC.close(write_fd)
   end
-end
-
-# Ensure LibC has required functions
-lib LibC
-  {% unless LibC.has_method?(:pipe) %}
-    fun pipe(fds : Int32*) : Int32
-  {% end %}
-
-  {% unless LibC.has_method?(:fcntl) %}
-    fun fcntl(fd : Int32, cmd : Int32, arg : Int32) : Int32
-  {% end %}
-
-  {% unless LibC.has_method?(:write) %}
-    fun write(fd : Int32, buf : UInt8*, count : LibC::SizeT) : LibC::SSizeT
-  {% end %}
 end
 
 describe Termisu::Input::Parser do
