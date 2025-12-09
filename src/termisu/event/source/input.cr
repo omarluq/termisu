@@ -1,8 +1,7 @@
 # Terminal input event source.
 #
 # Wraps `Reader` and `Input::Parser` to produce Key and Mouse events
-# via a dedicated polling fiber. Provides both async (channel-based)
-# and sync (legacy) polling modes.
+# via a dedicated polling fiber.
 #
 # ## Usage
 #
@@ -22,15 +21,6 @@
 #   when Termisu::Event::Mouse
 #     puts "Click at #{event.x},#{event.y}"
 #   end
-# end
-# ```
-#
-# ## Legacy Sync Mode
-#
-# For backward compatibility with sync-based code:
-# ```
-# if event = input.poll_sync(100)
-#   # Handle event directly (bypasses channel)
 # end
 # ```
 #
@@ -95,18 +85,6 @@ class Termisu::Event::Source::Input < Termisu::Event::Source
   # Returns the source name for identification.
   def name : String
     "input"
-  end
-
-  # Polls for an input event synchronously (bypasses channel).
-  #
-  # This provides backward compatibility with sync-based code that
-  # doesn't use the async event loop.
-  #
-  # - `timeout_ms` - Timeout in milliseconds
-  #
-  # Returns the event or nil if timeout/no data.
-  def poll_sync(timeout_ms : Int32) : Event::Any?
-    @parser.poll_event(timeout_ms)
   end
 
   # Main input loop - runs in a spawned fiber.

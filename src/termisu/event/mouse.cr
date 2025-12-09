@@ -67,6 +67,11 @@ struct Termisu::Event::Mouse
   def shift? : Bool
     modifiers.shift?
   end
+
+  # Returns true if Meta/Super/Windows modifier was held.
+  def meta? : Bool
+    modifiers.meta?
+  end
 end
 
 # Mouse button types.

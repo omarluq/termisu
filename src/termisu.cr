@@ -3,6 +3,11 @@
 # Provides a clean, minimal API for terminal manipulation by delegating
 # all logic to specialized components: Terminal and Reader.
 #
+# The async event system uses Event::Loop to multiplex multiple event sources:
+# - Input events (keyboard, mouse)
+# - Resize events (terminal size changes)
+# - Timer events (optional, for animation/game loops)
+#
 # Example:
 # ```
 # termisu = Termisu.new
@@ -20,8 +25,11 @@
 class Termisu
   # Initializes Termisu with all required components.
   #
-  # Sets up terminal I/O, rendering, and input reader.
+  # Sets up terminal I/O, rendering, input reader, and async event system.
   # Automatically enables raw mode and enters alternate screen.
+  #
+  # The Event::Loop is started with Input and Resize sources by default.
+  # Timer source is optional and can be enabled with `enable_timer`.
   def initialize
     Logging.setup
 
@@ -33,6 +41,24 @@ class Termisu
     Log.debug { "Terminal size: #{@terminal.size}" }
 
     @terminal.enable_raw_mode
+
+    # Create async event sources
+    @input_source = Event::Source::Input.new(@reader, input_parser)
+    @resize_source = Event::Source::Resize.new(-> { @terminal.size })
+
+    # Timer source is optional (nil by default)
+    @timer_source = nil.as(Event::Source::Timer?)
+
+    # Create and configure event loop
+    @event_loop = Event::Loop.new
+    @event_loop.add_source(@input_source)
+    @event_loop.add_source(@resize_source)
+
+    # Start event loop before entering alternate screen
+    @event_loop.start
+
+    Log.debug { "Event loop started with sources: #{@event_loop.source_names}" }
+
     @terminal.enter_alternate_screen
 
     Log.debug { "Raw mode enabled, alternate screen entered" }
@@ -40,9 +66,20 @@ class Termisu
 
   # Closes Termisu and cleans up all resources.
   #
-  # Exits alternate screen, disables raw mode, and closes all components.
+  # Performs graceful shutdown in the correct order:
+  # 1. Stop event loop (stops all sources, closes channel, waits for fibers)
+  # 2. Exit alternate screen
+  # 3. Disable raw mode
+  # 4. Close reader and terminal
+  #
+  # The event loop is stopped first to ensure fibers that might be using
+  # the reader are terminated before the reader is closed.
   def close
     Log.info { "Closing Termisu" }
+
+    # Stop event loop first - this stops all sources and their fibers
+    @event_loop.stop
+    Log.debug { "Event loop stopped" }
 
     @terminal.exit_alternate_screen
     @terminal.disable_raw_mode
@@ -57,6 +94,32 @@ class Termisu
 
   # Returns the underlying terminal for direct access.
   getter terminal : Terminal
+
+  # --- Event Loop Operations ---
+
+  # Returns the event loop for direct access to the async event system.
+  #
+  # The event loop manages all event sources and provides a unified
+  # output channel. Use `events` for simpler access to the event channel.
+  getter event_loop : Event::Loop
+
+  # Returns the event output channel for direct consumption.
+  #
+  # This is equivalent to `event_loop.output` and provides direct access
+  # to the unified event stream from all sources.
+  #
+  # Example:
+  # ```
+  # while event = termisu.events.receive?
+  #   case event
+  #   when Termisu::Event::Key
+  #     break if event.key.escape?
+  #   end
+  # end
+  # ```
+  def events : Channel(Event::Any)
+    @event_loop.output
+  end
 
   # Returns terminal size as {width, height}.
   delegate size, to: @terminal
@@ -134,39 +197,69 @@ class Termisu
     @input_parser ||= Input::Parser.new(@reader)
   end
 
-  # Polls for an input event with optional timeout.
+  # Polls for the next event, blocking until one is available.
   #
-  # This is the recommended way to handle keyboard and mouse input. Returns
-  # structured Event objects (Event::Key, Event::Mouse, Event::Resize, Event::Tick)
-  # instead of raw bytes.
+  # This is the recommended way to handle events. Returns structured
+  # Event objects (Event::Key, Event::Mouse, Event::Resize, Event::Tick)
+  # from the unified Event::Loop channel.
   #
-  # Parameters:
-  # - timeout_ms: Timeout in milliseconds (-1 for blocking, 0 for non-blocking)
-  #
-  # Returns an Event or nil if timeout/no data.
+  # Blocks indefinitely until an event arrives.
   #
   # Example:
   # ```
   # loop do
-  #   if event = termisu.poll_event(100)
-  #     case event
-  #     when Termisu::Event::Key
-  #       break if event.ctrl_c? || event.key.escape?
-  #       puts "Key: #{event.key}"
-  #     when Termisu::Event::Mouse
-  #       puts "Mouse: #{event.x},#{event.y}"
-  #     end
+  #   event = termisu.poll_event
+  #   case event
+  #   when Termisu::Event::Key
+  #     break if event.ctrl_c? || event.key.escape?
+  #   when Termisu::Event::Resize
+  #     termisu.sync # Redraw after resize
+  #   when Termisu::Event::Tick
+  #     # Animation frame
   #   end
   #   termisu.render
   # end
   # ```
-  def poll_event(timeout_ms : Int32 = -1) : Event::Any?
-    input_parser.poll_event(timeout_ms)
+  def poll_event : Event::Any
+    @event_loop.output.receive
   end
 
-  # Waits for and returns the next input event (blocking).
+  # Polls for an event with timeout.
   #
-  # This method blocks until an event is available.
+  # Returns an Event or nil if timeout expires.
+  #
+  # Parameters:
+  # - timeout: Maximum time to wait for an event
+  #
+  # Example:
+  # ```
+  # if event = termisu.poll_event(100.milliseconds)
+  #   # Handle event
+  # else
+  #   # No event within timeout - do other work
+  # end
+  # ```
+  def poll_event(timeout : Time::Span) : Event::Any?
+    select
+    when event = @event_loop.output.receive
+      event
+    when timeout(timeout)
+      nil
+    end
+  end
+
+  # Polls for an event with timeout in milliseconds.
+  #
+  # Parameters:
+  # - timeout_ms: Timeout in milliseconds (0 for non-blocking)
+  def poll_event(timeout_ms : Int32) : Event::Any?
+    poll_event(timeout_ms.milliseconds)
+  end
+
+  # Waits for and returns the next event (blocking).
+  #
+  # Alias for `poll_event` without timeout. Blocks until an event
+  # is available from any source.
   #
   # Example:
   # ```
@@ -174,34 +267,198 @@ class Termisu
   # puts "Got event: #{event}"
   # ```
   def wait_event : Event::Any
-    loop do
-      if event = poll_event(-1)
-        return event
-      end
-    end
+    poll_event
   end
 
   # Yields each event as it becomes available.
   #
-  # This is a convenient way to process events in a loop.
-  # Use timeout_ms to control polling behavior.
+  # Blocks waiting for each event. Use this for simple event loops.
   #
   # Example:
   # ```
-  # termisu.each_event(100) do |event|
+  # termisu.each_event do |event|
   #   case event
   #   when Termisu::Event::Key
   #     break if event.key.escape?
+  #   when Termisu::Event::Tick
+  #     # Animation frame
   #   end
   #   termisu.render
   # end
   # ```
-  def each_event(timeout_ms : Int32 = -1, &)
+  def each_event(&)
     loop do
-      if event = poll_event(timeout_ms)
+      yield poll_event
+    end
+  end
+
+  # Yields each event with timeout between events.
+  #
+  # If no event arrives within timeout, yields nothing and continues.
+  # Useful when you need to do periodic work between events.
+  #
+  # Parameters:
+  # - timeout: Maximum time to wait for each event
+  #
+  # Example:
+  # ```
+  # termisu.each_event(100.milliseconds) do |event|
+  #   # Process event
+  # end
+  # # Can do other work between events when timeout expires
+  # ```
+  def each_event(timeout : Time::Span, &)
+    loop do
+      if event = poll_event(timeout)
         yield event
       end
     end
+  end
+
+  # Yields each event with timeout in milliseconds.
+  def each_event(timeout_ms : Int32, &)
+    each_event(timeout_ms.milliseconds) { |event| yield event }
+  end
+
+  # --- Timer Support ---
+
+  # Enables the timer source for animation and game loops.
+  #
+  # When enabled, Tick events are emitted at the specified interval.
+  # Default interval is 16ms (~60 FPS).
+  #
+  # Parameters:
+  # - interval: Time between tick events (default: 16ms for 60 FPS)
+  #
+  # Example:
+  # ```
+  # termisu.enable_timer(16.milliseconds) # 60 FPS
+  #
+  # termisu.each_event do |event|
+  #   case event
+  #   when Termisu::Event::Tick
+  #     # Update animation state
+  #     termisu.render
+  #   when Termisu::Event::Key
+  #     break if event.key.escape?
+  #   end
+  # end
+  #
+  # termisu.disable_timer
+  # ```
+  def enable_timer(interval : Time::Span = 16.milliseconds) : self
+    return self if @timer_source
+
+    timer = Event::Source::Timer.new(interval)
+    @timer_source = timer
+    @event_loop.add_source(timer)
+
+    Log.debug { "Timer enabled with interval: #{interval}" }
+
+    self
+  end
+
+  # Disables the timer source.
+  #
+  # Stops Tick events from being emitted. Safe to call when timer
+  # is already disabled.
+  def disable_timer : self
+    if timer = @timer_source
+      @event_loop.remove_source(timer)
+      @timer_source = nil
+      Log.debug { "Timer disabled" }
+    end
+
+    self
+  end
+
+  # Returns true if the timer is currently enabled.
+  def timer_enabled? : Bool
+    !@timer_source.nil?
+  end
+
+  # Sets the timer interval.
+  #
+  # Can be called while timer is running to change the interval dynamically.
+  # Raises if timer is not enabled.
+  #
+  # Parameters:
+  # - interval: New interval between tick events
+  #
+  # Example:
+  # ```
+  # termisu.enable_timer
+  # termisu.timer_interval = 8.milliseconds # 120 FPS
+  # ```
+  def timer_interval=(interval : Time::Span) : Time::Span
+    if timer = @timer_source
+      timer.interval = interval
+    else
+      raise "Timer not enabled. Call enable_timer first."
+    end
+  end
+
+  # Returns the current timer interval, or nil if timer is disabled.
+  def timer_interval : Time::Span?
+    @timer_source.try(&.interval)
+  end
+
+  # --- Custom Event Source API ---
+
+  # Adds a custom event source to the event loop.
+  #
+  # Custom sources must extend `Event::Source` and implement the abstract
+  # interface: `#start(channel)`, `#stop`, `#running?`, and `#name`.
+  #
+  # If the event loop is already running, the source is started immediately.
+  # Events from the source will appear in `poll_event` alongside built-in events.
+  #
+  # Parameters:
+  # - source: An Event::Source implementation
+  #
+  # Returns self for method chaining.
+  #
+  # Example:
+  # ```
+  # class NetworkSource < Termisu::Event::Source
+  #   def start(output)
+  #     # Start listening for network events
+  #   end
+  #
+  #   def stop
+  #     # Stop listening
+  #   end
+  #
+  #   def running? : Bool
+  #     @running
+  #   end
+  #
+  #   def name : String
+  #     "network"
+  #   end
+  # end
+  #
+  # termisu.add_event_source(NetworkSource.new)
+  # ```
+  def add_event_source(source : Event::Source) : self
+    @event_loop.add_source(source)
+    Log.debug { "Added custom event source: #{source.name}" }
+    self
+  end
+
+  # Removes a custom event source from the event loop.
+  #
+  # If the source is running, it will be stopped before removal.
+  # Removing a source that isn't registered is a no-op.
+  #
+  # Parameters:
+  # - source: The Event::Source to remove
+  #
+  # Returns self for method chaining.
+  def remove_event_source(source : Event::Source) : self
+    @event_loop.remove_source(source)
+    Log.debug { "Removed custom event source: #{source.name}" }
+    self
   end
 
   # --- Mouse Support ---
