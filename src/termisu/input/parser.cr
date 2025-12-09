@@ -361,42 +361,59 @@ class Termisu::Input::Parser
 
   # Parses SGR extended mouse protocol (mode 1006).
   # Format: \e[<Cb;Cx;CyM (press) or \e[<Cb;Cx;Cym (release)
-  # ameba:disable Metrics/CyclomaticComplexity
   private def parse_sgr_mouse : Event
+    result = read_sgr_sequence
+    return Events::Key.new(Key::Unknown) unless result
+
+    raw_params, is_release = result
+    parse_sgr_params_to_event(raw_params, is_release) || Events::Key.new(Key::Unknown)
+  end
+
+  # Reads bytes until SGR mouse sequence terminator ('M' or 'm').
+  #
+  # Returns tuple of (raw params string, is_release flag) or nil if overflow/EOF.
+  private def read_sgr_sequence : {String, Bool}?
     buffer = String::Builder.new
 
     while byte = @reader.read_byte
-      char = byte.chr
-
-      if char == 'M' || char == 'm'
-        # End of sequence - parse the parameters
-        params = buffer.to_s.split(';')
-        if params.size >= 3
-          cb = params[0].to_i? || 0
-          cx = params[1].to_i? || 1
-          cy = params[2].to_i? || 1
-
-          button = Events::MouseButton.from_cb(cb)
-          # Override to release if lowercase 'm'
-          button = Events::MouseButton::Release if char == 'm' && !button.wheel_up? && !button.wheel_down?
-          modifiers = Modifier.from_mouse_cb(cb)
-          motion = (cb & MOUSE_MOTION_BIT) != 0
-
-          return Events::Mouse.new(cx, cy, button, modifiers, motion)
+      case byte.chr
+      when 'M' then return {buffer.to_s, false}
+      when 'm' then return {buffer.to_s, true}
+      else
+        buffer << byte.chr
+        if buffer.bytesize >= MAX_SEQUENCE_LENGTH
+          Log.warn { "SGR mouse sequence too long" }
+          return nil
         end
-
-        return Events::Key.new(Key::Unknown)
-      end
-
-      buffer << char
-
-      if buffer.bytesize >= MAX_SEQUENCE_LENGTH
-        Log.warn { "SGR mouse sequence too long" }
-        return Events::Key.new(Key::Unknown)
       end
     end
 
-    Events::Key.new(Key::Unknown)
+    nil
+  end
+
+  # Parses SGR mouse params (Cb;Cx;Cy) into a Mouse event.
+  #
+  # - `raw_params`: The raw parameter string (e.g., "0;45;12")
+  # - `is_release`: Whether this is a release event (lowercase 'm' terminator)
+  #
+  # Returns Mouse event or nil if params are invalid.
+  private def parse_sgr_params_to_event(raw_params : String, is_release : Bool) : Events::Mouse?
+    parts = raw_params.split(';')
+    return nil unless parts.size >= 3
+
+    cb = parts[0].to_i? || return nil
+    x = parts[1].to_i? || 1
+    y = parts[2].to_i? || 1
+
+    button = Events::MouseButton.from_cb(cb)
+    # Wheel events are instantaneous - they don't have release events
+    is_wheel = button.wheel_up? || button.wheel_down? || button.wheel_left? || button.wheel_right?
+    button = Events::MouseButton::Release if is_release && !is_wheel
+
+    modifiers = Modifier.from_mouse_cb(cb)
+    motion = (cb & MOUSE_MOTION_BIT) != 0
+
+    Events::Mouse.new(x, y, button, modifiers, motion)
   end
 
   # Parses normal mouse protocol (mode 1000).
