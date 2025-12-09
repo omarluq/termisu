@@ -9,6 +9,10 @@ module Termisu::Color::Conversions
   CUBE_LEVELS     = [0_u8, 95_u8, 135_u8, 175_u8, 215_u8, 255_u8]
   CUBE_THRESHOLDS = [48_u8, 115_u8, 155_u8, 195_u8, 235_u8]
 
+  # Threshold for RGB to ANSI-8 color mapping.
+  # Values >= 128 are considered "on" for that color channel.
+  ANSI8_THRESHOLD = 128_u8
+
   # ANSI-8 standard color palette (RGB values)
   ANSI8_PALETTE = {
     0 => {0_u8, 0_u8, 0_u8},       # Black
@@ -51,13 +55,10 @@ module Termisu::Color::Conversions
 
   # Converts RGB to nearest ANSI-8 color using threshold-based mapping.
   def rgb_to_ansi8(r : UInt8, g : UInt8, b : UInt8) : Int32
-    threshold = 128_u8
-
     index = 0
-    index |= 1 if r >= threshold # Red bit
-    index |= 2 if g >= threshold # Green bit
-    index |= 4 if b >= threshold # Blue bit
-
+    index |= 1 if r >= ANSI8_THRESHOLD # Red bit
+    index |= 2 if g >= ANSI8_THRESHOLD # Green bit
+    index |= 4 if b >= ANSI8_THRESHOLD # Blue bit
     index
   end
 
