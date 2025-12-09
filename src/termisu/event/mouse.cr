@@ -28,7 +28,7 @@ struct Termisu::Event::Mouse
   getter button : MouseButton
 
   # Modifier keys held during the mouse event.
-  getter modifiers : Modifier
+  getter modifiers : Input::Modifier
 
   # Whether this is a motion event (mouse moved while button held).
   getter? motion : Bool
@@ -37,7 +37,7 @@ struct Termisu::Event::Mouse
     @x : Int32,
     @y : Int32,
     @button : MouseButton,
-    @modifiers : Modifier = Modifier::None,
+    @modifiers : Input::Modifier = Input::Modifier::None,
     @motion : Bool = false,
   )
   end

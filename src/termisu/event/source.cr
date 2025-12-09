@@ -35,7 +35,8 @@
 #   end
 #
 #   def stop : Nil
-#     @running.set(false)
+#     return unless @running.compare_and_set(true, false)
+#     # Cleanup resources if needed
 #   end
 #
 #   def running? : Bool

@@ -33,6 +33,7 @@ module Termisu::Event
 end
 
 require "./event/*"
+require "./event/source/*"
 
 # Union type for all terminal events.
 # Use Event::Any for type annotations and collections.
