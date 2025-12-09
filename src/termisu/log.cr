@@ -218,5 +218,6 @@ class Termisu
     Input    = ::Log.for("termisu.input")
     Color    = ::Log.for("termisu.color")
     Terminfo = ::Log.for("termisu.terminfo")
+    Event    = ::Log.for("termisu.event")
   end
 end
