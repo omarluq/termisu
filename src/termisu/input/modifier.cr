@@ -6,7 +6,7 @@
 # Example:
 # ```
 # event = termisu.poll_event
-# if event.is_a?(Termisu::Events::Key)
+# if event.is_a?(Termisu::Event::Key)
 #   if event.modifiers.ctrl? && event.key.lower_c?
 #     puts "Ctrl+C pressed!"
 #   end

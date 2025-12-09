@@ -5,7 +5,7 @@
 # Example:
 # ```
 # event = termisu.poll_event
-# if event.is_a?(Termisu::Events::Key)
+# if event.is_a?(Termisu::Event::Key)
 #   if event.ctrl_c?
 #     puts "Ctrl+C pressed, exiting..."
 #   elsif event.key.escape?
@@ -13,7 +13,7 @@
 #   end
 # end
 # ```
-struct Termisu::Events::Key
+struct Termisu::Event::Key
   # The key that was pressed.
   getter key : Termisu::Key
 

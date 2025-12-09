@@ -137,7 +137,7 @@ class Termisu
   # Polls for an input event with optional timeout.
   #
   # This is the recommended way to handle keyboard and mouse input. Returns
-  # structured Event objects (Events::Key, Events::Mouse, Events::Resize)
+  # structured Event objects (Event::Key, Event::Mouse, Event::Resize, Event::Tick)
   # instead of raw bytes.
   #
   # Parameters:
@@ -150,17 +150,17 @@ class Termisu
   # loop do
   #   if event = termisu.poll_event(100)
   #     case event
-  #     when Termisu::Events::Key
+  #     when Termisu::Event::Key
   #       break if event.ctrl_c? || event.key.escape?
   #       puts "Key: #{event.key}"
-  #     when Termisu::Events::Mouse
+  #     when Termisu::Event::Mouse
   #       puts "Mouse: #{event.x},#{event.y}"
   #     end
   #   end
   #   termisu.render
   # end
   # ```
-  def poll_event(timeout_ms : Int32 = -1) : Event?
+  def poll_event(timeout_ms : Int32 = -1) : Event::Any?
     input_parser.poll_event(timeout_ms)
   end
 
@@ -173,7 +173,7 @@ class Termisu
   # event = termisu.wait_event
   # puts "Got event: #{event}"
   # ```
-  def wait_event : Event
+  def wait_event : Event::Any
     loop do
       if event = poll_event(-1)
         return event
@@ -190,7 +190,7 @@ class Termisu
   # ```
   # termisu.each_event(100) do |event|
   #   case event
-  #   when Termisu::Events::Key
+  #   when Termisu::Event::Key
   #     break if event.key.escape?
   #   end
   #   termisu.render
@@ -218,7 +218,7 @@ class Termisu
   # loop do
   #   if event = termisu.poll_event(100)
   #     case event
-  #     when Termisu::Events::Mouse
+  #     when Termisu::Event::Mouse
   #       puts "Click at #{event.x},#{event.y}"
   #     end
   #   end
@@ -249,7 +249,7 @@ class Termisu
   # loop do
   #   if event = termisu.poll_event(100)
   #     case event
-  #     when Termisu::Events::Key
+  #     when Termisu::Event::Key
   #       # Now Ctrl+I and Tab are distinguishable!
   #       if event.ctrl? && event.key.lower_i?
   #         puts "Ctrl+I pressed"

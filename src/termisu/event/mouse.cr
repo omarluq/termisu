@@ -6,7 +6,7 @@
 # Example:
 # ```
 # event = termisu.poll_event
-# if event.is_a?(Termisu::Events::Mouse)
+# if event.is_a?(Termisu::Event::Mouse)
 #   case event.button
 #   when .left?
 #     puts "Left click at #{event.x},#{event.y}"
@@ -17,7 +17,7 @@
 #   end
 # end
 # ```
-struct Termisu::Events::Mouse
+struct Termisu::Event::Mouse
   # X coordinate (column, 1-based).
   getter x : Int32
 
@@ -70,7 +70,7 @@ struct Termisu::Events::Mouse
 end
 
 # Mouse button types.
-enum Termisu::Events::MouseButton
+enum Termisu::Event::MouseButton
   # No button (used for motion-only events).
   None
 
@@ -142,7 +142,7 @@ end
 
 # Mouse protocol bit masks for Cb byte decoding.
 # Defined outside the enum to avoid type coercion issues.
-module Termisu::Events::MouseProtocol
+module Termisu::Event::MouseProtocol
   # Low 2 bits encode button number.
   BUTTON_MASK = 3
 

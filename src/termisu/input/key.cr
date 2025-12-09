@@ -6,7 +6,7 @@
 # Example:
 # ```
 # event = termisu.poll_event
-# if event.is_a?(Termisu::Events::Key)
+# if event.is_a?(Termisu::Event::Key)
 #   case event.key
 #   when .escape?  then puts "Escape pressed"
 #   when .enter?   then puts "Enter pressed"

@@ -105,7 +105,7 @@ class Termisu::Input::Parser
   # - `timeout_ms` - Timeout in milliseconds (-1 for blocking)
   #
   # Returns an Event or nil if timeout/no data.
-  def poll_event(timeout_ms : Int32 = -1) : Event?
+  def poll_event(timeout_ms : Int32 = -1) : Event::Any?
     unless @reader.wait_for_data(timeout_ms < 0 ? Int32::MAX : timeout_ms)
       return nil
     end
@@ -126,42 +126,42 @@ class Termisu::Input::Parser
   #
   # Also: Modifier keys alone (Ctrl, Alt, Shift) don't send any bytes in
   # standard terminal input. We can only detect them combined with other keys.
-  private def parse_byte(byte : UInt8) : Event
+  private def parse_byte(byte : UInt8) : Event::Any
     case byte
     when 0x1B # ESC - could be escape key or start of sequence
       parse_escape_sequence
     when 0x00 # Ctrl+Space or Ctrl+@
-      Events::Key.new(Key::Space, Modifier::Ctrl)
+      Event::Key.new(Key::Space, Modifier::Ctrl)
     when 0x08 # Backspace (Ctrl+H on some terminals, but treat as Backspace)
-      Events::Key.new(Key::Backspace)
+      Event::Key.new(Key::Backspace)
     when 0x09 # Tab (technically Ctrl+I, but always treat as Tab)
-      Events::Key.new(Key::Tab)
+      Event::Key.new(Key::Tab)
     when 0x0A # Line feed (Ctrl+J) - treat as Enter
-      Events::Key.new(Key::Enter)
+      Event::Key.new(Key::Enter)
     when 0x0D # Carriage return (Ctrl+M) - treat as Enter
-      Events::Key.new(Key::Enter)
+      Event::Key.new(Key::Enter)
     when 0x01..0x1A # Ctrl+A through Ctrl+Z (excluding special cases above)
       key = Key.from_char(('a'.ord + byte - 1).chr)
-      Events::Key.new(key, Modifier::Ctrl)
+      Event::Key.new(key, Modifier::Ctrl)
     when 0x7F # DEL (Backspace on most terminals)
-      Events::Key.new(Key::Backspace)
+      Event::Key.new(Key::Backspace)
     else
       # Printable character
       key = Key.from_char(byte.chr)
-      Events::Key.new(key)
+      Event::Key.new(key)
     end
   end
 
   # Parses an escape sequence starting with ESC (0x1B).
-  private def parse_escape_sequence : Event
+  private def parse_escape_sequence : Event::Any
     # Check if more data follows (escape sequence) or just ESC key
     unless @reader.wait_for_data(ESCAPE_TIMEOUT_MS)
-      return Events::Key.new(Key::Escape)
+      return Event::Key.new(Key::Escape)
     end
 
     byte = @reader.peek_byte
     unless byte
-      return Events::Key.new(Key::Escape)
+      return Event::Key.new(Key::Escape)
     end
 
     case byte
@@ -175,7 +175,7 @@ class Termisu::Input::Parser
       # Alt+key: \e followed by printable char
       @reader.read_byte # consume the char
       key = Key.from_char(byte.chr)
-      Events::Key.new(key, Modifier::Alt)
+      Event::Key.new(key, Modifier::Alt)
     end
   end
 
@@ -183,7 +183,7 @@ class Termisu::Input::Parser
   #
   # CSI format: \e [ <params> <intermediate> <final>
   # Final chars are 0x40-0x7E (@A-Z[\]^_`a-z{|}~)
-  private def parse_csi_sequence : Event
+  private def parse_csi_sequence : Event::Any
     buffer = String::Builder.new
 
     while byte = @reader.read_byte
@@ -210,16 +210,16 @@ class Termisu::Input::Parser
       # Safety limit
       if buffer.bytesize >= MAX_SEQUENCE_LENGTH
         Log.warn { "CSI sequence too long, aborting" }
-        return Events::Key.new(Key::Unknown)
+        return Event::Key.new(Key::Unknown)
       end
     end
 
-    Events::Key.new(Key::Unknown)
+    Event::Key.new(Key::Unknown)
   end
 
   # Decodes a CSI sequence into a KeyEvent using hash lookups.
   # Handles standard CSI sequences, Kitty keyboard protocol, and modifyOtherKeys.
-  private def decode_csi_key(params : String, final : Char) : Events::Key
+  private def decode_csi_key(params : String, final : Char) : Event::Key
     # Kitty keyboard protocol: CSI codepoint ; modifiers u
     # or: CSI codepoint ; modifiers : event_type u
     if final == 'u'
@@ -239,18 +239,18 @@ class Termisu::Input::Parser
       end
 
       key = TILDE_KEYS[code]? || Key::Unknown
-      return Events::Key.new(key, modifiers)
+      return Event::Key.new(key, modifiers)
     end
 
     # Check for Linux console sequences (\e[[A etc.)
     sequence = "[#{params}#{final}"
     if key = LINUX_CONSOLE_KEYS[sequence]?
-      return Events::Key.new(key, modifiers)
+      return Event::Key.new(key, modifiers)
     end
 
     # Standard CSI key lookup
     key = CSI_KEYS[final]? || Key::Unknown
-    Events::Key.new(key, modifiers)
+    Event::Key.new(key, modifiers)
   end
 
   # Parses Kitty keyboard protocol sequence.
@@ -259,7 +259,7 @@ class Termisu::Input::Parser
   #
   # Codepoint is the Unicode codepoint of the key.
   # Modifiers use the same encoding as xterm (1 + shift + alt*2 + ctrl*4 + meta*8).
-  private def parse_kitty_key(params : String) : Events::Key
+  private def parse_kitty_key(params : String) : Event::Key
     # Handle colon separator for event type (e.g., "97;5:1" for Ctrl+A press)
     clean_params = params.split(':').first || params
     parts = clean_params.split(';')
@@ -272,19 +272,19 @@ class Termisu::Input::Parser
     # Convert codepoint to key
     key = codepoint_to_key(codepoint)
 
-    Events::Key.new(key, modifiers)
+    Event::Key.new(key, modifiers)
   end
 
   # Parses modifyOtherKeys sequence.
   # Format: CSI 27 ; modifier ; keycode ~
-  private def parse_modify_other_keys(parts : Array(String)) : Events::Key
+  private def parse_modify_other_keys(parts : Array(String)) : Event::Key
     mod_code = parts[1]?.try(&.to_i?) || 1
     keycode = parts[2]?.try(&.to_i?) || 0
 
     modifiers = Modifier.from_xterm_code(mod_code)
     key = codepoint_to_key(keycode)
 
-    Events::Key.new(key, modifiers)
+    Event::Key.new(key, modifiers)
   end
 
   # Kitty protocol codepoint to Key mapping for special keys.
@@ -349,24 +349,24 @@ class Termisu::Input::Parser
   # Parses an SS3 sequence: \eO...
   #
   # SS3 sequences are used for F1-F4 and some arrow keys.
-  private def parse_ss3_sequence : Event
+  private def parse_ss3_sequence : Event::Any
     byte = @reader.read_byte
     unless byte
-      return Events::Key.new(Key::Unknown)
+      return Event::Key.new(Key::Unknown)
     end
 
     key = SS3_KEYS[byte.chr]? || Key::Unknown
-    Events::Key.new(key)
+    Event::Key.new(key)
   end
 
   # Parses SGR extended mouse protocol (mode 1006).
   # Format: \e[<Cb;Cx;CyM (press) or \e[<Cb;Cx;Cym (release)
-  private def parse_sgr_mouse : Event
+  private def parse_sgr_mouse : Event::Any
     result = read_sgr_sequence
-    return Events::Key.new(Key::Unknown) unless result
+    return Event::Key.new(Key::Unknown) unless result
 
     raw_params, is_release = result
-    parse_sgr_params_to_event(raw_params, is_release) || Events::Key.new(Key::Unknown)
+    parse_sgr_params_to_event(raw_params, is_release) || Event::Key.new(Key::Unknown)
   end
 
   # Reads bytes until SGR mouse sequence terminator ('M' or 'm').
@@ -397,7 +397,7 @@ class Termisu::Input::Parser
   # - `is_release`: Whether this is a release event (lowercase 'm' terminator)
   #
   # Returns Mouse event or nil if params are invalid.
-  private def parse_sgr_params_to_event(raw_params : String, is_release : Bool) : Events::Mouse?
+  private def parse_sgr_params_to_event(raw_params : String, is_release : Bool) : Event::Mouse?
     parts = raw_params.split(';')
     return nil unless parts.size >= 3
 
@@ -405,27 +405,27 @@ class Termisu::Input::Parser
     x = parts[1].to_i? || 1
     y = parts[2].to_i? || 1
 
-    button = Events::MouseButton.from_cb(cb)
+    button = Event::MouseButton.from_cb(cb)
     # Wheel events are instantaneous - they don't have release events
     is_wheel = button.wheel_up? || button.wheel_down? || button.wheel_left? || button.wheel_right?
-    button = Events::MouseButton::Release if is_release && !is_wheel
+    button = Event::MouseButton::Release if is_release && !is_wheel
 
     modifiers = Modifier.from_mouse_cb(cb)
     motion = (cb & MOUSE_MOTION_BIT) != 0
 
-    Events::Mouse.new(x, y, button, modifiers, motion)
+    Event::Mouse.new(x, y, button, modifiers, motion)
   end
 
   # Parses normal mouse protocol (mode 1000).
   # Format: \e[MCbCxCy (6 bytes total, Cb/Cx/Cy are raw bytes + 32)
-  private def parse_normal_mouse : Event
+  private def parse_normal_mouse : Event::Any
     # Read 3 more bytes: Cb, Cx, Cy
     cb_byte = @reader.read_byte
     cx_byte = @reader.read_byte
     cy_byte = @reader.read_byte
 
     unless cb_byte && cx_byte && cy_byte
-      return Events::Key.new(Key::Unknown)
+      return Event::Key.new(Key::Unknown)
     end
 
     # Decode: subtract 32 from each
@@ -437,10 +437,10 @@ class Termisu::Input::Parser
     cx = cx.clamp(1, 223)
     cy = cy.clamp(1, 223)
 
-    button = Events::MouseButton.from_cb(cb)
+    button = Event::MouseButton.from_cb(cb)
     modifiers = Modifier.from_mouse_cb(cb)
     motion = (cb & MOUSE_MOTION_BIT) != 0
 
-    Events::Mouse.new(cx, cy, button, modifiers, motion)
+    Event::Mouse.new(cx, cy, button, modifiers, motion)
   end
 end

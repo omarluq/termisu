@@ -48,10 +48,10 @@ begin
   loop do
     if event = termisu.poll_event(100)
       case event
-      when Termisu::Events::Key
+      when Termisu::Event::Key
         break if event.key.escape?
         break if event.key.lower_q?
-      when Termisu::Events::Mouse
+      when Termisu::Event::Mouse
         termisu.set_cell(event.x, event.y, '*', fg: Termisu::Color.cyan)
         termisu.render
       end

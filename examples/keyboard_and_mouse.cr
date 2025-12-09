@@ -304,8 +304,8 @@ begin
       Termisu::Log.debug { "Received event: #{event.class}" }
 
       case event
-      when Termisu::Events::Key
-        key_event = event.as(Termisu::Events::Key)
+      when Termisu::Event::Key
+        key_event = event.as(Termisu::Event::Key)
 
         # Quit on ESC or Ctrl+C
         if key_event.key.escape? || key_event.ctrl_c?
@@ -346,8 +346,8 @@ begin
         draw_keyboard.call(highlighted, current_modifiers)
         draw_event_log.call(last_event_text)
         termisu.render
-      when Termisu::Events::Mouse
-        mouse_event = event.as(Termisu::Events::Mouse)
+      when Termisu::Event::Mouse
+        mouse_event = event.as(Termisu::Event::Mouse)
 
         mouse_x = mouse_event.x
         mouse_y = mouse_event.y
@@ -381,8 +381,8 @@ begin
         draw_mouse_panel.call(mouse_x, mouse_y, mouse_button)
         draw_event_log.call(last_event_text)
         termisu.render
-      when Termisu::Events::Resize
-        resize_event = event.as(Termisu::Events::Resize)
+      when Termisu::Event::Resize
+        resize_event = event.as(Termisu::Event::Resize)
         width = resize_event.width
         height = resize_event.height
 
