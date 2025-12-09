@@ -1,20 +1,5 @@
 require "../../../spec_helper"
 
-# Helper class to hold mutable size values for testing.
-# Crystal closures capture variables by reference, so modifying
-# these values will affect the size provider proc.
-private class MutableSize
-  property width : Int32
-  property height : Int32
-
-  def initialize(@width : Int32, @height : Int32)
-  end
-
-  def to_tuple : {Int32, Int32}
-    {@width, @height}
-  end
-end
-
 describe Termisu::Event::Source::Resize do
   describe "#initialize" do
     it "creates with a size provider" do

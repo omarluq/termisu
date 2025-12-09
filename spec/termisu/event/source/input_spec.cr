@@ -1,24 +1,5 @@
 require "../../../spec_helper"
 
-# Helper to create a pipe for testing.
-private def create_pipe : {Int32, Int32}
-  fds = uninitialized StaticArray(Int32, 2)
-  result = LibC.pipe(fds)
-  raise "pipe() failed" if result != 0
-  {fds[0], fds[1]}
-end
-
-# Ensure LibC has required functions
-lib LibC
-  {% unless LibC.has_method?(:pipe) %}
-    fun pipe(fds : Int32*) : Int32
-  {% end %}
-
-  {% unless LibC.has_method?(:write) %}
-    fun write(fd : Int32, buf : UInt8*, count : LibC::SizeT) : LibC::SSizeT
-  {% end %}
-end
-
 describe Termisu::Event::Source::Input do
   describe "#initialize" do
     it "creates with reader and parser" do

@@ -270,26 +270,3 @@ describe Termisu::Reader do
     end
   end
 end
-
-# Helper to create a pipe
-private def create_pipe : {Int32, Int32}
-  fds = uninitialized StaticArray(Int32, 2)
-  result = LibC.pipe(fds)
-  raise "pipe() failed" if result != 0
-  {fds[0], fds[1]}
-end
-
-# Add pipe and fcntl to LibC if not already defined
-lib LibC
-  {% unless LibC.has_method?(:pipe) %}
-    fun pipe(fds : Int32*) : Int32
-  {% end %}
-
-  {% unless LibC.has_method?(:fcntl) %}
-    fun fcntl(fd : Int32, cmd : Int32, arg : Int32) : Int32
-  {% end %}
-
-  {% unless LibC.has_method?(:write) %}
-    fun write(fd : Int32, buf : UInt8*, count : LibC::SizeT) : LibC::SSizeT
-  {% end %}
-end
