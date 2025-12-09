@@ -264,14 +264,10 @@ class Termisu::Terminfo::Parser
 
   # Reads a null-terminated string from the current IO position.
   private def read_null_terminated_string(io : IO::Memory) : String
-    bytes = [] of UInt8
-
-    loop do
-      byte = io.read_byte
-      break if byte.nil? || byte.zero?
-      bytes << byte
+    String.build do |builder|
+      while (byte = io.read_byte) && byte != 0
+        builder.write_byte(byte)
+      end
     end
-
-    String.new(Slice.new(bytes.to_unsafe, bytes.size))
   end
 end
