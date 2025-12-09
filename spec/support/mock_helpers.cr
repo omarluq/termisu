@@ -1,7 +1,8 @@
-# Mock helpers for testing terminal components without real TTY access
+# Mock helpers for testing terminal components without real TTY access.
 module MockHelpers
-  # Creates a mock terminfo database with valid structure
-  # Supports both standard (0o432) and extended (0o542) magic numbers
+  # Creates a mock terminfo database with valid structure.
+  #
+  # Supports both standard (0o432) and extended (0o542) magic numbers.
   def create_mock_terminfo_data(magic = 0o432_i16) : Bytes
     io = IO::Memory.new
 
@@ -37,31 +38,5 @@ module MockHelpers
     end
 
     io.to_slice
-  end
-
-  # Helper to temporarily set TERM environment variable
-  def with_term(value : String?, &)
-    original = ENV["TERM"]?
-    begin
-      if value
-        ENV["TERM"] = value
-      else
-        ENV.delete("TERM")
-      end
-      yield
-    ensure
-      if original
-        ENV["TERM"] = original
-      else
-        ENV.delete("TERM")
-      end
-    end
-  end
-
-  # Check if we can actually use /dev/tty
-  def tty_available? : Bool
-    File.exists?("/dev/tty") && File.writable?("/dev/tty")
-  rescue
-    false
   end
 end

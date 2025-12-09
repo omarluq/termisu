@@ -40,7 +40,17 @@ class Termisu::Input::Parser
     'S' => Key::F4,
   }
 
-  # Tilde sequence code to Key mapping (\e[N~).
+  # Tilde sequence code to Key mapping (`\e[N~` format).
+  #
+  # Maps numeric codes from CSI tilde sequences to keys.
+  # Codes 1-8 are navigation keys, 11-24 are function keys F1-F12.
+  # Codes 25-34 are extended function keys F13-F20 (rarely used).
+  #
+  # Note: Some codes are skipped (9-10, 16, 22, 27, 30) for historical
+  # terminal compatibility reasons. Codes 1/7 and 4/8 are duplicates
+  # (Home/End) because different terminals use different codes.
+  #
+  # Reference: XTerm ctlseqs, VT220 sequences.
   TILDE_KEYS = {
      1 => Key::Home,
      2 => Key::Insert,

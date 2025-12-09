@@ -300,8 +300,23 @@ describe Termisu::Event::Source::Timer do
       last_frame.should be >= 2_u64
 
       timer.stop
-      # Give fiber time to exit
-      sleep 10.milliseconds
+      timer.running?.should be_false
+
+      # Drain any pending events from the channel to ensure fiber has processed
+      loop do
+        select
+        when channel.receive
+          # Discard pending events
+        else
+          break
+        end
+      end
+
+      # Wait for the timer fiber to fully exit.
+      # The timer fiber checks @running after sleep, so we need to wait
+      # at least one interval for it to see the false value and exit.
+      # This prevents a race where the old fiber modifies @frame after restart.
+      sleep(timer.interval * 2)
 
       # Restart and verify frame counter reset
       channel2 = Channel(Termisu::Event::Any).new(10)
@@ -342,18 +357,25 @@ describe Termisu::Event::Source::Timer do
     it "uses Atomic for running state" do
       timer = Termisu::Event::Source::Timer.new
       channel = Channel(Termisu::Event::Any).new(10)
+      started = Channel(Nil).new
+      stopped = Channel(Nil).new
 
       # Start and stop from different contexts should be safe
       spawn do
         timer.start(channel)
-        sleep 10.milliseconds
+        started.send(nil)
+        stopped.receive # Wait for signal to stop
         timer.stop
       end
 
-      sleep 5.milliseconds
+      # Wait for start confirmation
+      started.receive
       timer.running?.should be_true
 
-      sleep 20.milliseconds
+      # Signal stop and verify
+      stopped.send(nil)
+      Fiber.yield
+      sleep 5.milliseconds # Brief yield for stop to complete
       timer.running?.should be_false
 
       channel.close

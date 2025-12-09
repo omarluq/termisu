@@ -141,7 +141,7 @@ class Termisu::Event::Loop
   #
   # Returns self for method chaining.
   def stop : self
-    return self unless @running.swap(false)
+    return self unless @running.compare_and_set(true, false)
 
     Log.info { "Stopping Event::Loop" }
 

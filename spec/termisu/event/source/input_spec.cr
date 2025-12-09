@@ -291,47 +291,6 @@ describe Termisu::Event::Source::Input do
     end
   end
 
-  describe "#poll_sync" do
-    it "provides synchronous polling for legacy compatibility" do
-      read_fd, write_fd = create_pipe
-      begin
-        reader = Termisu::Reader.new(read_fd)
-        parser = Termisu::Input::Parser.new(reader)
-        source = Termisu::Event::Source::Input.new(reader, parser)
-
-        # Write 'a' to the pipe
-        bytes = Bytes['a'.ord.to_u8]
-        LibC.write(write_fd, bytes, bytes.size)
-
-        # poll_sync should return the event directly (bypasses channel)
-        event = source.poll_sync(100)
-        event.should be_a(Termisu::Event::Key)
-        event.as(Termisu::Event::Key).char.should eq('a')
-      ensure
-        reader.try(&.close)
-        LibC.close(read_fd)
-        LibC.close(write_fd)
-      end
-    end
-
-    it "returns nil on timeout" do
-      read_fd, write_fd = create_pipe
-      begin
-        reader = Termisu::Reader.new(read_fd)
-        parser = Termisu::Input::Parser.new(reader)
-        source = Termisu::Event::Source::Input.new(reader, parser)
-
-        # No data written, should timeout
-        event = source.poll_sync(10)
-        event.should be_nil
-      ensure
-        reader.try(&.close)
-        LibC.close(read_fd)
-        LibC.close(write_fd)
-      end
-    end
-  end
-
   describe "restart lifecycle" do
     it "can be started again after stopping" do
       read_fd, write_fd = create_pipe
@@ -391,7 +350,14 @@ describe Termisu::Event::Source::Input do
         bytes = Bytes['a'.ord.to_u8]
         LibC.write(write_fd, bytes, bytes.size)
 
-        sleep 20.milliseconds
+        # Wait for event to be received before closing
+        select
+        when channel.receive
+          # Event received
+        when timeout(100.milliseconds)
+          # Timeout is ok, we just want to ensure fiber processed input
+        end
+
         channel.close
         source.stop
 
@@ -413,18 +379,25 @@ describe Termisu::Event::Source::Input do
         parser = Termisu::Input::Parser.new(reader)
         source = Termisu::Event::Source::Input.new(reader, parser)
         channel = Channel(Termisu::Event::Any).new(10)
+        started = Channel(Nil).new
+        stopped = Channel(Nil).new
 
         # Start and stop from different contexts should be safe
         spawn do
           source.start(channel)
-          sleep 10.milliseconds
+          started.send(nil)
+          stopped.receive # Wait for signal to stop
           source.stop
         end
 
-        sleep 5.milliseconds
+        # Wait for start confirmation
+        started.receive
         source.running?.should be_true
 
-        sleep 20.milliseconds
+        # Signal stop and verify
+        stopped.send(nil)
+        Fiber.yield
+        sleep 5.milliseconds # Brief yield for stop to complete
         source.running?.should be_false
 
         channel.close

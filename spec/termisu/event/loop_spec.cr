@@ -334,19 +334,25 @@ describe Termisu::Event::Loop do
   describe "thread safety" do
     it "uses Atomic for running state" do
       loop = Termisu::Event::Loop.new
+      started = Channel(Nil).new
+      stopped = Channel(Nil).new
 
       # Start and stop from different contexts should be safe
       spawn do
         loop.start
-        sleep 10.milliseconds
+        started.send(nil)
+        stopped.receive # Wait for signal to stop
         loop.stop
       end
 
-      sleep 5.milliseconds
-      # Query state while loop is running
+      # Wait for start confirmation
+      started.receive
       loop.running?.should be_true
 
-      sleep 20.milliseconds
+      # Signal stop and verify
+      stopped.send(nil)
+      Fiber.yield
+      sleep 5.milliseconds # Brief yield for stop to complete
       loop.running?.should be_false
     end
   end

@@ -150,13 +150,10 @@ describe Termisu::Event::Source::Resize do
 
       source.start(channel)
       source.running?.should be_true
+      Fiber.yield # Let fiber start
 
       # Close channel while source is running
-      sleep 20.milliseconds
       channel.close
-
-      # Give fiber time to handle the closed channel
-      sleep 20.milliseconds
       source.stop
 
       # Should have stopped without raising
@@ -235,15 +232,12 @@ describe Termisu::Event::Source::Resize do
 
       source.start(channel)
 
-      # Wait a bit - no event should be emitted
-      sleep 50.milliseconds
-
-      # Channel should be empty (non-blocking check)
+      # Wait for multiple poll cycles with timeout - no event should be emitted
       select
       when event = channel.receive
         fail "Should not have received an event, got: #{event}"
-      else
-        # Good - no event
+      when timeout(50.milliseconds)
+        # Good - no event within expected timeframe
       end
 
       source.stop
