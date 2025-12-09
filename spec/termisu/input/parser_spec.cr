@@ -56,7 +56,7 @@ describe Termisu::Input::Parser do
         event = parse_sequence(Bytes['a'.ord])
         event.should be_a(Termisu::Event::Key)
         if event.is_a?(Termisu::Event::Key)
-          event.key.should eq(Termisu::Key::LowerA)
+          event.key.should eq(Termisu::Input::Key::LowerA)
           event.modifiers.none?.should be_true
         end
       end
@@ -65,7 +65,7 @@ describe Termisu::Input::Parser do
         event = parse_sequence(Bytes['A'.ord])
         event.should be_a(Termisu::Event::Key)
         if event.is_a?(Termisu::Event::Key)
-          event.key.should eq(Termisu::Key::UpperA)
+          event.key.should eq(Termisu::Input::Key::UpperA)
         end
       end
 
@@ -73,7 +73,7 @@ describe Termisu::Input::Parser do
         event = parse_sequence(Bytes['5'.ord])
         event.should be_a(Termisu::Event::Key)
         if event.is_a?(Termisu::Event::Key)
-          event.key.should eq(Termisu::Key::Num5)
+          event.key.should eq(Termisu::Input::Key::Num5)
         end
       end
 
@@ -81,7 +81,7 @@ describe Termisu::Input::Parser do
         event = parse_sequence(Bytes[' '.ord])
         event.should be_a(Termisu::Event::Key)
         if event.is_a?(Termisu::Event::Key)
-          event.key.should eq(Termisu::Key::Space)
+          event.key.should eq(Termisu::Input::Key::Space)
         end
       end
 
@@ -89,7 +89,7 @@ describe Termisu::Input::Parser do
         event = parse_sequence(Bytes['.'.ord])
         event.should be_a(Termisu::Event::Key)
         if event.is_a?(Termisu::Event::Key)
-          event.key.should eq(Termisu::Key::Period)
+          event.key.should eq(Termisu::Input::Key::Period)
         end
       end
     end
@@ -99,7 +99,7 @@ describe Termisu::Input::Parser do
         event = parse_sequence(Bytes[0x01])
         event.should be_a(Termisu::Event::Key)
         if event.is_a?(Termisu::Event::Key)
-          event.key.should eq(Termisu::Key::LowerA)
+          event.key.should eq(Termisu::Input::Key::LowerA)
           event.ctrl?.should be_true
         end
       end
@@ -132,7 +132,7 @@ describe Termisu::Input::Parser do
         event = parse_sequence(Bytes[0x00])
         event.should be_a(Termisu::Event::Key)
         if event.is_a?(Termisu::Event::Key)
-          event.key.should eq(Termisu::Key::Space)
+          event.key.should eq(Termisu::Input::Key::Space)
           event.ctrl?.should be_true
         end
       end
@@ -141,7 +141,7 @@ describe Termisu::Input::Parser do
         event = parse_sequence(Bytes[0x7F])
         event.should be_a(Termisu::Event::Key)
         if event.is_a?(Termisu::Event::Key)
-          event.key.should eq(Termisu::Key::Backspace)
+          event.key.should eq(Termisu::Input::Key::Backspace)
         end
       end
 
@@ -150,7 +150,7 @@ describe Termisu::Input::Parser do
         event = parse_sequence(Bytes[0x08])
         event.should be_a(Termisu::Event::Key)
         if event.is_a?(Termisu::Event::Key)
-          event.key.should eq(Termisu::Key::Backspace)
+          event.key.should eq(Termisu::Input::Key::Backspace)
           event.ctrl?.should be_false
         end
       end
@@ -160,7 +160,7 @@ describe Termisu::Input::Parser do
         event = parse_sequence(Bytes[0x09])
         event.should be_a(Termisu::Event::Key)
         if event.is_a?(Termisu::Event::Key)
-          event.key.should eq(Termisu::Key::Tab)
+          event.key.should eq(Termisu::Input::Key::Tab)
           event.ctrl?.should be_false
         end
       end
@@ -170,7 +170,7 @@ describe Termisu::Input::Parser do
         event = parse_sequence(Bytes[0x0D])
         event.should be_a(Termisu::Event::Key)
         if event.is_a?(Termisu::Event::Key)
-          event.key.should eq(Termisu::Key::Enter)
+          event.key.should eq(Termisu::Input::Key::Enter)
           event.ctrl?.should be_false
         end
       end
@@ -180,7 +180,7 @@ describe Termisu::Input::Parser do
         event = parse_sequence(Bytes[0x0A])
         event.should be_a(Termisu::Event::Key)
         if event.is_a?(Termisu::Event::Key)
-          event.key.should eq(Termisu::Key::Enter)
+          event.key.should eq(Termisu::Input::Key::Enter)
           event.ctrl?.should be_false
         end
       end
@@ -191,7 +191,7 @@ describe Termisu::Input::Parser do
         event = parse_sequence(Bytes[0x1B, '['.ord, 'A'.ord])
         event.should be_a(Termisu::Event::Key)
         if event.is_a?(Termisu::Event::Key)
-          event.key.should eq(Termisu::Key::Up)
+          event.key.should eq(Termisu::Input::Key::Up)
         end
       end
 
@@ -199,7 +199,7 @@ describe Termisu::Input::Parser do
         event = parse_sequence(Bytes[0x1B, '['.ord, 'B'.ord])
         event.should be_a(Termisu::Event::Key)
         if event.is_a?(Termisu::Event::Key)
-          event.key.should eq(Termisu::Key::Down)
+          event.key.should eq(Termisu::Input::Key::Down)
         end
       end
 
@@ -207,7 +207,7 @@ describe Termisu::Input::Parser do
         event = parse_sequence(Bytes[0x1B, '['.ord, 'C'.ord])
         event.should be_a(Termisu::Event::Key)
         if event.is_a?(Termisu::Event::Key)
-          event.key.should eq(Termisu::Key::Right)
+          event.key.should eq(Termisu::Input::Key::Right)
         end
       end
 
@@ -215,7 +215,7 @@ describe Termisu::Input::Parser do
         event = parse_sequence(Bytes[0x1B, '['.ord, 'D'.ord])
         event.should be_a(Termisu::Event::Key)
         if event.is_a?(Termisu::Event::Key)
-          event.key.should eq(Termisu::Key::Left)
+          event.key.should eq(Termisu::Input::Key::Left)
         end
       end
 
@@ -223,7 +223,7 @@ describe Termisu::Input::Parser do
         event = parse_sequence(Bytes[0x1B, '['.ord, 'H'.ord])
         event.should be_a(Termisu::Event::Key)
         if event.is_a?(Termisu::Event::Key)
-          event.key.should eq(Termisu::Key::Home)
+          event.key.should eq(Termisu::Input::Key::Home)
         end
       end
 
@@ -231,7 +231,7 @@ describe Termisu::Input::Parser do
         event = parse_sequence(Bytes[0x1B, '['.ord, 'F'.ord])
         event.should be_a(Termisu::Event::Key)
         if event.is_a?(Termisu::Event::Key)
-          event.key.should eq(Termisu::Key::End)
+          event.key.should eq(Termisu::Input::Key::End)
         end
       end
 
@@ -239,7 +239,7 @@ describe Termisu::Input::Parser do
         event = parse_sequence(Bytes[0x1B, '['.ord, 'Z'.ord])
         event.should be_a(Termisu::Event::Key)
         if event.is_a?(Termisu::Event::Key)
-          event.key.should eq(Termisu::Key::BackTab)
+          event.key.should eq(Termisu::Input::Key::BackTab)
         end
       end
     end
@@ -249,7 +249,7 @@ describe Termisu::Input::Parser do
         event = parse_sequence(Bytes[0x1B, '['.ord, '1'.ord, ';'.ord, '2'.ord, 'A'.ord])
         event.should be_a(Termisu::Event::Key)
         if event.is_a?(Termisu::Event::Key)
-          event.key.should eq(Termisu::Key::Up)
+          event.key.should eq(Termisu::Input::Key::Up)
           event.shift?.should be_true
         end
       end
@@ -258,7 +258,7 @@ describe Termisu::Input::Parser do
         event = parse_sequence(Bytes[0x1B, '['.ord, '1'.ord, ';'.ord, '3'.ord, 'A'.ord])
         event.should be_a(Termisu::Event::Key)
         if event.is_a?(Termisu::Event::Key)
-          event.key.should eq(Termisu::Key::Up)
+          event.key.should eq(Termisu::Input::Key::Up)
           event.alt?.should be_true
         end
       end
@@ -267,7 +267,7 @@ describe Termisu::Input::Parser do
         event = parse_sequence(Bytes[0x1B, '['.ord, '1'.ord, ';'.ord, '5'.ord, 'A'.ord])
         event.should be_a(Termisu::Event::Key)
         if event.is_a?(Termisu::Event::Key)
-          event.key.should eq(Termisu::Key::Up)
+          event.key.should eq(Termisu::Input::Key::Up)
           event.ctrl?.should be_true
         end
       end
@@ -276,7 +276,7 @@ describe Termisu::Input::Parser do
         event = parse_sequence(Bytes[0x1B, '['.ord, '1'.ord, ';'.ord, '6'.ord, 'A'.ord])
         event.should be_a(Termisu::Event::Key)
         if event.is_a?(Termisu::Event::Key)
-          event.key.should eq(Termisu::Key::Up)
+          event.key.should eq(Termisu::Input::Key::Up)
           event.ctrl?.should be_true
           event.shift?.should be_true
         end
@@ -288,7 +288,7 @@ describe Termisu::Input::Parser do
         event = parse_sequence(Bytes[0x1B, '['.ord, '2'.ord, '~'.ord])
         event.should be_a(Termisu::Event::Key)
         if event.is_a?(Termisu::Event::Key)
-          event.key.should eq(Termisu::Key::Insert)
+          event.key.should eq(Termisu::Input::Key::Insert)
         end
       end
 
@@ -296,7 +296,7 @@ describe Termisu::Input::Parser do
         event = parse_sequence(Bytes[0x1B, '['.ord, '3'.ord, '~'.ord])
         event.should be_a(Termisu::Event::Key)
         if event.is_a?(Termisu::Event::Key)
-          event.key.should eq(Termisu::Key::Delete)
+          event.key.should eq(Termisu::Input::Key::Delete)
         end
       end
 
@@ -304,7 +304,7 @@ describe Termisu::Input::Parser do
         event = parse_sequence(Bytes[0x1B, '['.ord, '5'.ord, '~'.ord])
         event.should be_a(Termisu::Event::Key)
         if event.is_a?(Termisu::Event::Key)
-          event.key.should eq(Termisu::Key::PageUp)
+          event.key.should eq(Termisu::Input::Key::PageUp)
         end
       end
 
@@ -312,7 +312,7 @@ describe Termisu::Input::Parser do
         event = parse_sequence(Bytes[0x1B, '['.ord, '6'.ord, '~'.ord])
         event.should be_a(Termisu::Event::Key)
         if event.is_a?(Termisu::Event::Key)
-          event.key.should eq(Termisu::Key::PageDown)
+          event.key.should eq(Termisu::Input::Key::PageDown)
         end
       end
 
@@ -320,7 +320,7 @@ describe Termisu::Input::Parser do
         event = parse_sequence(Bytes[0x1B, '['.ord, '1'.ord, '5'.ord, '~'.ord])
         event.should be_a(Termisu::Event::Key)
         if event.is_a?(Termisu::Event::Key)
-          event.key.should eq(Termisu::Key::F5)
+          event.key.should eq(Termisu::Input::Key::F5)
         end
       end
 
@@ -328,7 +328,7 @@ describe Termisu::Input::Parser do
         event = parse_sequence(Bytes[0x1B, '['.ord, '1'.ord, '7'.ord, '~'.ord])
         event.should be_a(Termisu::Event::Key)
         if event.is_a?(Termisu::Event::Key)
-          event.key.should eq(Termisu::Key::F6)
+          event.key.should eq(Termisu::Input::Key::F6)
         end
       end
 
@@ -336,7 +336,7 @@ describe Termisu::Input::Parser do
         event = parse_sequence(Bytes[0x1B, '['.ord, '2'.ord, '4'.ord, '~'.ord])
         event.should be_a(Termisu::Event::Key)
         if event.is_a?(Termisu::Event::Key)
-          event.key.should eq(Termisu::Key::F12)
+          event.key.should eq(Termisu::Input::Key::F12)
         end
       end
 
@@ -344,7 +344,7 @@ describe Termisu::Input::Parser do
         event = parse_sequence(Bytes[0x1B, '['.ord, '5'.ord, ';'.ord, '5'.ord, '~'.ord])
         event.should be_a(Termisu::Event::Key)
         if event.is_a?(Termisu::Event::Key)
-          event.key.should eq(Termisu::Key::PageUp)
+          event.key.should eq(Termisu::Input::Key::PageUp)
           event.ctrl?.should be_true
         end
       end
@@ -355,7 +355,7 @@ describe Termisu::Input::Parser do
         event = parse_sequence(Bytes[0x1B, 'O'.ord, 'P'.ord])
         event.should be_a(Termisu::Event::Key)
         if event.is_a?(Termisu::Event::Key)
-          event.key.should eq(Termisu::Key::F1)
+          event.key.should eq(Termisu::Input::Key::F1)
         end
       end
 
@@ -363,7 +363,7 @@ describe Termisu::Input::Parser do
         event = parse_sequence(Bytes[0x1B, 'O'.ord, 'Q'.ord])
         event.should be_a(Termisu::Event::Key)
         if event.is_a?(Termisu::Event::Key)
-          event.key.should eq(Termisu::Key::F2)
+          event.key.should eq(Termisu::Input::Key::F2)
         end
       end
 
@@ -371,7 +371,7 @@ describe Termisu::Input::Parser do
         event = parse_sequence(Bytes[0x1B, 'O'.ord, 'R'.ord])
         event.should be_a(Termisu::Event::Key)
         if event.is_a?(Termisu::Event::Key)
-          event.key.should eq(Termisu::Key::F3)
+          event.key.should eq(Termisu::Input::Key::F3)
         end
       end
 
@@ -379,7 +379,7 @@ describe Termisu::Input::Parser do
         event = parse_sequence(Bytes[0x1B, 'O'.ord, 'S'.ord])
         event.should be_a(Termisu::Event::Key)
         if event.is_a?(Termisu::Event::Key)
-          event.key.should eq(Termisu::Key::F4)
+          event.key.should eq(Termisu::Input::Key::F4)
         end
       end
 
@@ -387,7 +387,7 @@ describe Termisu::Input::Parser do
         event = parse_sequence(Bytes[0x1B, 'O'.ord, 'H'.ord])
         event.should be_a(Termisu::Event::Key)
         if event.is_a?(Termisu::Event::Key)
-          event.key.should eq(Termisu::Key::Home)
+          event.key.should eq(Termisu::Input::Key::Home)
         end
       end
 
@@ -395,7 +395,7 @@ describe Termisu::Input::Parser do
         event = parse_sequence(Bytes[0x1B, 'O'.ord, 'F'.ord])
         event.should be_a(Termisu::Event::Key)
         if event.is_a?(Termisu::Event::Key)
-          event.key.should eq(Termisu::Key::End)
+          event.key.should eq(Termisu::Input::Key::End)
         end
       end
     end
@@ -405,7 +405,7 @@ describe Termisu::Input::Parser do
         event = parse_sequence(Bytes[0x1B, 'a'.ord])
         event.should be_a(Termisu::Event::Key)
         if event.is_a?(Termisu::Event::Key)
-          event.key.should eq(Termisu::Key::LowerA)
+          event.key.should eq(Termisu::Input::Key::LowerA)
           event.alt?.should be_true
         end
       end
@@ -414,7 +414,7 @@ describe Termisu::Input::Parser do
         event = parse_sequence(Bytes[0x1B, 'A'.ord])
         event.should be_a(Termisu::Event::Key)
         if event.is_a?(Termisu::Event::Key)
-          event.key.should eq(Termisu::Key::UpperA)
+          event.key.should eq(Termisu::Input::Key::UpperA)
           event.alt?.should be_true
         end
       end
@@ -423,7 +423,7 @@ describe Termisu::Input::Parser do
         event = parse_sequence(Bytes[0x1B, '5'.ord])
         event.should be_a(Termisu::Event::Key)
         if event.is_a?(Termisu::Event::Key)
-          event.key.should eq(Termisu::Key::Num5)
+          event.key.should eq(Termisu::Input::Key::Num5)
           event.alt?.should be_true
         end
       end

@@ -13,7 +13,7 @@
 # end
 # ```
 @[Flags]
-enum Termisu::Modifier : UInt8
+enum Termisu::Input::Modifier : UInt8
   # No modifiers
   None = 0
 
@@ -61,7 +61,7 @@ end
 
 # Modifier bit masks for protocol decoding.
 # Defined outside the enum to avoid type coercion issues.
-module Termisu::ModifierBits
+module Termisu::Input::ModifierBits
   # XTerm modifier bit masks (used in CSI sequences).
   # XTerm encoding: code = 1 + (shift*1 + alt*2 + ctrl*4 + meta*8)
   XTERM_SHIFT = 1

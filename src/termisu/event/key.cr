@@ -15,12 +15,12 @@
 # ```
 struct Termisu::Event::Key
   # The key that was pressed.
-  getter key : Termisu::Key
+  getter key : Input::Key
 
   # Modifier keys held during the keypress.
-  getter modifiers : Modifier
+  getter modifiers : Input::Modifier
 
-  def initialize(@key : Termisu::Key, @modifiers : Modifier = Modifier::None)
+  def initialize(@key : Input::Key, @modifiers : Input::Modifier = Input::Modifier::None)
   end
 
   # Returns true if Ctrl modifier was held.

@@ -15,7 +15,7 @@
 #   end
 # end
 # ```
-enum Termisu::Key
+enum Termisu::Input::Key
   # Letters (uppercase A-Z)
   UpperA
   UpperB
@@ -234,7 +234,7 @@ end
 # Symbol lookup tables for Key enum.
 # Defines the single source of truth for symbol <-> key mappings.
 # Uses lazy initialization with class variables to avoid enum constant limitations.
-module Termisu::KeySymbolMaps
+module Termisu::Input::KeySymbolMaps
   # Char to Key lookup hash - single source of truth for symbol mappings.
   def self.char_to_key : Hash(Char, Key)
     @@char_to_key ||= build_char_to_key_map

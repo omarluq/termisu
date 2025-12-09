@@ -130,14 +130,14 @@ describe Termisu::Event::Mouse do
     end
 
     it "creates a mouse event with modifiers" do
-      mods = Termisu::Modifier::Ctrl | Termisu::Modifier::Shift
+      mods = Termisu::Input::Modifier::Ctrl | Termisu::Input::Modifier::Shift
       event = Termisu::Event::Mouse.new(5, 5, Termisu::Event::MouseButton::Left, mods)
       event.modifiers.ctrl?.should be_true
       event.modifiers.shift?.should be_true
     end
 
     it "creates a mouse event with motion" do
-      event = Termisu::Event::Mouse.new(5, 5, Termisu::Event::MouseButton::Left, Termisu::Modifier::None, true)
+      event = Termisu::Event::Mouse.new(5, 5, Termisu::Event::MouseButton::Left, Termisu::Input::Modifier::None, true)
       event.motion?.should be_true
     end
   end
@@ -199,19 +199,19 @@ describe Termisu::Event::Mouse do
 
   describe "modifier shortcuts" do
     it "#ctrl? returns true when Ctrl is pressed" do
-      event = Termisu::Event::Mouse.new(1, 1, Termisu::Event::MouseButton::Left, Termisu::Modifier::Ctrl)
+      event = Termisu::Event::Mouse.new(1, 1, Termisu::Event::MouseButton::Left, Termisu::Input::Modifier::Ctrl)
       event.ctrl?.should be_true
       event.shift?.should be_false
     end
 
     it "#alt? returns true when Alt is pressed" do
-      event = Termisu::Event::Mouse.new(1, 1, Termisu::Event::MouseButton::Left, Termisu::Modifier::Alt)
+      event = Termisu::Event::Mouse.new(1, 1, Termisu::Event::MouseButton::Left, Termisu::Input::Modifier::Alt)
       event.alt?.should be_true
       event.ctrl?.should be_false
     end
 
     it "#shift? returns true when Shift is pressed" do
-      event = Termisu::Event::Mouse.new(1, 1, Termisu::Event::MouseButton::Left, Termisu::Modifier::Shift)
+      event = Termisu::Event::Mouse.new(1, 1, Termisu::Event::MouseButton::Left, Termisu::Input::Modifier::Shift)
       event.shift?.should be_true
       event.alt?.should be_false
     end
@@ -240,14 +240,16 @@ describe Termisu::Event::Mouse do
 
   describe "motion events" do
     it "creates drag event (motion with button pressed)" do
-      event = Termisu::Event::Mouse.new(10, 10, Termisu::Event::MouseButton::Left, Termisu::Modifier::None, true)
+      event = Termisu::Event::Mouse.new(10, 10, Termisu::Event::MouseButton::Left, Termisu::Input::Modifier::None, true)
       event.motion?.should be_true
       event.button.should eq(Termisu::Event::MouseButton::Left)
     end
 
     it "creates hover event (motion with no button)" do
       # Note: hover requires motion tracking mode enabled (mode 1003)
-      event = Termisu::Event::Mouse.new(10, 10, Termisu::Event::MouseButton::Release, Termisu::Modifier::None, true)
+      event = Termisu::Event::Mouse.new(
+        10, 10, Termisu::Event::MouseButton::Release, Termisu::Input::Modifier::None, true
+      )
       event.motion?.should be_true
       event.button.should eq(Termisu::Event::MouseButton::Release)
     end

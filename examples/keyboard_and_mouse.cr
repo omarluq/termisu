@@ -45,120 +45,120 @@ begin
   ]
 
   # Map Key enum values to row/key index for highlighting
-  key_positions = {} of Termisu::Key => {Int32, Int32}
+  key_positions = {} of Termisu::Input::Key => {Int32, Int32}
 
   # Row 0: Escape, number row, backspace
-  key_positions[Termisu::Key::Escape] = {0, 0}
-  key_positions[Termisu::Key::Backtick] = {0, 1}
-  key_positions[Termisu::Key::Tilde] = {0, 1}
-  key_positions[Termisu::Key::Num1] = {0, 2}
-  key_positions[Termisu::Key::Exclaim] = {0, 2}
-  key_positions[Termisu::Key::Num2] = {0, 3}
-  key_positions[Termisu::Key::At] = {0, 3}
-  key_positions[Termisu::Key::Num3] = {0, 4}
-  key_positions[Termisu::Key::Hash] = {0, 4}
-  key_positions[Termisu::Key::Num4] = {0, 5}
-  key_positions[Termisu::Key::Dollar] = {0, 5}
-  key_positions[Termisu::Key::Num5] = {0, 6}
-  key_positions[Termisu::Key::Percent] = {0, 6}
-  key_positions[Termisu::Key::Num6] = {0, 7}
-  key_positions[Termisu::Key::Caret] = {0, 7}
-  key_positions[Termisu::Key::Num7] = {0, 8}
-  key_positions[Termisu::Key::Ampersand] = {0, 8}
-  key_positions[Termisu::Key::Num8] = {0, 9}
-  key_positions[Termisu::Key::Asterisk] = {0, 9}
-  key_positions[Termisu::Key::Num9] = {0, 10}
-  key_positions[Termisu::Key::LeftParen] = {0, 10}
-  key_positions[Termisu::Key::Num0] = {0, 11}
-  key_positions[Termisu::Key::RightParen] = {0, 11}
-  key_positions[Termisu::Key::Minus] = {0, 12}
-  key_positions[Termisu::Key::Underscore] = {0, 12}
-  key_positions[Termisu::Key::Equals] = {0, 13}
-  key_positions[Termisu::Key::Plus] = {0, 13}
-  key_positions[Termisu::Key::Backspace] = {0, 14}
+  key_positions[Termisu::Input::Key::Escape] = {0, 0}
+  key_positions[Termisu::Input::Key::Backtick] = {0, 1}
+  key_positions[Termisu::Input::Key::Tilde] = {0, 1}
+  key_positions[Termisu::Input::Key::Num1] = {0, 2}
+  key_positions[Termisu::Input::Key::Exclaim] = {0, 2}
+  key_positions[Termisu::Input::Key::Num2] = {0, 3}
+  key_positions[Termisu::Input::Key::At] = {0, 3}
+  key_positions[Termisu::Input::Key::Num3] = {0, 4}
+  key_positions[Termisu::Input::Key::Hash] = {0, 4}
+  key_positions[Termisu::Input::Key::Num4] = {0, 5}
+  key_positions[Termisu::Input::Key::Dollar] = {0, 5}
+  key_positions[Termisu::Input::Key::Num5] = {0, 6}
+  key_positions[Termisu::Input::Key::Percent] = {0, 6}
+  key_positions[Termisu::Input::Key::Num6] = {0, 7}
+  key_positions[Termisu::Input::Key::Caret] = {0, 7}
+  key_positions[Termisu::Input::Key::Num7] = {0, 8}
+  key_positions[Termisu::Input::Key::Ampersand] = {0, 8}
+  key_positions[Termisu::Input::Key::Num8] = {0, 9}
+  key_positions[Termisu::Input::Key::Asterisk] = {0, 9}
+  key_positions[Termisu::Input::Key::Num9] = {0, 10}
+  key_positions[Termisu::Input::Key::LeftParen] = {0, 10}
+  key_positions[Termisu::Input::Key::Num0] = {0, 11}
+  key_positions[Termisu::Input::Key::RightParen] = {0, 11}
+  key_positions[Termisu::Input::Key::Minus] = {0, 12}
+  key_positions[Termisu::Input::Key::Underscore] = {0, 12}
+  key_positions[Termisu::Input::Key::Equals] = {0, 13}
+  key_positions[Termisu::Input::Key::Plus] = {0, 13}
+  key_positions[Termisu::Input::Key::Backspace] = {0, 14}
 
   # Row 1: Tab, QWERTY row
-  key_positions[Termisu::Key::Tab] = {1, 0}
-  key_positions[Termisu::Key::UpperQ] = {1, 1}
-  key_positions[Termisu::Key::LowerQ] = {1, 1}
-  key_positions[Termisu::Key::UpperW] = {1, 2}
-  key_positions[Termisu::Key::LowerW] = {1, 2}
-  key_positions[Termisu::Key::UpperE] = {1, 3}
-  key_positions[Termisu::Key::LowerE] = {1, 3}
-  key_positions[Termisu::Key::UpperR] = {1, 4}
-  key_positions[Termisu::Key::LowerR] = {1, 4}
-  key_positions[Termisu::Key::UpperT] = {1, 5}
-  key_positions[Termisu::Key::LowerT] = {1, 5}
-  key_positions[Termisu::Key::UpperY] = {1, 6}
-  key_positions[Termisu::Key::LowerY] = {1, 6}
-  key_positions[Termisu::Key::UpperU] = {1, 7}
-  key_positions[Termisu::Key::LowerU] = {1, 7}
-  key_positions[Termisu::Key::UpperI] = {1, 8}
-  key_positions[Termisu::Key::LowerI] = {1, 8}
-  key_positions[Termisu::Key::UpperO] = {1, 9}
-  key_positions[Termisu::Key::LowerO] = {1, 9}
-  key_positions[Termisu::Key::UpperP] = {1, 10}
-  key_positions[Termisu::Key::LowerP] = {1, 10}
-  key_positions[Termisu::Key::LeftBracket] = {1, 11}
-  key_positions[Termisu::Key::LeftBrace] = {1, 11}
-  key_positions[Termisu::Key::RightBracket] = {1, 12}
-  key_positions[Termisu::Key::RightBrace] = {1, 12}
-  key_positions[Termisu::Key::Backslash] = {1, 13}
-  key_positions[Termisu::Key::Pipe] = {1, 13}
+  key_positions[Termisu::Input::Key::Tab] = {1, 0}
+  key_positions[Termisu::Input::Key::UpperQ] = {1, 1}
+  key_positions[Termisu::Input::Key::LowerQ] = {1, 1}
+  key_positions[Termisu::Input::Key::UpperW] = {1, 2}
+  key_positions[Termisu::Input::Key::LowerW] = {1, 2}
+  key_positions[Termisu::Input::Key::UpperE] = {1, 3}
+  key_positions[Termisu::Input::Key::LowerE] = {1, 3}
+  key_positions[Termisu::Input::Key::UpperR] = {1, 4}
+  key_positions[Termisu::Input::Key::LowerR] = {1, 4}
+  key_positions[Termisu::Input::Key::UpperT] = {1, 5}
+  key_positions[Termisu::Input::Key::LowerT] = {1, 5}
+  key_positions[Termisu::Input::Key::UpperY] = {1, 6}
+  key_positions[Termisu::Input::Key::LowerY] = {1, 6}
+  key_positions[Termisu::Input::Key::UpperU] = {1, 7}
+  key_positions[Termisu::Input::Key::LowerU] = {1, 7}
+  key_positions[Termisu::Input::Key::UpperI] = {1, 8}
+  key_positions[Termisu::Input::Key::LowerI] = {1, 8}
+  key_positions[Termisu::Input::Key::UpperO] = {1, 9}
+  key_positions[Termisu::Input::Key::LowerO] = {1, 9}
+  key_positions[Termisu::Input::Key::UpperP] = {1, 10}
+  key_positions[Termisu::Input::Key::LowerP] = {1, 10}
+  key_positions[Termisu::Input::Key::LeftBracket] = {1, 11}
+  key_positions[Termisu::Input::Key::LeftBrace] = {1, 11}
+  key_positions[Termisu::Input::Key::RightBracket] = {1, 12}
+  key_positions[Termisu::Input::Key::RightBrace] = {1, 12}
+  key_positions[Termisu::Input::Key::Backslash] = {1, 13}
+  key_positions[Termisu::Input::Key::Pipe] = {1, 13}
 
   # Row 2: Caps, ASDF row, Enter
-  key_positions[Termisu::Key::UpperA] = {2, 1}
-  key_positions[Termisu::Key::LowerA] = {2, 1}
-  key_positions[Termisu::Key::UpperS] = {2, 2}
-  key_positions[Termisu::Key::LowerS] = {2, 2}
-  key_positions[Termisu::Key::UpperD] = {2, 3}
-  key_positions[Termisu::Key::LowerD] = {2, 3}
-  key_positions[Termisu::Key::UpperF] = {2, 4}
-  key_positions[Termisu::Key::LowerF] = {2, 4}
-  key_positions[Termisu::Key::UpperG] = {2, 5}
-  key_positions[Termisu::Key::LowerG] = {2, 5}
-  key_positions[Termisu::Key::UpperH] = {2, 6}
-  key_positions[Termisu::Key::LowerH] = {2, 6}
-  key_positions[Termisu::Key::UpperJ] = {2, 7}
-  key_positions[Termisu::Key::LowerJ] = {2, 7}
-  key_positions[Termisu::Key::UpperK] = {2, 8}
-  key_positions[Termisu::Key::LowerK] = {2, 8}
-  key_positions[Termisu::Key::UpperL] = {2, 9}
-  key_positions[Termisu::Key::LowerL] = {2, 9}
-  key_positions[Termisu::Key::Semicolon] = {2, 10}
-  key_positions[Termisu::Key::Colon] = {2, 10}
-  key_positions[Termisu::Key::Quote] = {2, 11}
-  key_positions[Termisu::Key::DoubleQuote] = {2, 11}
-  key_positions[Termisu::Key::Enter] = {2, 12}
+  key_positions[Termisu::Input::Key::UpperA] = {2, 1}
+  key_positions[Termisu::Input::Key::LowerA] = {2, 1}
+  key_positions[Termisu::Input::Key::UpperS] = {2, 2}
+  key_positions[Termisu::Input::Key::LowerS] = {2, 2}
+  key_positions[Termisu::Input::Key::UpperD] = {2, 3}
+  key_positions[Termisu::Input::Key::LowerD] = {2, 3}
+  key_positions[Termisu::Input::Key::UpperF] = {2, 4}
+  key_positions[Termisu::Input::Key::LowerF] = {2, 4}
+  key_positions[Termisu::Input::Key::UpperG] = {2, 5}
+  key_positions[Termisu::Input::Key::LowerG] = {2, 5}
+  key_positions[Termisu::Input::Key::UpperH] = {2, 6}
+  key_positions[Termisu::Input::Key::LowerH] = {2, 6}
+  key_positions[Termisu::Input::Key::UpperJ] = {2, 7}
+  key_positions[Termisu::Input::Key::LowerJ] = {2, 7}
+  key_positions[Termisu::Input::Key::UpperK] = {2, 8}
+  key_positions[Termisu::Input::Key::LowerK] = {2, 8}
+  key_positions[Termisu::Input::Key::UpperL] = {2, 9}
+  key_positions[Termisu::Input::Key::LowerL] = {2, 9}
+  key_positions[Termisu::Input::Key::Semicolon] = {2, 10}
+  key_positions[Termisu::Input::Key::Colon] = {2, 10}
+  key_positions[Termisu::Input::Key::Quote] = {2, 11}
+  key_positions[Termisu::Input::Key::DoubleQuote] = {2, 11}
+  key_positions[Termisu::Input::Key::Enter] = {2, 12}
 
   # Row 3: Shift, ZXCV row
-  key_positions[Termisu::Key::UpperZ] = {3, 1}
-  key_positions[Termisu::Key::LowerZ] = {3, 1}
-  key_positions[Termisu::Key::UpperX] = {3, 2}
-  key_positions[Termisu::Key::LowerX] = {3, 2}
-  key_positions[Termisu::Key::UpperC] = {3, 3}
-  key_positions[Termisu::Key::LowerC] = {3, 3}
-  key_positions[Termisu::Key::UpperV] = {3, 4}
-  key_positions[Termisu::Key::LowerV] = {3, 4}
-  key_positions[Termisu::Key::UpperB] = {3, 5}
-  key_positions[Termisu::Key::LowerB] = {3, 5}
-  key_positions[Termisu::Key::UpperN] = {3, 6}
-  key_positions[Termisu::Key::LowerN] = {3, 6}
-  key_positions[Termisu::Key::UpperM] = {3, 7}
-  key_positions[Termisu::Key::LowerM] = {3, 7}
-  key_positions[Termisu::Key::Comma] = {3, 8}
-  key_positions[Termisu::Key::LessThan] = {3, 8}
-  key_positions[Termisu::Key::Period] = {3, 9}
-  key_positions[Termisu::Key::GreaterThan] = {3, 9}
-  key_positions[Termisu::Key::Slash] = {3, 10}
-  key_positions[Termisu::Key::Question] = {3, 10}
+  key_positions[Termisu::Input::Key::UpperZ] = {3, 1}
+  key_positions[Termisu::Input::Key::LowerZ] = {3, 1}
+  key_positions[Termisu::Input::Key::UpperX] = {3, 2}
+  key_positions[Termisu::Input::Key::LowerX] = {3, 2}
+  key_positions[Termisu::Input::Key::UpperC] = {3, 3}
+  key_positions[Termisu::Input::Key::LowerC] = {3, 3}
+  key_positions[Termisu::Input::Key::UpperV] = {3, 4}
+  key_positions[Termisu::Input::Key::LowerV] = {3, 4}
+  key_positions[Termisu::Input::Key::UpperB] = {3, 5}
+  key_positions[Termisu::Input::Key::LowerB] = {3, 5}
+  key_positions[Termisu::Input::Key::UpperN] = {3, 6}
+  key_positions[Termisu::Input::Key::LowerN] = {3, 6}
+  key_positions[Termisu::Input::Key::UpperM] = {3, 7}
+  key_positions[Termisu::Input::Key::LowerM] = {3, 7}
+  key_positions[Termisu::Input::Key::Comma] = {3, 8}
+  key_positions[Termisu::Input::Key::LessThan] = {3, 8}
+  key_positions[Termisu::Input::Key::Period] = {3, 9}
+  key_positions[Termisu::Input::Key::GreaterThan] = {3, 9}
+  key_positions[Termisu::Input::Key::Slash] = {3, 10}
+  key_positions[Termisu::Input::Key::Question] = {3, 10}
 
   # Row 4: Space bar
-  key_positions[Termisu::Key::Space] = {4, 2}
+  key_positions[Termisu::Input::Key::Space] = {4, 2}
 
   # Track state
   highlighted : {Int32, Int32}? = nil
-  current_modifiers = Termisu::Modifier::None
+  current_modifiers = Termisu::Input::Modifier::None
   last_event_text = ""
   mouse_x = 0
   mouse_y = 0
@@ -187,7 +187,7 @@ begin
   draw_text.call(title_x, start_y - 2, title, Termisu::Color.cyan, nil)
 
   # Draw keyboard function
-  draw_keyboard = ->(hl : {Int32, Int32}?, mods : Termisu::Modifier) do
+  draw_keyboard = ->(hl : {Int32, Int32}?, mods : Termisu::Input::Modifier) do
     current_y = start_y
 
     rows.each_with_index do |row, row_idx|
@@ -292,7 +292,7 @@ begin
   draw_text.call(hint_x, status_y, hint, Termisu::Color.ansi256(245), nil)
 
   # Initial draw
-  draw_keyboard.call(nil, Termisu::Modifier::None)
+  draw_keyboard.call(nil, Termisu::Input::Modifier::None)
   draw_mouse_panel.call(0, 0, "")
   termisu.render
 
