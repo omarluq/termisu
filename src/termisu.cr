@@ -223,7 +223,40 @@ class Termisu
   # Parameters:
   # - timeout_ms: Timeout in milliseconds (0 for non-blocking)
   def poll_event(timeout_ms : Int32) : Event::Any?
+    return try_poll_event if timeout_ms == 0
     poll_event(timeout_ms.milliseconds)
+  end
+
+  # Tries to poll for an event without blocking.
+  #
+  # Returns an event if one is immediately available, or nil otherwise.
+  # This uses Crystal's `select/else` for true non-blocking behavior,
+  # making it ideal for game loops or fiber-based architectures.
+  #
+  # Example:
+  # ```
+  # # Game loop pattern
+  # loop do
+  #   while event = termisu.try_poll_event
+  #     case event
+  #     when Termisu::Event::Key
+  #       break if event.key.escape?
+  #     end
+  #   end
+  #
+  #   # Update game state
+  #   update_game()
+  #   termisu.render
+  #   sleep 16.milliseconds
+  # end
+  # ```
+  def try_poll_event : Event::Any?
+    select
+    when event = @event_loop.output.receive
+      event
+    else
+      nil
+    end
   end
 
   # Waits for and returns the next event (blocking).
