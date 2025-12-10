@@ -359,6 +359,35 @@ describe Termisu::Input::Key do
     end
   end
 
+  describe "case-insensitive letter methods" do
+    it "a? matches both UpperA and LowerA" do
+      Termisu::Input::Key::UpperA.a?.should be_true
+      Termisu::Input::Key::LowerA.a?.should be_true
+      Termisu::Input::Key::UpperB.a?.should be_false
+      Termisu::Input::Key::LowerB.a?.should be_false
+    end
+
+    it "q? matches both UpperQ and LowerQ" do
+      Termisu::Input::Key::UpperQ.q?.should be_true
+      Termisu::Input::Key::LowerQ.q?.should be_true
+      Termisu::Input::Key::Escape.q?.should be_false
+    end
+
+    it "z? matches both UpperZ and LowerZ" do
+      Termisu::Input::Key::UpperZ.z?.should be_true
+      Termisu::Input::Key::LowerZ.z?.should be_true
+      Termisu::Input::Key::UpperA.z?.should be_false
+    end
+
+    it "all letters have case-insensitive methods" do
+      # Spot check a few letters
+      Termisu::Input::Key::UpperM.m?.should be_true
+      Termisu::Input::Key::LowerM.m?.should be_true
+      Termisu::Input::Key::UpperX.x?.should be_true
+      Termisu::Input::Key::LowerX.x?.should be_true
+    end
+  end
+
   describe "roundtrip conversion" do
     it "from_char -> to_char roundtrips for printable chars" do
       printable_chars = ('A'..'Z').to_a + ('a'..'z').to_a + ('0'..'9').to_a

@@ -229,6 +229,23 @@ enum Termisu::Input::Key
   def printable? : Bool
     !to_char.nil?
   end
+
+  # Case-insensitive letter checks (matches both upper and lower)
+  #
+  # These methods check if the key is a specific letter regardless of case.
+  # For example, `key.a?` returns true for both `Key::UpperA` and `Key::LowerA`.
+  #
+  # Example:
+  # ```
+  # if event.key.q? # Matches 'q' or 'Q'
+  #   puts "Quit!"
+  # end
+  # ```
+  {% for letter in %w[A B C D E F G H I J K L M N O P Q R S T U V W X Y Z] %}
+    def {{letter.downcase.id}}? : Bool
+      self == Upper{{letter.id}} || self == Lower{{letter.id}}
+    end
+  {% end %}
 end
 
 # Symbol lookup tables for Key enum.
