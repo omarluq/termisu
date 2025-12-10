@@ -219,6 +219,71 @@ describe "Termisu Event::Loop Integration" do
     end
   end
 
+  describe "try_poll_event" do
+    it "returns nil immediately when no event available" do
+      read_fd, write_fd = create_pipe
+      begin
+        reader = Termisu::Reader.new(read_fd)
+        parser = Termisu::Input::Parser.new(reader)
+
+        input_source = Termisu::Event::Source::Input.new(reader, parser)
+        event_loop = Termisu::Event::Loop.new
+        event_loop.add_source(input_source)
+        event_loop.start
+
+        # No data - should return nil immediately (non-blocking)
+        select
+        when event_loop.output.receive
+          fail "Should not receive event"
+        else
+          # This is the expected path - no event available
+          true.should be_true
+        end
+
+        event_loop.stop
+        reader.close
+      ensure
+        LibC.close(read_fd)
+        LibC.close(write_fd)
+      end
+    end
+
+    it "returns event immediately when available" do
+      read_fd, write_fd = create_pipe
+      begin
+        reader = Termisu::Reader.new(read_fd)
+        parser = Termisu::Input::Parser.new(reader)
+
+        input_source = Termisu::Event::Source::Input.new(reader, parser)
+        event_loop = Termisu::Event::Loop.new
+        event_loop.add_source(input_source)
+        event_loop.start
+
+        # Send input through pipe
+        bytes = Bytes['z'.ord.to_u8]
+        LibC.write(write_fd, bytes, bytes.size)
+
+        # Give fiber a chance to process
+        sleep 10.milliseconds
+
+        # Should get event immediately via select/else
+        select
+        when event = event_loop.output.receive
+          event.should be_a(Termisu::Event::Key)
+          event.as(Termisu::Event::Key).char.should eq('z')
+        else
+          fail "Should have received event"
+        end
+
+        event_loop.stop
+        reader.close
+      ensure
+        LibC.close(read_fd)
+        LibC.close(write_fd)
+      end
+    end
+  end
+
   # TASK-018: Timer API tests
   describe "Timer API" do
     it "timer is disabled by default" do
