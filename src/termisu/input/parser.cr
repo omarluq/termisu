@@ -117,11 +117,11 @@ class Termisu::Input::Parser
   # Returns an Event or nil if timeout/no data.
   def poll_event(timeout_ms : Int32 = -1) : Event::Any?
     unless @reader.wait_for_data(timeout_ms < 0 ? Int32::MAX : timeout_ms)
-      return nil
+      return
     end
 
     byte = @reader.read_byte
-    return nil unless byte
+    return unless byte
 
     parse_byte(byte)
   end
@@ -393,7 +393,7 @@ class Termisu::Input::Parser
         buffer << byte.chr
         if buffer.bytesize >= MAX_SEQUENCE_LENGTH
           Log.warn { "SGR mouse sequence too long" }
-          return nil
+          return
         end
       end
     end
@@ -409,9 +409,9 @@ class Termisu::Input::Parser
   # Returns Mouse event or nil if params are invalid.
   private def parse_sgr_params_to_event(raw_params : String, is_release : Bool) : Event::Mouse?
     parts = raw_params.split(';')
-    return nil unless parts.size >= 3
+    return unless parts.size >= 3
 
-    cb = parts[0].to_i? || return nil
+    cb = parts[0].to_i? || return
     x = parts[1].to_i? || 1
     y = parts[2].to_i? || 1
 

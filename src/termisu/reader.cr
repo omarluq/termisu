@@ -45,7 +45,7 @@ class Termisu::Reader
   # This is a non-blocking operation when the terminal is in raw mode.
   def read_byte : UInt8?
     fill_buffer if @buffer_pos >= @buffer_len
-    return nil if @buffer_pos >= @buffer_len
+    return if @buffer_pos >= @buffer_len
 
     byte = @buffer[@buffer_pos]
     @buffer_pos += 1
@@ -63,7 +63,7 @@ class Termisu::Reader
 
     while bytes_read < count
       byte = read_byte
-      return nil unless byte
+      return unless byte
       result[bytes_read] = byte
       bytes_read += 1
     end
@@ -76,7 +76,7 @@ class Termisu::Reader
   # Returns `nil` if no data is available.
   def peek_byte : UInt8?
     fill_buffer if @buffer_pos >= @buffer_len
-    return nil if @buffer_pos >= @buffer_len
+    return if @buffer_pos >= @buffer_len
 
     @buffer[@buffer_pos]
   end

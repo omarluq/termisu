@@ -75,7 +75,7 @@ class Termisu::Buffer
   #
   # Returns nil if coordinates are out of bounds.
   def get_cell(x : Int32, y : Int32) : Cell?
-    return nil if out_of_bounds?(x, y)
+    return if out_of_bounds?(x, y)
 
     idx = y * @width + x
     @back[idx]

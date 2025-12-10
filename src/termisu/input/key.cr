@@ -193,12 +193,12 @@ enum Termisu::Input::Key
 
   # Returns the character representation of this key, if printable.
   def to_char : Char?
-    if UpperA.value <= self.value <= UpperZ.value
-      ('A'.ord + (self.value - UpperA.value)).chr
-    elsif LowerA.value <= self.value <= LowerZ.value
-      ('a'.ord + (self.value - LowerA.value)).chr
-    elsif Num0.value <= self.value <= Num9.value
-      ('0'.ord + (self.value - Num0.value)).chr
+    if UpperA.value <= value <= UpperZ.value
+      ('A'.ord + (value - UpperA.value)).chr
+    elsif LowerA.value <= value <= LowerZ.value
+      ('a'.ord + (value - LowerA.value)).chr
+    elsif Num0.value <= value <= Num9.value
+      ('0'.ord + (value - Num0.value)).chr
     else
       KeySymbolMaps.key_to_char[self]?
     end
@@ -206,18 +206,18 @@ enum Termisu::Input::Key
 
   # Returns true if this is a letter key (A-Z or a-z).
   def letter? : Bool
-    (UpperA.value <= self.value <= UpperZ.value) ||
-      (LowerA.value <= self.value <= LowerZ.value)
+    (UpperA.value <= value <= UpperZ.value) ||
+      (LowerA.value <= value <= LowerZ.value)
   end
 
   # Returns true if this is a digit key (0-9).
   def digit? : Bool
-    Num0.value <= self.value <= Num9.value
+    Num0.value <= value <= Num9.value
   end
 
   # Returns true if this is a function key (F1-F24).
   def function_key? : Bool
-    F1.value <= self.value <= F24.value
+    F1.value <= value <= F24.value
   end
 
   # Returns true if this is a navigation key.
@@ -242,8 +242,8 @@ enum Termisu::Input::Key
   # end
   # ```
   {% for letter in %w[A B C D E F G H I J K L M N O P Q R S T U V W X Y Z] %}
-    def {{letter.downcase.id}}? : Bool
-      self == Upper{{letter.id}} || self == Lower{{letter.id}}
+    def {{ letter.downcase.id }}? : Bool
+      self == Upper{{ letter.id }} || self == Lower{{ letter.id }}
     end
   {% end %}
 end

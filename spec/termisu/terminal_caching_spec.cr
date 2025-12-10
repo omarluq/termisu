@@ -319,7 +319,7 @@ describe "Terminal State Caching" do
 
       # The buffer's RenderState handles batching, so we should see "ABC" as single write
       # and only one foreground color set
-      terminal.writes.count { |write| write.includes?("\e[31m") }.should eq(1)
+      terminal.writes.count(&.includes?("\e[31m")).should eq(1)
     end
   end
 end

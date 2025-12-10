@@ -127,15 +127,15 @@ struct Termisu::Color
 
   # Named color constructors (method-style syntax).
   {% for name, index in {black: 0, red: 1, green: 2, yellow: 3, blue: 4, magenta: 5, cyan: 6, white: 7} %}
-    def self.{{name.id}} : Color
-      ansi8({{index}})
+    def self.{{ name.id }} : Color
+      ansi8({{ index }})
     end
   {% end %}
 
   # Bright color variants (ANSI-256 indices 8-15).
   {% for name, index in {black: 8, red: 9, green: 10, yellow: 11, blue: 12, magenta: 13, cyan: 14, white: 15} %}
-    def self.bright_{{name.id}} : Color
-      ansi256({{index}})
+    def self.bright_{{ name.id }} : Color
+      ansi256({{ index }})
     end
   {% end %}
 
