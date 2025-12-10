@@ -37,13 +37,14 @@ class Termisu
 
     @terminal = Terminal.new
     @reader = Reader.new(@terminal.infd)
+    @input_parser = Input::Parser.new(@reader)
 
     Log.debug { "Terminal size: #{@terminal.size}" }
 
     @terminal.enable_raw_mode
 
     # Create async event sources
-    @input_source = Event::Source::Input.new(@reader, input_parser)
+    @input_source = Event::Source::Input.new(@reader, @input_parser)
     @resize_source = Event::Source::Resize.new(-> { @terminal.size })
 
     # Timer source is optional (nil by default)
@@ -92,37 +93,14 @@ class Termisu
 
   # --- Terminal Operations ---
 
-  # Returns the underlying terminal for direct access.
-  getter terminal : Terminal
-
-  # --- Event Loop Operations ---
-
-  # Returns the event loop for direct access to the async event system.
-  #
-  # The event loop manages all event sources and provides a unified
-  # output channel. Use `events` for simpler access to the event channel.
-  getter event_loop : Event::Loop
-
-  # Returns the event output channel for direct consumption.
-  #
-  # This is equivalent to `event_loop.output` and provides direct access
-  # to the unified event stream from all sources.
-  #
-  # Example:
-  # ```
-  # while event = termisu.events.receive?
-  #   case event
-  #   when Termisu::Event::Key
-  #     break if event.key.escape?
-  #   end
-  # end
-  # ```
-  def events : Channel(Event::Any)
-    @event_loop.output
-  end
-
   # Returns terminal size as {width, height}.
   delegate size, to: @terminal
+
+  # Returns true if alternate screen mode is active.
+  delegate alternate_screen?, to: @terminal
+
+  # Returns true if raw mode is enabled.
+  delegate raw_mode?, to: @terminal
 
   # --- Cell Buffer Operations ---
 
@@ -188,14 +166,6 @@ class Termisu
   end
 
   # --- Event-Based Input API ---
-
-  # Lazy-initialized input parser for event-based input.
-  @input_parser : Input::Parser?
-
-  # Returns the input parser, creating it if needed.
-  private def input_parser : Input::Parser
-    @input_parser ||= Input::Parser.new(@reader)
-  end
 
   # Polls for the next event, blocking until one is available.
   #
