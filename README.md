@@ -374,7 +374,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed guidelines.
 
 ## License
 
-The gem is available as open source under the terms of the [MIT License](LICENSE.txt).
+The shard is available as open source under the terms of the [MIT License](LICENSE.txt).
 
 ## Code of conduct
 
