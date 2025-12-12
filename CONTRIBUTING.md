@@ -32,6 +32,7 @@ cd termisu
 
 ```bash
 shards install
+shards build ameba
 shards build hace
 ```
 
@@ -187,17 +188,17 @@ crystal spec --verbose
 
 Run `bin/hace --list` to see all available tasks. Key tasks:
 
-| Task                  | Description                   |
-| --------------------- | ----------------------------- |
-| `bin/hace spec`       | Run crystal spec              |
-| `bin/hace demo`       | Run demo example              |
-| `bin/hace colors`     | Run colors example            |
-| `bin/hace format`     | Format code                   |
-| `bin/hace ameba`      | Run Ameba linter              |
-| `bin/hace all`        | Format, lint, and test        |
-| `bin/hace bench`      | Run benchmarks (release mode) |
-| `bin/hace bench-quick`| Run benchmarks (dev mode)     |
-| `bin/hace clean`      | Clean build artifacts         |
+| Task                   | Description                   |
+| ---------------------- | ----------------------------- |
+| `bin/hace spec`        | Run crystal spec              |
+| `bin/hace demo`        | Run demo example              |
+| `bin/hace colors`      | Run colors example            |
+| `bin/hace format`      | Format code                   |
+| `bin/hace ameba`       | Run Ameba linter              |
+| `bin/hace all`         | Format, lint, and test        |
+| `bin/hace bench`       | Run benchmarks (release mode) |
+| `bin/hace bench-quick` | Run benchmarks (dev mode)     |
+| `bin/hace clean`       | Clean build artifacts         |
 
 ### Pre-commit Hooks
 
