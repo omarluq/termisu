@@ -16,7 +16,7 @@ Thank you for your interest in contributing to Termisu! This document provides g
 ### Prerequisites
 
 - [Crystal](https://crystal-lang.org/install/) >= 1.18.2
-- [Task](https://taskfile.dev/installation/) - Task runner
+- Hace task runner (installed via shards)
 - [Lefthook](https://github.com/evilmartians/lefthook#install) - Git hooks manager
 
 ### Setup
@@ -28,10 +28,11 @@ git clone https://github.com/omarluq/termisu.git
 cd termisu
 ```
 
-2. Install dependencies:
+2. Install dependencies and build tools:
 
 ```bash
 shards install
+shards build hace
 ```
 
 3. Install git hooks:
@@ -43,14 +44,14 @@ lefthook install
 4. Run tests:
 
 ```bash
-task spec
+bin/hace spec
 ```
 
 5. Run examples:
 
 ```bash
-task demo
-task colors
+bin/hace demo
+bin/hace colors
 ```
 
 ## Project Architecture
@@ -173,7 +174,7 @@ end
 
 ```bash
 # Run all tests
-task spec
+bin/hace spec
 
 # Run specific test file
 crystal spec spec/termisu/buffer_spec.cr
@@ -184,26 +185,26 @@ crystal spec --verbose
 
 ### Available Tasks
 
-Run `task --list` to see all available tasks. Key tasks:
+Run `bin/hace --list` to see all available tasks. Key tasks:
 
-| Task               | Description                   |
-| ------------------ | ----------------------------- |
-| `task spec`        | Run crystal spec              |
-| `task demo`        | Run demo example              |
-| `task colors`      | Run colors example            |
-| `task format`      | Format code                   |
-| `task ameba`       | Run Ameba linter              |
-| `task all`         | Format, lint, and test        |
-| `task bench`       | Run benchmarks (release mode) |
-| `task bench:quick` | Run benchmarks (dev mode)     |
-| `task clean`       | Clean build artifacts         |
+| Task                  | Description                   |
+| --------------------- | ----------------------------- |
+| `bin/hace spec`       | Run crystal spec              |
+| `bin/hace demo`       | Run demo example              |
+| `bin/hace colors`     | Run colors example            |
+| `bin/hace format`     | Format code                   |
+| `bin/hace ameba`      | Run Ameba linter              |
+| `bin/hace all`        | Format, lint, and test        |
+| `bin/hace bench`      | Run benchmarks (release mode) |
+| `bin/hace bench-quick`| Run benchmarks (dev mode)     |
+| `bin/hace clean`      | Clean build artifacts         |
 
 ### Pre-commit Hooks
 
 The project uses Lefthook for pre-commit hooks. They run automatically on commit:
 
-- `task format` - Code formatting
-- `task ameba` - Static analysis
+- `bin/hace format` - Code formatting
+- `bin/hace ameba` - Static analysis
 - `yamlfmt` - YAML formatting
 
 To run hooks manually:
@@ -214,8 +215,8 @@ lefthook run pre-commit
 
 ## Code Style
 
-- Follow Crystal's standard formatting (`task format`)
-- Use `task ameba` for static analysis
+- Follow Crystal's standard formatting (`bin/hace format`)
+- Use `bin/hace ameba` for static analysis
 - Keep methods focused and small
 - Document public methods with Crystal doc comments
 - Use meaningful variable and method names
@@ -244,7 +245,7 @@ end
 1. **Fork** the repository
 2. **Create a branch** for your feature or fix
 3. **Write tests** for new functionality
-4. **Run `task all`** to format, lint, and test
+4. **Run `bin/hace all`** to format, lint, and test
 5. **Commit** with a clear message
 6. **Push** and create a Pull Request
 

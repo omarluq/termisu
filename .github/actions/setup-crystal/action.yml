@@ -1,5 +1,5 @@
 name: Setup Crystal Environment
-description: Install Crystal, shards, and Task runner with caching
+description: Install Crystal, shards, and build dev dependencies with caching
 inputs:
   crystal-version:
     description: Crystal version to install
@@ -9,8 +9,8 @@ inputs:
     description: Whether to run shards install
     required: false
     default: "true"
-  install-task:
-    description: Whether to install Task runner
+  build-hace:
+    description: Whether to build Hace task runner
     required: false
     default: "true"
 runs:
@@ -26,6 +26,7 @@ runs:
       with:
         path: |
           lib
+          bin
           ~/.cache/shards
         key: ${{ runner.os }}-shards-${{ hashFiles('shard.lock', 'shard.yml') }}
         restore-keys: |
@@ -34,8 +35,7 @@ runs:
       if: inputs.install-shards == 'true'
       shell: bash
       run: shards install
-    - name: Install Task
-      if: inputs.install-task == 'true'
-      uses: arduino/setup-task@v2
-      with:
-        version: 3.x
+    - name: Build Hace
+      if: inputs.build-hace == 'true' && inputs.install-shards == 'true'
+      shell: bash
+      run: shards build hace

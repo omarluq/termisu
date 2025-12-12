@@ -23,5 +23,6 @@ jobs:
         uses: ./.github/actions/setup-crystal
         with:
           install-shards: "false"
+          build-hace: "false"
       - name: Check formatting
-        run: task format -- --check
+        run: crystal tool format --check
