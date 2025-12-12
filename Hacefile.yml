@@ -12,22 +12,6 @@ tasks:
     always_run: true
     commands: |
       crystal spec
-  run:
-    description: Run the main file
-    phony: true
-    always_run: true
-    commands: |
-      crystal run src/termisu.cr
-  build:
-    description: Build the project in release mode
-    dependencies:
-      - src/**/*.cr
-      - shard.yml
-    outputs:
-      - bin/termisu
-    commands: |
-      mkdir -p bin
-      crystal build src/termisu.cr -o bin/termisu --release
   demo:
     description: Run demo example
     phony: true
@@ -64,7 +48,7 @@ tasks:
     always_run: true
     commands: |
       crystal tool format
-  format-check:
+  format:check:
     description: Check code formatting without modifying files
     phony: true
     always_run: true
@@ -76,6 +60,18 @@ tasks:
     always_run: true
     commands: |
       bin/ameba
+  ameba:fix:
+    description: Run Ameba linter
+    phony: true
+    always_run: true
+    commands: |
+      bin/ameba --fix
+  ameba:gen-config:
+    description: Run Ameba linter
+    phony: true
+    always_run: true
+    commands: |
+      bin/ameba --gen-config
   clean:
     description: Clean build artifacts
     phony: true
