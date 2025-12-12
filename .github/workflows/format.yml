@@ -6,7 +6,6 @@ on:
       - "src/**/*.cr"
       - "spec/**/*.cr"
       - ".github/workflows/format.yml"
-      - ".github/actions/**"
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -19,10 +18,7 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Setup Crystal Environment
-        uses: ./.github/actions/setup-crystal
-        with:
-          install-shards: "false"
-          build-hace: "false"
+      - name: Install Crystal
+        uses: crystal-lang/install-crystal@v1
       - name: Check formatting
         run: crystal tool format --check

@@ -7,7 +7,6 @@ on:
       - "spec/**/*.cr"
       - ".ameba.yml"
       - ".github/workflows/ameba.yml"
-      - ".github/actions/**"
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -21,10 +20,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Setup Crystal Environment
-        uses: ./.github/actions/setup-crystal
-        with:
-          build-hace: "false"
+      - name: Install Crystal
+        uses: crystal-lang/install-crystal@v1
       - name: Run Ameba
         uses: crystal-ameba/github-action@v0.12.0
         env:

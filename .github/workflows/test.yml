@@ -5,10 +5,7 @@ on:
     paths:
       - "src/**/*.cr"
       - "spec/**/*.cr"
-      - "shard.yml"
-      - "shard.lock"
       - ".github/workflows/test.yml"
-      - ".github/actions/**"
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -22,7 +19,7 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
-      - name: Setup Crystal Environment
-        uses: ./.github/actions/setup-crystal
+      - name: Install Crystal
+        uses: crystal-lang/install-crystal@v1
       - name: Run tests
-        run: bin/hace spec
+        run: crystal spec
