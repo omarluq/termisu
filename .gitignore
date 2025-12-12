@@ -3,10 +3,8 @@
 /.shards/
 *.dwarf
 
-# Build artifacts (but keep bin/ameba)
-/bin/termisu
-/bin/bench
-/bin/profile
+# Build artifacts
+/bin/
 
 # Profiling output
 /.profile/
@@ -17,4 +15,6 @@
 # Dependencies will be locked in applications that use them
 /shard.lock
 
-.task
+# Hace cache
+/.croupier/
+.croupier

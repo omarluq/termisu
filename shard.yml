@@ -6,6 +6,8 @@ crystal: ">= 1.18.2"
 targets:
   hace:
     main: lib/hace/src/main.cr
+  ameba:
+    main: lib/ameba/src/cli.cr
 development_dependencies:
   ameba:
     github: crystal-ameba/ameba
