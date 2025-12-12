@@ -30,6 +30,9 @@ enum Termisu::Attribute : UInt16
   # Italic/cursive text (not supported on all terminals)
   Cursive = 32
 
+  # Alias for Cursive (more common name)
+  Italic = 32
+
   # Hidden/invisible text
   Hidden = 64
 

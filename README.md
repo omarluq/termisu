@@ -218,6 +218,7 @@ Termisu::Attribute::None
 Termisu::Attribute::Bold
 Termisu::Attribute::Dim
 Termisu::Attribute::Cursive      # Italic
+Termisu::Attribute::Italic       # Alias for Cursive
 Termisu::Attribute::Underline
 Termisu::Attribute::Blink
 Termisu::Attribute::Reverse

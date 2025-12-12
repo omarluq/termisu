@@ -119,7 +119,7 @@ begin
     {"Underline", Termisu::Attribute::Underline},
     {"Reverse", Termisu::Attribute::Reverse},
     {"Dim", Termisu::Attribute::Dim},
-    {"Italic", Termisu::Attribute::Cursive},
+    {"Italic", Termisu::Attribute::Italic},
     {"Strike", Termisu::Attribute::Strikethrough},
   ]
 

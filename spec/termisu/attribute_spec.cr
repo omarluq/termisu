@@ -30,6 +30,11 @@ describe Termisu::Attribute do
       Termisu::Attribute::Cursive.value.should eq(32)
     end
 
+    it "has Italic alias for Cursive" do
+      Termisu::Attribute::Italic.value.should eq(32)
+      Termisu::Attribute::Italic.should eq(Termisu::Attribute::Cursive)
+    end
+
     it "has Hidden attribute" do
       Termisu::Attribute::Hidden.value.should eq(64)
     end
@@ -82,6 +87,13 @@ describe Termisu::Attribute do
       attr.cursive?.should be_true
       attr.hidden?.should be_true
       attr.strikethrough?.should be_true
+    end
+
+    it "can use Italic alias in combinations" do
+      attr = Termisu::Attribute::Bold | Termisu::Attribute::Italic
+      attr.bold?.should be_true
+      attr.italic?.should be_true
+      attr.cursive?.should be_true # Same as italic
     end
   end
 end
