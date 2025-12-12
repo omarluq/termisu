@@ -1,0 +1,269 @@
+variables:
+  BENCH_BIN: bin/bench
+  PROFILE_BIN: bin/profile
+  PROFILE_DIR: .profile
+tasks:
+  # ===========================================
+  # Core Development Tasks
+  # ===========================================
+  spec:
+    description: Run crystal spec
+    phony: true
+    always_run: true
+    commands: |
+      crystal spec
+  run:
+    description: Run the main file
+    phony: true
+    always_run: true
+    commands: |
+      crystal run src/termisu.cr
+  build:
+    description: Build the project in release mode
+    dependencies:
+      - src/**/*.cr
+      - shard.yml
+    outputs:
+      - bin/termisu
+    commands: |
+      mkdir -p bin
+      crystal build src/termisu.cr -o bin/termisu --release
+  demo:
+    description: Run demo example
+    phony: true
+    always_run: true
+    commands: |
+      crystal run examples/demo.cr
+  showcase:
+    description: Run showcase example
+    phony: true
+    always_run: true
+    commands: |
+      crystal run examples/showcase.cr
+  animation:
+    description: Run animation example
+    phony: true
+    always_run: true
+    commands: |
+      crystal run examples/animation.cr
+  kmd:
+    description: Run keyboard and mouse demo
+    phony: true
+    always_run: true
+    commands: |
+      crystal run examples/keyboard_and_mouse.cr
+  colors:
+    description: Run colors example
+    phony: true
+    always_run: true
+    commands: |
+      crystal run examples/colors.cr
+  format:
+    description: Format code with crystal tool format
+    phony: true
+    always_run: true
+    commands: |
+      crystal tool format
+  format-check:
+    description: Check code formatting without modifying files
+    phony: true
+    always_run: true
+    commands: |
+      crystal tool format --check
+  ameba:
+    description: Run Ameba linter
+    phony: true
+    always_run: true
+    commands: |
+      bin/ameba
+  clean:
+    description: Clean build artifacts
+    phony: true
+    always_run: true
+    commands: |
+      rm -rf bin/termisu bin/bench bin/profile lib .crystal {{PROFILE_DIR}}
+  all:
+    description: Format, lint, and test
+    default: true
+    phony: true
+    always_run: true
+    commands: |
+      bin/hace --parallel format ameba spec
+  # ===========================================
+  # Benchmarking Tasks
+  # ===========================================
+  bench:
+    description: Run all benchmarks (release mode)
+    phony: true
+    always_run: true
+    commands: |
+      mkdir -p bin
+      crystal build bench/run.cr -o {{BENCH_BIN}} --release
+      ./{{BENCH_BIN}}
+  bench-quick:
+    description: Run benchmarks in dev mode (faster compile)
+    phony: true
+    always_run: true
+    commands: |
+      crystal run bench/run.cr
+  # ===========================================
+  # Profiling Tasks (Linux perf)
+  # ===========================================
+  profile-build:
+    description: Build profiling binary with debug symbols
+    dependencies:
+      - bench/**/*.cr
+      - src/**/*.cr
+    outputs:
+      - "{{PROFILE_BIN}}"
+    commands: |
+      mkdir -p bin {{PROFILE_DIR}}
+      crystal build bench/run.cr -o {{PROFILE_BIN}} --release --debug
+  profile-perf:
+    description: Profile with Linux perf (CPU sampling)
+    phony: true
+    always_run: true
+    dependencies:
+      - "{{PROFILE_BIN}}"
+    commands: |
+      bin/hace profile-build
+      perf record -g -o {{PROFILE_DIR}}/perf.data ./{{PROFILE_BIN}}
+      perf report -i {{PROFILE_DIR}}/perf.data
+  profile-perf-record:
+    description: Record perf data without viewing
+    phony: true
+    always_run: true
+    dependencies:
+      - "{{PROFILE_BIN}}"
+    commands: |
+      bin/hace profile-build
+      perf record -g -o {{PROFILE_DIR}}/perf.data ./{{PROFILE_BIN}}
+      echo "Profile saved to {{PROFILE_DIR}}/perf.data"
+      echo "View with: perf report -i {{PROFILE_DIR}}/perf.data"
+  profile-perf-report:
+    description: View existing perf recording
+    phony: true
+    always_run: true
+    commands: |
+      perf report -i {{PROFILE_DIR}}/perf.data
+  profile-stat:
+    description: Quick CPU stats with perf stat
+    phony: true
+    always_run: true
+    dependencies:
+      - "{{PROFILE_BIN}}"
+    commands: |
+      bin/hace profile-build
+      perf stat ./{{PROFILE_BIN}}
+  # ===========================================
+  # Valgrind Profiling Tasks
+  # ===========================================
+  profile-callgrind:
+    description: Profile with Valgrind Callgrind (call graph)
+    phony: true
+    always_run: true
+    dependencies:
+      - "{{PROFILE_BIN}}"
+    commands: |
+      bin/hace profile-build
+      mkdir -p {{PROFILE_DIR}}
+      valgrind --tool=callgrind --callgrind-out-file={{PROFILE_DIR}}/callgrind.out ./{{PROFILE_BIN}}
+      echo "Profile saved to {{PROFILE_DIR}}/callgrind.out"
+      echo "View with: kcachegrind {{PROFILE_DIR}}/callgrind.out"
+  profile-callgrind-view:
+    description: Open callgrind output in KCachegrind
+    phony: true
+    always_run: true
+    commands: |
+      kcachegrind {{PROFILE_DIR}}/callgrind.out
+  profile-cachegrind:
+    description: Profile cache usage with Valgrind Cachegrind
+    phony: true
+    always_run: true
+    dependencies:
+      - "{{PROFILE_BIN}}"
+    commands: |
+      bin/hace profile-build
+      mkdir -p {{PROFILE_DIR}}
+      valgrind --tool=cachegrind --cachegrind-out-file={{PROFILE_DIR}}/cachegrind.out ./{{PROFILE_BIN}}
+      cg_annotate {{PROFILE_DIR}}/cachegrind.out
+  # ===========================================
+  # Memory Profiling Tasks
+  # ===========================================
+  profile-massif:
+    description: Profile heap usage with Valgrind Massif
+    phony: true
+    always_run: true
+    dependencies:
+      - "{{PROFILE_BIN}}"
+    commands: |
+      bin/hace profile-build
+      mkdir -p {{PROFILE_DIR}}
+      valgrind --tool=massif --massif-out-file={{PROFILE_DIR}}/massif.out ./{{PROFILE_BIN}}
+      ms_print {{PROFILE_DIR}}/massif.out
+  profile-heaptrack:
+    description: Profile memory with Heaptrack
+    phony: true
+    always_run: true
+    dependencies:
+      - "{{PROFILE_BIN}}"
+    commands: |
+      bin/hace profile-build
+      mkdir -p {{PROFILE_DIR}}
+      heaptrack -o {{PROFILE_DIR}}/heaptrack ./{{PROFILE_BIN}}
+      echo "View with: heaptrack_gui {{PROFILE_DIR}}/heaptrack.*.zst"
+  profile-memcheck:
+    description: Check for memory leaks with Valgrind
+    phony: true
+    always_run: true
+    dependencies:
+      - "{{PROFILE_BIN}}"
+    commands: |
+      bin/hace profile-build
+      valgrind --leak-check=full --show-leak-kinds=all ./{{PROFILE_BIN}}
+  # ===========================================
+  # Compiler Analysis Tasks
+  # ===========================================
+  compile-stats:
+    description: Show compiler statistics
+    phony: true
+    always_run: true
+    commands: |
+      crystal build bench/run.cr -o /dev/null --stats --progress
+  compile-llvm-ir:
+    description: Generate LLVM IR for analysis
+    phony: true
+    always_run: true
+    commands: |
+      mkdir -p {{PROFILE_DIR}}
+      crystal build src/termisu.cr --emit llvm-ir -o {{PROFILE_DIR}}/termisu
+      echo "LLVM IR saved to {{PROFILE_DIR}}/termisu.ll"
+  compile-asm:
+    description: Generate assembly output
+    phony: true
+    always_run: true
+    commands: |
+      mkdir -p {{PROFILE_DIR}}
+      crystal build src/termisu.cr --emit asm -o {{PROFILE_DIR}}/termisu
+      echo "Assembly saved to {{PROFILE_DIR}}/termisu.s"
+  # ===========================================
+  # Convenience Aliases
+  # ===========================================
+  perf:
+    description: Alias for profile-perf
+    phony: true
+    always_run: true
+    commands: |
+      bin/hace profile-perf
+  callgrind:
+    description: Alias for profile-callgrind
+    phony: true
+    always_run: true
+    commands: |
+      bin/hace profile-callgrind
+  memcheck:
+    description: Alias for profile-memcheck
+    phony: true
+    always_run: true
+    commands: |
+      bin/hace profile-memcheck

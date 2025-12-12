@@ -3,7 +3,12 @@ version: 0.0.2
 authors:
   - omarluq <omar.luqman@hey.com>
 crystal: ">= 1.18.2"
+targets:
+  hace:
+    main: lib/hace/src/main.cr
 development_dependencies:
   ameba:
     github: crystal-ameba/ameba
+  hace:
+    github: ralsina/hace
 license: MIT

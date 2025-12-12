@@ -5,11 +5,11 @@ pre-commit:
   commands:
     format:
       glob: "*.cr"
-      run: task format
+      run: bin/hace format
       stage_fixed: true
     ameba:
       glob: "*.cr"
-      run: task ameba
+      run: bin/hace ameba
     yamlfmt:
       glob: "*.{yml,yaml}"
       run: yamlfmt {staged_files}

@@ -25,4 +25,4 @@ jobs:
       - name: Setup Crystal Environment
         uses: ./.github/actions/setup-crystal
       - name: Run tests
-        run: task spec
+        run: bin/hace spec
