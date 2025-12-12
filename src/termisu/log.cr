@@ -1,49 +1,50 @@
 require "log"
 
-# Termisu logging module.
-#
-# Provides structured logging for debugging terminal operations.
-# Logs are written to a file since stdout is used for terminal rendering.
-#
-# ## Configuration
-#
-# Environment variables:
-# - `TERMISU_LOG_LEVEL`: trace, debug, info, warn, error, fatal, none (default: debug)
-# - `TERMISU_LOG_FILE`: Path to log file (default: /tmp/termisu.log)
-# - `TERMISU_LOG_SYNC`: Dispatch mode (default: false)
-#   - `true`: Sync/direct mode - logs written immediately, ideal for debugging
-#   - `false`: Async mode - logs queued to fiber, better performance
-#
-# ## Dispatch Modes
-#
-# **Async mode** (default): Uses `Log::DispatchMode::Async` for better performance.
-# Logs are queued to a fiber and written asynchronously. Uses SafeFileIO
-# wrapper to handle writes after file close, and Fiber.yield on close to
-# allow pending logs to be processed.
-#
-# **Sync mode**: Uses `Log::DispatchMode::Direct` for real-time logging.
-# Logs appear immediately in the file, ideal for debugging crashes.
-#
-# ## Example
-#
-# ```
-# # Use defaults (debug level, /tmp/termisu.log, async mode)
-# ./my_app
-#
-# # Disable logging
-# TERMISU_LOG_LEVEL=none ./my_app
-#
-# # Enable sync mode for real-time debugging
-# TERMISU_LOG_SYNC=true ./my_app
-# ```
-#
-# ## Usage in Termisu code
-#
-# ```
-# Termisu::Log.debug { "Input byte: #{byte}" }
-# Termisu::Logs::Terminal.trace { "Rendering cell at #{x},#{y}" }
-# ```
 class Termisu
+  # Termisu logging module.
+  #
+  # Provides structured logging for debugging terminal operations.
+  # Logs are written to a file since stdout is used for terminal rendering.
+  #
+  # ## Configuration
+  #
+  # Environment variables:
+  # - `TERMISU_LOG_LEVEL`: trace, debug, info, warn, error, fatal, none (default: debug)
+  # - `TERMISU_LOG_FILE`: Path to log file (default: /tmp/termisu.log)
+  # - `TERMISU_LOG_SYNC`: Dispatch mode (default: false)
+  #   - `true`: Sync/direct mode - logs written immediately, ideal for debugging
+  #   - `false`: Async mode - logs queued to fiber, better performance
+  #
+  # ## Dispatch Modes
+  #
+  # **Async mode** (default): Uses `Log::DispatchMode::Async` for better performance.
+  # Logs are queued to a fiber and written asynchronously. Uses SafeFileIO
+  # wrapper to handle writes after file close, and Fiber.yield on close to
+  # allow pending logs to be processed.
+  #
+  # **Sync mode**: Uses `Log::DispatchMode::Direct` for real-time logging.
+  # Logs appear immediately in the file, ideal for debugging crashes.
+  #
+  # ## Example
+  #
+  # ```
+  # # Use defaults (debug level, /tmp/termisu.log, async mode)
+  # ./my_app
+  #
+  # # Disable logging
+  # TERMISU_LOG_LEVEL=none ./my_app
+  #
+  # # Enable sync mode for real-time debugging
+  # TERMISU_LOG_SYNC=true ./my_app
+  # ```
+  #
+  # ## Usage in Termisu code
+  #
+  # ```
+  # Termisu::Log.debug { "Input byte: #{byte}" }
+  # Termisu::Logs::Terminal.trace { "Rendering cell at #{x},#{y}" }
+  # ```
+
   # Main log instance for Termisu library
   Log = ::Log.for("termisu")
 

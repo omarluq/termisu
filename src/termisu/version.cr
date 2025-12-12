@@ -1,8 +1,9 @@
-# Version information for Termisu.
-#
-# All version components are parsed from shard.yml at compile time.
-# Format: MAJOR.MINOR.PATCH[-STATE] (e.g., "0.1.0-alpha", "1.0.0")
 class Termisu
+  # Version information for Termisu.
+  #
+  # All version components are parsed from shard.yml at compile time.
+  # Format: MAJOR.MINOR.PATCH[-STATE] (e.g., "0.1.0-alpha", "1.0.0")
+
   # Full version string from shard.yml
   VERSION = {{ `shards version`.chomp.stringify }}
 
