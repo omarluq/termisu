@@ -54,6 +54,7 @@ module Termisu::Terminfo::Builtin
     "\e[2m",             # dim - faint/dim mode (SGR 2)
     "\e[3m",             # sitm - italic mode (SGR 3)
     "\e[8m",             # invis - hidden/invisible mode (SGR 8)
+    "\e[9m",             # smxx - strikethrough mode (SGR 9)
   ]
 
   private LINUX_FUNCS = [
@@ -84,6 +85,7 @@ module Termisu::Terminfo::Builtin
     "\e[2m",             # dim - faint/dim mode (SGR 2)
     "\e[3m",             # sitm - italic mode (SGR 3)
     "\e[8m",             # invis - hidden/invisible mode (SGR 8)
+    "\e[9m",             # smxx - strikethrough mode (SGR 9)
   ]
 
   private XTERM_KEYS = [

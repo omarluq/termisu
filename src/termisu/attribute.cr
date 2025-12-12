@@ -32,4 +32,7 @@ enum Termisu::Attribute : UInt16
 
   # Hidden/invisible text
   Hidden = 64
+
+  # Strikethrough text (crossed-out)
+  Strikethrough = 128
 end

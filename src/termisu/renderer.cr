@@ -67,4 +67,7 @@ abstract class Termisu::Renderer
 
   # Enables hidden/invisible text (writes escape sequence).
   abstract def enable_hidden
+
+  # Enables strikethrough text (writes escape sequence).
+  abstract def enable_strikethrough
 end

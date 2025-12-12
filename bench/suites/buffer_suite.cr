@@ -29,6 +29,8 @@ module Termisu::Bench
 
     def enable_hidden; end
 
+    def enable_strikethrough; end
+
     def write_show_cursor; end
 
     def write_hide_cursor; end
