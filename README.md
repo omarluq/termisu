@@ -222,9 +222,11 @@ Termisu::Attribute::Underline
 Termisu::Attribute::Blink
 Termisu::Attribute::Reverse
 Termisu::Attribute::Hidden
+Termisu::Attribute::Strikethrough
 
 # Combine with |
 attr = Termisu::Attribute::Bold | Termisu::Attribute::Underline
+strike = Termisu::Attribute::Strikethrough | Termisu::Attribute::Dim
 ```
 
 ### Keys
@@ -342,7 +344,7 @@ mods.meta?
 - **Terminfo** - Binary parser (16/32-bit), 414 capabilities, builtin fallbacks
 - **Double Buffering** - Diff-based rendering, cell batching, state caching
 - **Colors** - ANSI-8, ANSI-256, RGB/TrueColor with conversions
-- **Termisu::Attributes** - Bold, underline, blink, reverse, dim, italic, hidden
+- **Termisu::Attributes** - Bold, underline, blink, reverse, dim, italic, hidden, strikethrough
 - **Keyboard Input** - 170+ keys, F1-F24, modifiers (Ctrl/Alt/Shift/Meta)
 - **Mouse Input** - SGR (mode 1006), normal (mode 1000), motion events
 - **Event System** - Unified Key/Mouse events, Kitty protocol, modifyOtherKeys
@@ -357,7 +359,6 @@ mods.meta?
 
 - **Unicode/wide character support** - CJK, emoji (wcwidth)
 - **Synchronized updates** - DEC mode 2026 (prevents screen tearing)
-- **Strikethrough attribute**
 - **Image protocols** - Sixel and Kitty graphics for inline images
 
 ## Inspiration

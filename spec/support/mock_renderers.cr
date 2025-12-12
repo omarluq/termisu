@@ -36,6 +36,7 @@ class MockRenderer < Termisu::Renderer
   property dim_count : Int32 = 0
   property cursive_count : Int32 = 0
   property hidden_count : Int32 = 0
+  property strikethrough_count : Int32 = 0
 
   # Configurable size
   property mock_size : {Int32, Int32} = {80, 24}
@@ -116,6 +117,10 @@ class MockRenderer < Termisu::Renderer
     @hidden_count += 1
   end
 
+  def enable_strikethrough
+    @strikethrough_count += 1
+  end
+
   # --- Test Helpers ---
 
   # Clears all tracked calls and resets counters.
@@ -136,6 +141,7 @@ class MockRenderer < Termisu::Renderer
     @dim_count = 0
     @cursive_count = 0
     @hidden_count = 0
+    @strikethrough_count = 0
   end
 end
 
@@ -291,6 +297,12 @@ class CaptureTerminal < Termisu::Renderer
     return if @cached_attr.hidden?
     @cached_attr |= Termisu::Attribute::Hidden
     write("\e[8m")
+  end
+
+  def enable_strikethrough
+    return if @cached_attr.strikethrough?
+    @cached_attr |= Termisu::Attribute::Strikethrough
+    write("\e[9m")
   end
 
   # --- Test Helpers ---

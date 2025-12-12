@@ -347,5 +347,67 @@ describe Termisu::RenderState do
       state.apply_style(renderer, Termisu::Color.white, Termisu::Color.default, Termisu::Attribute::None)
       renderer.reset_count.should eq(1)
     end
+
+    it "enables strikethrough attribute when added" do
+      renderer = MockRenderer.new
+      state = Termisu::RenderState.new
+
+      state.apply_style(renderer, Termisu::Color.white, Termisu::Color.default, Termisu::Attribute::Strikethrough)
+
+      renderer.strikethrough_count.should eq(1)
+    end
+
+    it "combines strikethrough with other attributes" do
+      renderer = MockRenderer.new
+      state = Termisu::RenderState.new
+
+      state.apply_style(
+        renderer,
+        Termisu::Color.white,
+        Termisu::Color.default,
+        Termisu::Attribute::Bold | Termisu::Attribute::Strikethrough | Termisu::Attribute::Underline
+      )
+
+      renderer.bold_count.should eq(1)
+      renderer.strikethrough_count.should eq(1)
+      renderer.underline_count.should eq(1)
+    end
+
+    it "does not re-enable already set strikethrough attribute" do
+      renderer = MockRenderer.new
+      state = Termisu::RenderState.new
+
+      state.apply_style(renderer, Termisu::Color.white, Termisu::Color.default, Termisu::Attribute::Strikethrough)
+      initial_count = renderer.strikethrough_count
+
+      # Apply same attribute again
+      state.apply_style(renderer, Termisu::Color.white, Termisu::Color.default, Termisu::Attribute::Strikethrough)
+
+      renderer.strikethrough_count.should eq(initial_count)
+    end
+
+    it "enables all attributes including strikethrough" do
+      renderer = MockRenderer.new
+      state = Termisu::RenderState.new
+
+      state.apply_style(
+        renderer,
+        Termisu::Color.white,
+        Termisu::Color.default,
+        Termisu::Attribute::Bold | Termisu::Attribute::Underline |
+        Termisu::Attribute::Reverse | Termisu::Attribute::Blink |
+        Termisu::Attribute::Dim | Termisu::Attribute::Cursive |
+        Termisu::Attribute::Hidden | Termisu::Attribute::Strikethrough
+      )
+
+      renderer.bold_count.should eq(1)
+      renderer.underline_count.should eq(1)
+      renderer.reverse_count.should eq(1)
+      renderer.blink_count.should eq(1)
+      renderer.dim_count.should eq(1)
+      renderer.cursive_count.should eq(1)
+      renderer.hidden_count.should eq(1)
+      renderer.strikethrough_count.should eq(1)
+    end
   end
 end

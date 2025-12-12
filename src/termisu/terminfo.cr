@@ -274,6 +274,11 @@ class Termisu::Terminfo
     get_cap("invis")
   end
 
+  # Returns escape sequence to enable strikethrough mode (smxx).
+  def strikethrough_seq : String
+    get_cap("smxx")
+  end
+
   # --- Keypad Control Sequences ---
 
   # Returns escape sequence to enter keypad mode (smkx).

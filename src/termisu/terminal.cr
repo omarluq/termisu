@@ -281,6 +281,15 @@ class Termisu::Terminal < Termisu::Renderer
     write(@terminfo.hidden_seq)
   end
 
+  # Enables strikethrough text.
+  #
+  # Caches attribute state to avoid redundant escape sequences.
+  def enable_strikethrough
+    return if @cached_attr.strikethrough?
+    @cached_attr |= Attribute::Strikethrough
+    write(@terminfo.strikethrough_seq)
+  end
+
   # Delegates write to backend.
   def write(data : String)
     @backend.write(data)

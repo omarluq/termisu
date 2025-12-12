@@ -135,6 +135,7 @@ struct Termisu::RenderState
     renderer.enable_dim if needs_attr?(new_attr, Attribute::Dim)
     renderer.enable_cursive if needs_attr?(new_attr, Attribute::Cursive)
     renderer.enable_hidden if needs_attr?(new_attr, Attribute::Hidden)
+    renderer.enable_strikethrough if needs_attr?(new_attr, Attribute::Strikethrough)
   end
 
   # Checks if an attribute needs to be enabled (present in new but not current).

@@ -98,6 +98,7 @@ module Termisu::Terminfo::Capabilities
     "dim",   # Begin dim/faint mode (SGR 2)
     "sitm",  # Begin italic/cursive mode (SGR 3)
     "invis", # Begin invisible/hidden mode (SGR 8)
+    "smxx",  # Begin strikethrough mode (SGR 9)
   ]
 
   # Keyboard input capabilities required by Termisu.

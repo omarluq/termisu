@@ -120,7 +120,7 @@ begin
     {"Reverse", Termisu::Attribute::Reverse},
     {"Dim", Termisu::Attribute::Dim},
     {"Italic", Termisu::Attribute::Cursive},
-    {"Blink", Termisu::Attribute::Blink},
+    {"Strike", Termisu::Attribute::Strikethrough},
   ]
 
   col_x = margin

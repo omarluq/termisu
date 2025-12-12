@@ -6,18 +6,18 @@ describe Termisu::Terminfo::Builtin do
       it "returns XTERM_FUNCS for xterm" do
         funcs = Termisu::Terminfo::Builtin.funcs_for("xterm")
         funcs.should be_a(Array(String))
-        funcs.size.should eq(27) # All required funcs including parametrized caps and extended attributes
+        funcs.size.should eq(28) # All required funcs including parametrized caps and extended attributes
       end
 
       it "returns XTERM_FUNCS for xterm-256color" do
         funcs = Termisu::Terminfo::Builtin.funcs_for("xterm-256color")
-        funcs.size.should eq(27)        # All required funcs including parametrized caps and extended attributes
+        funcs.size.should eq(28)        # All required funcs including parametrized caps and extended attributes
         funcs[0].should eq("\e[?1049h") # smcup
       end
 
       it "returns XTERM_FUNCS for xterm-color" do
         funcs = Termisu::Terminfo::Builtin.funcs_for("xterm-color")
-        funcs.size.should eq(27) # All required funcs including parametrized caps and extended attributes
+        funcs.size.should eq(28) # All required funcs including parametrized caps and extended attributes
       end
     end
 
@@ -25,7 +25,7 @@ describe Termisu::Terminfo::Builtin do
       it "returns LINUX_FUNCS for linux" do
         funcs = Termisu::Terminfo::Builtin.funcs_for("linux")
         funcs.should be_a(Array(String))
-        funcs.size.should eq(27) # All required funcs including parametrized caps and extended attributes
+        funcs.size.should eq(28) # All required funcs including parametrized caps and extended attributes
       end
 
       it "has empty strings for enter/exit_ca on linux" do
@@ -93,6 +93,16 @@ describe Termisu::Terminfo::Builtin do
       it "contains hidden escape sequence for linux" do
         funcs = Termisu::Terminfo::Builtin.funcs_for("linux")
         funcs[26].should eq("\e[8m") # invis (SGR 8)
+      end
+
+      it "contains strikethrough escape sequence for xterm" do
+        funcs = Termisu::Terminfo::Builtin.funcs_for("xterm")
+        funcs[27].should eq("\e[9m") # smxx (SGR 9)
+      end
+
+      it "contains strikethrough escape sequence for linux" do
+        funcs = Termisu::Terminfo::Builtin.funcs_for("linux")
+        funcs[27].should eq("\e[9m") # smxx (SGR 9)
       end
     end
   end
