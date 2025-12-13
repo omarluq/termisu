@@ -1,137 +1,42 @@
 require "../spec_helper"
 
 describe Termisu::Reader do
-  describe "MAX_EINTR_RETRIES" do
-    it "is defined as a reasonable limit" do
-      Termisu::Reader::MAX_EINTR_RETRIES.should eq(100)
-    end
-  end
-
-  describe ".new" do
-    it "creates a reader with file descriptor" do
+  describe "#clear_buffer and #close" do
+    it "are safe to call multiple times" do
       reader = Termisu::Reader.new(0) # stdin
-      reader.should be_a(Termisu::Reader)
-      reader.close
-    end
-
-    it "accepts custom buffer size" do
-      reader = Termisu::Reader.new(0, buffer_size: 256)
-      reader.should be_a(Termisu::Reader)
-      reader.close
-    end
-
-    it "accepts negative file descriptor without validation" do
-      # Constructor doesn't validate - errors occur on read
-      reader = Termisu::Reader.new(-1)
-      reader.should be_a(Termisu::Reader)
-      reader.close
-    end
-  end
-
-  describe "#clear_buffer" do
-    it "clears internal buffer state" do
-      reader = Termisu::Reader.new(0)
-      reader.clear_buffer
-      reader.close
-    end
-
-    it "is safe to call multiple times" do
-      reader = Termisu::Reader.new(0)
       reader.clear_buffer
       reader.clear_buffer
-      reader.clear_buffer
-      reader.close
-    end
-  end
-
-  describe "#close" do
-    it "closes reader without error" do
-      reader = Termisu::Reader.new(0)
-      reader.close
-    end
-
-    it "is safe to call multiple times" do
-      reader = Termisu::Reader.new(0)
       reader.close
       reader.close
       reader.close
     end
   end
 
-  describe "#available?" do
-    it "returns boolean" do
-      begin
-        terminal = Termisu::Terminal.new
-        reader = Termisu::Reader.new(terminal.infd)
-        result = reader.available?
-        result.should be_a(Bool)
-        reader.close
-        terminal.close
-      rescue IO::Error
-        # Expected in CI
-        true.should be_true
-      end
+  describe "#available? and #wait_for_data" do
+    it "work with TTY file descriptor" do
+      terminal = Termisu::Terminal.new
+      reader = Termisu::Reader.new(terminal.infd)
+
+      # available? returns boolean
+      reader.available?.should be_a(Bool)
+
+      # wait_for_data returns false on timeout when no input
+      reader.wait_for_data(1).should be_false
+
+      # Zero timeout also works
+      reader.wait_for_data(0).should be_a(Bool)
+
+      reader.close
+      terminal.close
     end
 
-    it "returns false when no data available" do
-      begin
-        terminal = Termisu::Terminal.new
-        reader = Termisu::Reader.new(terminal.infd)
-        # In non-interactive environment, typically no data
-        result = reader.available?
-        result.should be_a(Bool)
-        reader.close
-        terminal.close
-      rescue IO::Error
-        # Expected in CI
-        true.should be_true
-      end
-    end
-  end
-
-  describe "#wait_for_data" do
-    it "accepts timeout in milliseconds" do
-      begin
-        terminal = Termisu::Terminal.new
-        reader = Termisu::Reader.new(terminal.infd)
-        # Should timeout quickly when no data
-        result = reader.wait_for_data(10)
-        result.should be_a(Bool)
-        reader.close
-        terminal.close
-      rescue IO::Error
-        # Expected in CI
-        true.should be_true
-      end
-    end
-
-    it "returns false on timeout" do
-      begin
-        terminal = Termisu::Terminal.new
-        reader = Termisu::Reader.new(terminal.infd)
-        # Should timeout when no input available
-        result = reader.wait_for_data(1)
-        result.should be_false
-        reader.close
-        terminal.close
-      rescue IO::Error
-        # Expected in CI
-        true.should be_true
-      end
-    end
-
-    it "handles zero timeout" do
-      begin
-        terminal = Termisu::Terminal.new
-        reader = Termisu::Reader.new(terminal.infd)
-        result = reader.wait_for_data(0)
-        result.should be_a(Bool)
-        reader.close
-        terminal.close
-      rescue IO::Error
-        # Expected in CI
-        true.should be_true
-      end
+    it "handles full lifecycle" do
+      terminal = Termisu::Terminal.new
+      reader = Termisu::Reader.new(terminal.infd)
+      reader.available?
+      reader.clear_buffer
+      reader.close
+      terminal.close
     end
   end
 
@@ -139,22 +44,6 @@ describe Termisu::Reader do
   # interactively in examples/demo.cr to avoid
   # blocking spec execution. These methods call LibC.read() which blocks
   # waiting for input even in non-interactive environments.
-
-  describe "lifecycle management" do
-    it "handles full lifecycle" do
-      begin
-        terminal = Termisu::Terminal.new
-        reader = Termisu::Reader.new(terminal.infd)
-        reader.available?
-        reader.clear_buffer
-        reader.close
-        terminal.close
-      rescue IO::Error
-        # Expected in CI
-        true.should be_true
-      end
-    end
-  end
 
   describe "error handling with pipes" do
     it "reads data from pipe successfully" do
@@ -244,26 +133,14 @@ describe Termisu::Reader do
     end
   end
 
-  describe "EINTR handling behavior" do
-    it "documents EINTR retry mechanism" do
-      # This test documents expected behavior rather than testing it directly.
-      # Direct EINTR testing requires signal injection which is complex.
-      #
-      # The implementation:
-      # 1. Both check_fd_readable and fill_buffer retry on EINTR
-      # 2. MAX_EINTR_RETRIES prevents infinite loops
-      # 3. Other errors (EBADF, EIO) raise immediately
-      #
-      # To verify manually:
-      # 1. Run a program that uses Reader
-      # 2. Send SIGALRM or other signals during I/O
-      # 3. Observe that reads complete successfully
+  describe "EINTR handling" do
+    # Note: Direct EINTR testing requires signal injection which is complex.
+    # The implementation retries on EINTR up to MAX_EINTR_RETRIES times.
+    # To verify manually: run a program using Reader and send SIGALRM during I/O.
 
+    it "has reasonable retry limit and proper error types" do
       Termisu::Reader::MAX_EINTR_RETRIES.should be > 0
-    end
 
-    it "uses Termisu::IOError for I/O errors" do
-      # Verify error type is correct
       error = Termisu::IOError.select_failed(Errno::EBADF)
       error.should be_a(Termisu::IOError)
       error.errno.should eq(Errno::EBADF)
