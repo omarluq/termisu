@@ -1,39 +1,84 @@
 require "../spec_helper"
 
-# TTY tests focus on error handling and basic construction
-# Real terminal behavior is tested in spec/integration/
-
 describe Termisu::TTY do
-  describe "error handling" do
-    context "when /dev/tty doesn't exist or isn't writable" do
-      it "raises IO::Error from constructor" do
-        # This test will pass in CI and fail locally with /dev/tty
-        # Inverting the logic: we test that EITHER it works OR it raises
-        begin
-          tty = Termisu::TTY.new
-          # If we got here, /dev/tty exists - verify basic properties
-          tty.outfd.should be_a(Int32)
-          tty.infd.should be_a(Int32)
-          tty.outfd.should be > 0
-          tty.infd.should be > 0
-          tty.close
-        rescue ex : IO::Error
-          # Expected in CI - verify it's the right error
-          ex.message.should match(/tty|device|permission|No such/i)
-        end
-      end
+  describe ".new" do
+    it "opens /dev/tty successfully" do
+      tty = Termisu::TTY.new
+      tty.should be_a(Termisu::TTY)
+    ensure
+      tty.try &.close
+    end
+
+    it "provides valid file descriptors" do
+      tty = Termisu::TTY.new
+      tty.outfd.should be >= 0
+      tty.infd.should be >= 0
+    ensure
+      tty.try &.close
     end
   end
 
-  describe "platform behavior" do
-    it "uses r+ mode on BSD systems" do
-      {% if flag?(:openbsd) || flag?(:freebsd) %}
-        # On BSD, USE_RDWR should be true and FILE_MODE should be "r+"
-        true.should be_true # Compilation confirms the flag works
-      {% else %}
-        # On non-BSD, USE_RDWR should be false and FILE_MODE should be "w"
-        true.should be_true # Compilation confirms the flag works
-      {% end %}
+  describe "#write" do
+    it "writes data to the terminal" do
+      tty = Termisu::TTY.new
+      # Should not raise
+      tty.write("test")
+    ensure
+      tty.try &.close
+    end
+
+    it "writes escape sequences" do
+      tty = Termisu::TTY.new
+      # Should not raise
+      tty.write("\e[2J")
+    ensure
+      tty.try &.close
+    end
+  end
+
+  describe "#flush" do
+    it "flushes the output buffer" do
+      tty = Termisu::TTY.new
+      tty.write("test")
+      # Should not raise
+      tty.flush
+    ensure
+      tty.try &.close
+    end
+  end
+
+  describe "#close" do
+    it "closes without error" do
+      tty = Termisu::TTY.new
+      # Should not raise
+      tty.close
+    end
+
+    it "can be called multiple times safely" do
+      tty = Termisu::TTY.new
+      tty.close
+      # Second close should not raise
+      tty.close
+    end
+  end
+
+  describe "file descriptor accessors" do
+    it "returns consistent outfd" do
+      tty = Termisu::TTY.new
+      fd1 = tty.outfd
+      fd2 = tty.outfd
+      fd1.should eq(fd2)
+    ensure
+      tty.try &.close
+    end
+
+    it "returns consistent infd" do
+      tty = Termisu::TTY.new
+      fd1 = tty.infd
+      fd2 = tty.infd
+      fd1.should eq(fd2)
+    ensure
+      tty.try &.close
     end
   end
 end

@@ -34,87 +34,197 @@ end
 
 describe Termisu::Terminal::Backend do
   describe ".new" do
-    it "creates a terminal renderer" do
-      begin
-        renderer = Termisu::Terminal::Backend.new
-        renderer.should be_a(Termisu::Terminal::Backend)
-        renderer.close
-      rescue IO::Error
-        # Expected in CI without /dev/tty
-        true.should be_true
-      end
+    it "creates a backend" do
+      backend = Termisu::Terminal::Backend.new
+      backend.should be_a(Termisu::Terminal::Backend)
+    ensure
+      backend.try &.close
     end
 
     it "exposes input and output file descriptors" do
-      begin
-        renderer = Termisu::Terminal::Backend.new
-        renderer.infd.should be_a(Int32)
-        renderer.outfd.should be_a(Int32)
-        renderer.infd.should be >= 0
-        renderer.outfd.should be >= 0
-        renderer.close
-      rescue IO::Error
-        # Expected in CI without /dev/tty
-        true.should be_true
-      end
+      backend = Termisu::Terminal::Backend.new
+      backend.infd.should be >= 0
+      backend.outfd.should be >= 0
+    ensure
+      backend.try &.close
+    end
+  end
+
+  describe "#write" do
+    it "writes data to the terminal" do
+      backend = Termisu::Terminal::Backend.new
+      # Should not raise
+      backend.write("hello")
+    ensure
+      backend.try &.close
+    end
+
+    it "writes escape sequences" do
+      backend = Termisu::Terminal::Backend.new
+      # Should not raise
+      backend.write("\e[2J")
+      backend.write("\e[H")
+    ensure
+      backend.try &.close
+    end
+  end
+
+  describe "#flush" do
+    it "flushes the output buffer" do
+      backend = Termisu::Terminal::Backend.new
+      backend.write("test")
+      # Should not raise
+      backend.flush
+    ensure
+      backend.try &.close
     end
   end
 
   describe "#raw_mode?" do
     it "returns false initially" do
-      begin
-        renderer = Termisu::Terminal::Backend.new
-        renderer.raw_mode?.should be_false
-        renderer.close
-      rescue IO::Error
-        # Expected in CI
-        true.should be_true
-      end
+      backend = Termisu::Terminal::Backend.new
+      backend.raw_mode?.should be_false
+    ensure
+      backend.try &.close
+    end
+
+    it "returns true after enabling raw mode" do
+      backend = Termisu::Terminal::Backend.new
+      backend.enable_raw_mode
+      backend.raw_mode?.should be_true
+    ensure
+      backend.try &.close
+    end
+
+    it "returns false after disabling raw mode" do
+      backend = Termisu::Terminal::Backend.new
+      backend.enable_raw_mode
+      backend.disable_raw_mode
+      backend.raw_mode?.should be_false
+    ensure
+      backend.try &.close
     end
   end
 
   describe "#enable_raw_mode" do
     it "enables raw mode" do
-      begin
-        renderer = Termisu::Terminal::Backend.new
-        renderer.enable_raw_mode
-        renderer.raw_mode?.should be_true
-        renderer.close
-      rescue IO::Error
-        # Expected in CI
-        true.should be_true
+      backend = Termisu::Terminal::Backend.new
+      backend.enable_raw_mode
+      backend.raw_mode?.should be_true
+    ensure
+      backend.try &.close
+    end
+
+    it "is idempotent" do
+      backend = Termisu::Terminal::Backend.new
+      backend.enable_raw_mode
+      backend.enable_raw_mode
+      backend.raw_mode?.should be_true
+    ensure
+      backend.try &.close
+    end
+  end
+
+  describe "#disable_raw_mode" do
+    it "disables raw mode" do
+      backend = Termisu::Terminal::Backend.new
+      backend.enable_raw_mode
+      backend.disable_raw_mode
+      backend.raw_mode?.should be_false
+    ensure
+      backend.try &.close
+    end
+
+    it "is idempotent" do
+      backend = Termisu::Terminal::Backend.new
+      backend.disable_raw_mode
+      backend.disable_raw_mode
+      backend.raw_mode?.should be_false
+    ensure
+      backend.try &.close
+    end
+
+    it "does nothing when raw mode is not enabled" do
+      backend = Termisu::Terminal::Backend.new
+      backend.disable_raw_mode
+      backend.raw_mode?.should be_false
+    ensure
+      backend.try &.close
+    end
+  end
+
+  describe "#with_raw_mode" do
+    it "enables raw mode within block" do
+      backend = Termisu::Terminal::Backend.new
+      backend.with_raw_mode do
+        backend.raw_mode?.should be_true
       end
+    ensure
+      backend.try &.close
+    end
+
+    it "disables raw mode after block" do
+      backend = Termisu::Terminal::Backend.new
+      backend.with_raw_mode { }
+      backend.raw_mode?.should be_false
+    ensure
+      backend.try &.close
+    end
+
+    it "disables raw mode on exception" do
+      backend = Termisu::Terminal::Backend.new
+      expect_raises(Exception, "test") do
+        backend.with_raw_mode do
+          raise "test"
+        end
+      end
+      backend.raw_mode?.should be_false
+    ensure
+      backend.try &.close
+    end
+
+    it "returns the block result" do
+      backend = Termisu::Terminal::Backend.new
+      result = backend.with_raw_mode { 42 }
+      result.should eq(42)
+    ensure
+      backend.try &.close
     end
   end
 
   describe "#size" do
     it "returns terminal dimensions" do
-      begin
-        renderer = Termisu::Terminal::Backend.new
-        width, height = renderer.size
-        width.should be_a(Int32)
-        height.should be_a(Int32)
-        width.should be > 0
-        height.should be > 0
-        renderer.close
-      rescue IO::Error
-        # Expected in CI
-        true.should be_true
-      end
+      backend = Termisu::Terminal::Backend.new
+      width, height = backend.size
+      # unbuffer may return 0x0, real terminals return positive values
+      width.should be >= 0
+      height.should be >= 0
+    ensure
+      backend.try &.close
+    end
+
+    it "returns integer dimensions" do
+      backend = Termisu::Terminal::Backend.new
+      width, height = backend.size
+      width.should be_a(Int32)
+      height.should be_a(Int32)
+    ensure
+      backend.try &.close
     end
   end
 
   describe "#close" do
-    it "disables raw mode and closes TTY" do
-      begin
-        renderer = Termisu::Terminal::Backend.new
-        renderer.enable_raw_mode
-        renderer.close
-        renderer.raw_mode?.should be_false
-      rescue IO::Error
-        # Expected in CI
-        true.should be_true
-      end
+    it "disables raw mode on close" do
+      backend = Termisu::Terminal::Backend.new
+      backend.enable_raw_mode
+      backend.close
+      backend.raw_mode?.should be_false
+    end
+
+    it "can be called without enabling raw mode" do
+      backend = Termisu::Terminal::Backend.new
+      # Should not raise
+      backend.close
     end
   end
 end
