@@ -1,26 +1,20 @@
-[![Crystal Version](https://img.shields.io/badge/Crystal-%3E%3D1.18.2-000000?style=flat&labelColor=24292e&color=000000&logo=crystal&logoColor=white)](https://crystal-lang.org/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue?style=flat&labelColor=24292e&logo=opensourceinitiative&logoColor=white)](LICENSE)
-[![Tests](https://img.shields.io/github/actions/workflow/status/omarluq/termisu/test.yml?style=flat&labelColor=24292e&label=Tests)](https://github.com/omarluq/termisu/actions/workflows/test.yml)
-[![Format](https://img.shields.io/github/actions/workflow/status/omarluq/termisu/format.yml?style=flat&labelColor=24292e&label=Format)](https://github.com/omarluq/termisu/actions/workflows/format.yml)
-[![Ameba](https://img.shields.io/github/actions/workflow/status/omarluq/termisu/ameba.yml?style=flat&labelColor=24292e&label=Ameba)](https://github.com/omarluq/termisu/actions/workflows/ameba.yml)
-[![Version](https://img.shields.io/github/release/omarluq/termisu?style=flat&labelColor=24292e&color=28a745&label=Version)](https://github.com/omarluq/termisu/releases)
-[![Last Commit](https://img.shields.io/github/last-commit/omarluq/termisu?style=flat&labelColor=24292e&color=28a745)](https://github.com/omarluq/termisu/commits/main)
-[![Commit Activity](https://img.shields.io/github/commit-activity/m/omarluq/termisu?style=flat&labelColor=24292e&color=f39c12)](https://github.com/omarluq/termisu/graphs/commit-activity)
-[![Pull Requests](https://img.shields.io/github/issues-pr/omarluq/termisu?style=flat&labelColor=24292e&color=28a745)](https://github.com/omarluq/termisu/pulls)
-[![Closed Pull Requests](https://img.shields.io/github/issues-pr-closed-raw/omarluq/termisu?style=flat&labelColor=24292e&color=e74c3c)](https://github.com/omarluq/termisu/pulls?q=is%3Apr+is%3Aclosed)
-[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen?style=flat&labelColor=24292e)](https://github.com/omarluq/termisu)
-[![GitHub stars](https://img.shields.io/github/stars/omarluq/termisu?style=flat&labelColor=24292e&color=f1c40f)](https://github.com/omarluq/termisu/stargazers)
-[![GitHub forks](https://img.shields.io/github/forks/omarluq/termisu?style=flat&labelColor=24292e&color=7f8c8d)](https://github.com/omarluq/termisu/network/members)
-[![GitHub watchers](https://img.shields.io/github/watchers/omarluq/termisu?style=flat&labelColor=24292e&color=7f8c8d)](https://github.com/omarluq/termisu/watchers)
-[![Maintained](https://img.shields.io/badge/Maintained%3F-yes-28a745?style=flat&labelColor=24292e)](https://github.com/omarluq/termisu)
-[![Made with Love](https://img.shields.io/badge/Made%20with-Love-ff69b4?style=flat&labelColor=24292e)](https://github.com/omarluq/termisu)
-<!--  [![All Contributors](https://img.shields.io/github/all-contributors/omarluq/termisu?style=flat&labelColor=24292e&color=7f8c8d)](https://github.com/omarluq/termisu/graphs/contributors)-->
-<!-- [![codecov](https://img.shields.io/codecov/c/github/omarluq/termisu?style=flat&labelColor=24292e&token=YW23EDL5T5)](https://codecov.io/gh/omarluq/termisu) -->
 # Termisu
 
 <img src="assets/termisu.png" align="right" alt="Termisu Logo" width="250"/>
 
-Termisu is a library that provides a minimalistic API for writing text-based user interfaces in pure Crystal. It offers an abstraction layer over terminal capabilities through cell-based rendering with double buffering, allowing efficient and flicker-free TUI development. The API is intentionally small and focused, making it easy to learn, test, and maintain. Inspired by termbox, Termisu brings similar simplicity and elegance to the Crystal ecosystem.
+[![Crystal Version](https://img.shields.io/badge/Crystal-%3E%3D1.18.2-000000?style=flat&labelColor=24292e&color=000000&logo=crystal&logoColor=white)](https://crystal-lang.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue?style=flat&labelColor=24292e&logo=opensourceinitiative&logoColor=white)](LICENSE)
+[![Spec](https://img.shields.io/github/actions/workflow/status/omarluq/termisu/test.yml?style=flat&labelColor=24292e&label=Spec&logo=github&logoColor=white)](https://github.com/omarluq/termisu/actions/workflows/test.yml)
+[![Version](https://img.shields.io/github/release/omarluq/termisu?style=flat&labelColor=24292e&color=28a745&label=Version&logo=semver&logoColor=white)](https://github.com/omarluq/termisu/releases) \
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen?style=flat&labelColor=24292e&logo=git&logoColor=white)](https://github.com/omarluq/termisu)
+[![Docs](https://img.shields.io/badge/Docs-API%20Reference-5e5086?style=flat&labelColor=24292e&logo=gitbook&logoColor=white)](https://omarluq.github.io/termisu/)
+[![Maintained](https://img.shields.io/badge/Maintained%3F-yes-28a745?style=flat&labelColor=24292e&logo=checkmarx&logoColor=white)](https://github.com/omarluq/termisu)
+[![Made with Love](https://img.shields.io/badge/Made%20with-Love-ff69b4?style=flat&labelColor=24292e&logo=githubsponsors&logoColor=white)](https://github.com/omarluq/termisu)
+
+<!--  [![All Contributors](https://img.shields.io/github/all-contributors/omarluq/termisu?style=flat&labelColor=24292e&color=7f8c8d)](https://github.com/omarluq/termisu/graphs/contributors)-->
+<!-- [![codecov](https://img.shields.io/codecov/c/github/omarluq/termisu?style=flat&labelColor=24292e&token=YW23EDL5T5)](https://codecov.io/gh/omarluq/termisu) -->
+
+Termisu _(/ˌtɛr.mɪˈsuː/ — like tiramisu, but for terminals)_ is a library that provides a sweet and minimalistic API for writing text-based user interfaces in pure Crystal. It offers an abstraction layer over terminal capabilities through cell-based rendering with double buffering, allowing efficient and flicker-free TUI development. The API is intentionally small and focused, making it easy to learn, test, and maintain. Inspired by termbox, Termisu brings similar simplicity and elegance to the Crystal ecosystem.
 
 > [!WARNING]
 > Termisu is still in development and is considered unstable. The API is subject to change, and you may encounter bugs or incomplete features.
