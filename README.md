@@ -4,7 +4,7 @@
 
 [![Crystal Version](https://img.shields.io/badge/Crystal-%3E%3D1.18.2-000000?style=flat&labelColor=24292e&color=000000&logo=crystal&logoColor=white)](https://crystal-lang.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue?style=flat&labelColor=24292e&logo=opensourceinitiative&logoColor=white)](LICENSE)
-[![Spec](https://img.shields.io/github/actions/workflow/status/omarluq/termisu/test.yml?style=flat&labelColor=24292e&label=Spec&logo=github&logoColor=white)](https://github.com/omarluq/termisu/actions/workflows/test.yml)
+[![Tests](https://img.shields.io/github/actions/workflow/status/omarluq/termisu/test.yml?style=flat&labelColor=24292e&label=Tests&logo=github&logoColor=white)](https://github.com/omarluq/termisu/actions/workflows/test.yml)
 [![Version](https://img.shields.io/github/release/omarluq/termisu?style=flat&labelColor=24292e&color=28a745&label=Version&logo=semver&logoColor=white)](https://github.com/omarluq/termisu/releases) \
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen?style=flat&labelColor=24292e&logo=git&logoColor=white)](https://github.com/omarluq/termisu)
 [![Docs](https://img.shields.io/badge/Docs-API%20Reference-5e5086?style=flat&labelColor=24292e&logo=gitbook&logoColor=white)](https://omarluq.github.io/termisu/)
