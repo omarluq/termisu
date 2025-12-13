@@ -36,16 +36,6 @@ jobs:
           cmake ..
           make
           sudo make install
-      - name: Cache shards
-        uses: actions/cache@v4
-        with:
-          path: |
-            lib
-            ~/.cache/shards
-          key: shards-${{ runner.os }}-${{ hashFiles('shard.lock', 'shard.yml') }}
-          restore-keys: shards-${{ runner.os }}-
-      - name: Install dependencies
-        run: shards install
       - name: Build test binary
         run: crystal build run_specs.cr -o ./bin/run_specs
       - name: Run tests with coverage
