@@ -2,14 +2,7 @@ require "../spec_helper"
 
 describe Termisu::Terminal do
   describe ".new" do
-    it "creates a terminal instance" do
-      terminal = Termisu::Terminal.new
-      terminal.should be_a(Termisu::Terminal)
-    ensure
-      terminal.try &.close
-    end
-
-    it "exposes input and output file descriptors" do
+    it "opens /dev/tty and provides valid file descriptors" do
       terminal = Termisu::Terminal.new
       terminal.infd.should be >= 0
       terminal.outfd.should be >= 0
@@ -19,46 +12,30 @@ describe Termisu::Terminal do
   end
 
   describe "#raw_mode?" do
-    it "returns false initially" do
+    it "tracks raw mode state through enable/disable cycle" do
       terminal = Termisu::Terminal.new
+
       terminal.raw_mode?.should be_false
-    ensure
-      terminal.try &.close
-    end
-  end
 
-  describe "#enable_raw_mode" do
-    it "enables raw mode" do
-      terminal = Termisu::Terminal.new
       terminal.enable_raw_mode
       terminal.raw_mode?.should be_true
-    ensure
-      terminal.try &.close
-    end
 
-    it "is idempotent" do
-      terminal = Termisu::Terminal.new
-      terminal.enable_raw_mode
-      terminal.enable_raw_mode
-      terminal.enable_raw_mode
-      terminal.raw_mode?.should be_true
-    ensure
-      terminal.try &.close
-    end
-  end
-
-  describe "#disable_raw_mode" do
-    it "disables raw mode" do
-      terminal = Termisu::Terminal.new
-      terminal.enable_raw_mode
       terminal.disable_raw_mode
       terminal.raw_mode?.should be_false
     ensure
       terminal.try &.close
     end
 
-    it "is idempotent" do
+    it "is idempotent for both enable and disable" do
       terminal = Termisu::Terminal.new
+
+      # Multiple enables should be idempotent
+      terminal.enable_raw_mode
+      terminal.enable_raw_mode
+      terminal.enable_raw_mode
+      terminal.raw_mode?.should be_true
+
+      # Multiple disables should be idempotent
       terminal.disable_raw_mode
       terminal.disable_raw_mode
       terminal.disable_raw_mode
@@ -69,7 +46,7 @@ describe Termisu::Terminal do
   end
 
   describe "#with_raw_mode" do
-    it "enables raw mode during block execution" do
+    it "enables raw mode only within block execution" do
       terminal = Termisu::Terminal.new
       terminal.raw_mode?.should be_false
 
@@ -82,22 +59,16 @@ describe Termisu::Terminal do
       terminal.try &.close
     end
 
-    it "disables raw mode even if block raises" do
+    it "restores state on exception and returns block result" do
       terminal = Termisu::Terminal.new
 
+      # Test exception handling
       expect_raises(Exception, "test error") do
-        terminal.with_raw_mode do
-          raise "test error"
-        end
+        terminal.with_raw_mode { raise "test error" }
       end
-
       terminal.raw_mode?.should be_false
-    ensure
-      terminal.try &.close
-    end
 
-    it "returns the block result" do
-      terminal = Termisu::Terminal.new
+      # Test return value
       result = terminal.with_raw_mode { 42 }
       result.should eq(42)
     ensure
@@ -105,28 +76,12 @@ describe Termisu::Terminal do
     end
   end
 
-  describe "#write" do
-    it "writes data to the terminal" do
+  describe "#write and #flush" do
+    it "writes data and escape sequences to the terminal" do
       terminal = Termisu::Terminal.new
-      # Should not raise
-      terminal.write("test")
-    ensure
-      terminal.try &.close
-    end
-
-    it "writes escape sequences" do
-      terminal = Termisu::Terminal.new
-      # Should not raise
-      terminal.write("\e[2J")
-    ensure
-      terminal.try &.close
-    end
-  end
-
-  describe "#flush" do
-    it "flushes output without error" do
-      terminal = Termisu::Terminal.new
-      terminal.write("test")
+      # Use invisible sequences to avoid polluting test output
+      terminal.write("\e7") # Save cursor
+      terminal.write("\e8") # Restore cursor
       terminal.flush
     ensure
       terminal.try &.close
@@ -134,11 +89,9 @@ describe Termisu::Terminal do
   end
 
   describe "#size" do
-    it "returns width and height tuple" do
+    it "returns non-negative integer dimensions" do
       terminal = Termisu::Terminal.new
       width, height = terminal.size
-      width.should be_a(Int32)
-      height.should be_a(Int32)
       # unbuffer may return 0x0, real terminals return positive values
       width.should be >= 0
       height.should be >= 0
@@ -148,15 +101,13 @@ describe Termisu::Terminal do
   end
 
   describe "#close" do
-    it "disables raw mode on close" do
+    it "disables raw mode and can be called multiple times safely" do
       terminal = Termisu::Terminal.new
       terminal.enable_raw_mode
       terminal.close
       terminal.raw_mode?.should be_false
-    end
 
-    it "can be called multiple times safely" do
-      terminal = Termisu::Terminal.new
+      # Multiple closes should be safe
       terminal.close
       terminal.close
     end
@@ -166,7 +117,7 @@ describe Termisu::Terminal do
     it "handles full lifecycle correctly" do
       terminal = Termisu::Terminal.new
       terminal.enable_raw_mode
-      terminal.write("hello")
+      terminal.write("\e7\e8") # Save/restore cursor (invisible)
       terminal.flush
       terminal.disable_raw_mode
       terminal.close
