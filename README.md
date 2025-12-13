@@ -5,14 +5,13 @@
 [![Crystal Version](https://img.shields.io/badge/Crystal-%3E%3D1.18.2-000000?style=flat&labelColor=24292e&color=000000&logo=crystal&logoColor=white)](https://crystal-lang.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue?style=flat&labelColor=24292e&logo=opensourceinitiative&logoColor=white)](LICENSE)
 [![Tests](https://img.shields.io/github/actions/workflow/status/omarluq/termisu/test.yml?style=flat&labelColor=24292e&label=Tests&logo=github&logoColor=white)](https://github.com/omarluq/termisu/actions/workflows/test.yml)
-[![Version](https://img.shields.io/github/release/omarluq/termisu?style=flat&labelColor=24292e&color=28a745&label=Version&logo=semver&logoColor=white)](https://github.com/omarluq/termisu/releases) \
-[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen?style=flat&labelColor=24292e&logo=git&logoColor=white)](https://github.com/omarluq/termisu)
+[![Version](https://img.shields.io/github/release/omarluq/termisu?style=flat&labelColor=24292e&color=28a745&label=Version&logo=semver&logoColor=white)](https://github.com/omarluq/termisu/releases)\
+[![codecov](https://img.shields.io/codecov/c/github/omarluq/termisu?style=flat&labelColor=24292e&logo=codecov&logoColor=white&token=YW23EDL5T5)](https://codecov.io/gh/omarluq/termisu)
 [![Docs](https://img.shields.io/badge/Docs-API%20Reference-5e5086?style=flat&labelColor=24292e&logo=gitbook&logoColor=white)](https://omarluq.github.io/termisu/)
 [![Maintained](https://img.shields.io/badge/Maintained%3F-yes-28a745?style=flat&labelColor=24292e&logo=checkmarx&logoColor=white)](https://github.com/omarluq/termisu)
 [![Made with Love](https://img.shields.io/badge/Made%20with-Love-ff69b4?style=flat&labelColor=24292e&logo=githubsponsors&logoColor=white)](https://github.com/omarluq/termisu)
 
 <!--  [![All Contributors](https://img.shields.io/github/all-contributors/omarluq/termisu?style=flat&labelColor=24292e&color=7f8c8d)](https://github.com/omarluq/termisu/graphs/contributors)-->
-<!-- [![codecov](https://img.shields.io/codecov/c/github/omarluq/termisu?style=flat&labelColor=24292e&token=YW23EDL5T5)](https://codecov.io/gh/omarluq/termisu) -->
 
 Termisu _(/ˌtɛr.mɪˈsuː/ — like tiramisu, but for terminals)_ is a library that provides a sweet and minimalistic API for writing text-based user interfaces in pure Crystal. It offers an abstraction layer over terminal capabilities through cell-based rendering with double buffering, allowing efficient and flicker-free TUI development. The API is intentionally small and focused, making it easy to learn, test, and maintain. Inspired by termbox, Termisu brings similar simplicity and elegance to the Crystal ecosystem.
 
