@@ -8,6 +8,7 @@ Thank you for your interest in contributing to Termisu! This document provides g
 - [Project Architecture](#project-architecture)
 - [Debugging with Logs](#debugging-with-logs)
 - [Running Tests](#running-tests)
+- [Code Coverage](#code-coverage)
 - [Code Style](#code-style)
 - [Submitting Changes](#submitting-changes)
 
@@ -183,6 +184,12 @@ crystal spec spec/termisu/buffer_spec.cr
 # Run with verbose output
 crystal spec --verbose
 ```
+
+## Code Coverage
+
+Code coverage is automatically generated and uploaded to [Codecov](https://codecov.io) on every push to `main`. The CI workflow uses [kcov](https://github.com/SimonKagstrom/kcov) to measure coverage.
+
+View coverage reports at: `https://codecov.io/gh/omarluq/termisu`
 
 ### Available Tasks
 
