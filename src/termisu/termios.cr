@@ -90,23 +90,17 @@ class Termisu::Termios
     controlled_lflag = LibC::ICANON | LibC::ECHO | LibC::ISIG | LibC::IEXTEN
     tios.c_lflag &= ~controlled_lflag
 
-    # Apply requested mode flags
+    # Apply requested local mode flags
     tios.c_lflag |= LibC::ICANON if mode.canonical?
     tios.c_lflag |= LibC::ECHO if mode.echo?
     tios.c_lflag |= LibC::ISIG if mode.signals?
     tios.c_lflag |= LibC::IEXTEN if mode.extended?
 
     # Input flags handling
-    if mode.canonical?
-      # Restore original input flags for canonical mode (shell-like behavior)
-      # This preserves CR→NL translation, flow control, etc.
-      tios.c_iflag = orig.c_iflag
-    else
-      # Clear input processing for raw/cbreak modes (TUI compatibility)
-      tios.c_iflag &= ~(LibC::IGNBRK | LibC::BRKINT | LibC::PARMRK |
-                        LibC::ISTRIP | LibC::INLCR | LibC::IGNCR |
-                        LibC::ICRNL | LibC::IXON)
-    end
+    apply_input_flags(tios, orig, mode)
+
+    # Output flags handling
+    apply_output_flags(tios, orig, mode)
 
     # Control flags - 8-bit chars, no parity
     tios.c_cflag &= ~(LibC::CSIZE | LibC::PARENB)
@@ -144,6 +138,52 @@ class Termisu::Termios
     tios_copy = tios
     if LibC.tcsetattr(@fd, LibC::TCSAFLUSH, pointerof(tios_copy)) != 0
       raise IO::Error.from_errno("tcsetattr failed")
+    end
+  end
+
+  # Applies input flags (c_iflag) based on mode.
+  # Handles IXON (flow control) and ICRNL (CR→NL translation).
+  private def apply_input_flags(tios : LibC::Termios, orig : LibC::Termios, mode : Terminal::Mode)
+    if mode.canonical?
+      # Start with original input flags for canonical mode
+      tios.c_iflag = orig.c_iflag
+
+      # But still respect explicit flag settings
+      if !mode.flow_control?
+        tios.c_iflag &= ~LibC::IXON
+      end
+      if !mode.cr_to_nl?
+        tios.c_iflag &= ~LibC::ICRNL
+      end
+    else
+      # Clear input processing for raw/cbreak modes
+      tios.c_iflag &= ~(LibC::IGNBRK | LibC::BRKINT | LibC::PARMRK |
+                        LibC::ISTRIP | LibC::INLCR | LibC::IGNCR |
+                        LibC::ICRNL | LibC::IXON)
+
+      # Apply explicit flag requests
+      tios.c_iflag |= LibC::IXON if mode.flow_control?
+      tios.c_iflag |= LibC::ICRNL if mode.cr_to_nl?
+    end
+  end
+
+  # Applies output flags (c_oflag) based on mode.
+  # Handles OPOST (output processing) for NL→CRNL translation etc.
+  private def apply_output_flags(tios : LibC::Termios, orig : LibC::Termios, mode : Terminal::Mode)
+    if mode.canonical?
+      # Start with original output flags for canonical mode
+      tios.c_oflag = orig.c_oflag
+
+      # But still respect explicit flag settings
+      if !mode.output_processing?
+        tios.c_oflag &= ~LibC::OPOST
+      end
+    else
+      # Clear output processing for raw modes by default
+      tios.c_oflag &= ~LibC::OPOST
+
+      # Apply explicit flag request
+      tios.c_oflag |= LibC::OPOST if mode.output_processing?
     end
   end
 end

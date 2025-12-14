@@ -21,6 +21,8 @@
 #       puts "Resize: #{event.width}x#{event.height}"
 #     when Termisu::Event::Tick
 #       puts "Tick: frame=#{event.frame}"
+#     when Termisu::Event::ModeChange
+#       puts "Mode: #{event.previous_mode} -> #{event.mode}"
 #     end
 #   end
 # ensure
@@ -36,4 +38,4 @@ require "./event/source/*"
 # Union type for all terminal events.
 # Use Event::Any for type annotations and collections.
 # Individual event types (Event::Key, Event::Mouse, etc.) work in case statements.
-alias Termisu::Event::Any = Termisu::Event::Key | Termisu::Event::Mouse | Termisu::Event::Resize | Termisu::Event::Tick
+alias Termisu::Event::Any = Termisu::Event::Key | Termisu::Event::Mouse | Termisu::Event::Resize | Termisu::Event::Tick | Termisu::Event::ModeChange

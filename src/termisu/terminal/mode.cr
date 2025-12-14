@@ -4,13 +4,14 @@
 # Combine flags to create custom modes, or use preset methods.
 #
 # Standard Terminal Modes:
-# | Mode     | ICANON | ECHO | ISIG | IEXTEN | Use Case                    |
-# |----------|--------|------|------|--------|-----------------------------|
-# | Raw      | OFF    | OFF  | OFF  | OFF    | Full TUI control            |
-# | Cbreak   | OFF    | ON   | ON   | OFF    | Char-by-char with feedback  |
-# | Cooked   | ON     | ON   | ON   | ON     | Shell-out, external programs|
-# | Password | ON     | OFF  | ON   | OFF    | Secure text entry           |
-# | SemiRaw  | OFF    | OFF  | ON   | OFF    | TUI with Ctrl+C support     |
+# | Mode       | ICANON | ECHO | ISIG | IEXTEN | IXON | OPOST | ICRNL | Use Case                    |
+# |------------|--------|------|------|--------|------|-------|-------|-----------------------------|
+# | Raw        | OFF    | OFF  | OFF  | OFF    | OFF  | OFF   | OFF   | Full TUI control            |
+# | Cbreak     | OFF    | ON   | ON   | OFF    | OFF  | OFF   | OFF   | Char-by-char with feedback  |
+# | Cooked     | ON     | ON   | ON   | ON     | -    | -     | -     | Shell-out, external programs|
+# | FullCooked | ON     | ON   | ON   | ON     | ON   | ON    | ON    | Complete shell emulation    |
+# | Password   | ON     | OFF  | ON   | OFF    | -    | -     | -     | Secure text entry           |
+# | SemiRaw    | OFF    | OFF  | ON   | OFF    | OFF  | OFF   | OFF   | TUI with Ctrl+C support     |
 #
 # Example:
 # ```
@@ -54,6 +55,21 @@ enum Termisu::Terminal::Mode
   # Maps to IEXTEN flag.
   Extended = 8
 
+  # Enable software flow control (XON/XOFF).
+  # Ctrl+S pauses output, Ctrl+Q resumes.
+  # Maps to IXON flag in c_iflag.
+  FlowControl = 16
+
+  # Enable output processing.
+  # NL→CRNL translation and other output transformations.
+  # Maps to OPOST flag in c_oflag.
+  OutputProcessing = 32
+
+  # Enable CR to NL translation on input.
+  # Carriage return (0x0D) is translated to newline (0x0A).
+  # Maps to ICRNL flag in c_iflag.
+  CrToNl = 64
+
   # --- Preset Methods ---
 
   # Full raw mode - no terminal driver processing.
@@ -75,6 +91,14 @@ enum Termisu::Terminal::Mode
   # Use for: Shell-out to external programs, REPL input
   def self.cooked : self
     Canonical | Echo | Signals | Extended
+  end
+
+  # Complete cooked mode - full terminal driver processing.
+  # All standard cooked flags plus flow control, output processing,
+  # and CR→NL translation for maximum shell compatibility.
+  # Use for: Complete shell emulation, legacy program support
+  def self.full_cooked : self
+    Canonical | Echo | Signals | Extended | FlowControl | OutputProcessing | CrToNl
   end
 
   # Password mode - secure text entry.

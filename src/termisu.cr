@@ -493,13 +493,20 @@ class Termisu
     Log.debug { "Termisu.with_mode: #{mode}, preserve_screen: #{preserve_screen}" }
 
     user_interactive = mode.canonical? || mode.echo?
+    previous_mode = @terminal.current_mode
 
     # Pause input processing for user-interactive modes to avoid
     # conflict between our input reader and shell/external program
     pause_input_processing if user_interactive
 
-    @terminal.with_mode(mode, preserve_screen) { yield }
+    @terminal.with_mode(mode, preserve_screen) do
+      emit_mode_change(mode, previous_mode)
+      yield
+    end
   ensure
+    # Emit event for restoration (back to previous mode or raw default)
+    restored_mode = @terminal.current_mode
+    emit_mode_change(restored_mode, mode) if restored_mode
     resume_input_processing if user_interactive
     Log.debug { "Termisu.with_mode: restored" }
   end
@@ -558,6 +565,45 @@ class Termisu
     with_mode(Terminal::Mode.password, preserve_screen) { yield }
   end
 
+  # Suspends TUI mode for shell-out or external program execution.
+  #
+  # This is an alias for `with_cooked_mode` that makes the intent clearer
+  # when temporarily handing control to a shell or external program.
+  #
+  # Handles:
+  # - Exits alternate screen (shows normal terminal with scrollback)
+  # - Switches to cooked mode (line buffering, echo, signals)
+  # - Pauses event loop input processing
+  # - Restores everything on block exit
+  #
+  # Example:
+  # ```
+  # termisu.suspend do
+  #   system("vim file.txt")
+  # end
+  # # TUI fully restored
+  # ```
+  def suspend(&)
+    with_cooked_mode(preserve_screen: false) { yield }
+  end
+
+  # Suspends TUI mode with option to preserve alternate screen.
+  #
+  # Parameters:
+  # - preserve_screen: If true, stays in alternate screen during suspension.
+  #   Useful for brief prompts that don't need scrollback access.
+  #
+  # Example:
+  # ```
+  # termisu.suspend(preserve_screen: true) do
+  #   print "Continue? [y/n]: "
+  #   answer = gets
+  # end
+  # ```
+  def suspend(preserve_screen : Bool, &)
+    with_cooked_mode(preserve_screen) { yield }
+  end
+
   # Pauses input processing for mode transitions.
   #
   # Stops the input source and clears any pending input to avoid
@@ -576,6 +622,22 @@ class Termisu
     Log.debug { "Resuming input processing" }
     @reader.clear_buffer
     @input_source.start(@event_loop.output)
+  end
+
+  # Emits a mode change event to the event loop.
+  #
+  # Non-blocking send to avoid deadlock if channel is full.
+  private def emit_mode_change(mode : Terminal::Mode, previous_mode : Terminal::Mode?)
+    event = Event::ModeChange.new(mode, previous_mode)
+    Log.debug { "Emitting mode change event: #{previous_mode} -> #{mode}" }
+
+    # Non-blocking send - mode change events are informational
+    select
+    when @event_loop.output.send(event)
+      # Event sent successfully
+    else
+      Log.debug { "Mode change event dropped (channel full)" }
+    end
   end
 
   # --- Mouse Support ---
