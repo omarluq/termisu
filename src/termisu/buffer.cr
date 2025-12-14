@@ -88,6 +88,22 @@ class Termisu::Buffer
     end
   end
 
+  # Invalidates the front buffer, forcing a full re-render on next render_to.
+  #
+  # Call this after the terminal screen has been cleared externally
+  # (e.g., re-entering alternate screen after a mode switch).
+  # The next render_to will redraw all cells since none will match
+  # the invalidated front buffer.
+  def invalidate
+    # Fill front buffer with invalid marker cells that won't match any real content.
+    # Using NUL character as the marker since it's never used in normal rendering.
+    invalid_cell = Cell.new('\u0000', Color.default, Color.default, Attribute::None)
+    @front.size.times do |index|
+      @front[index] = invalid_cell
+    end
+    @render_state.reset
+  end
+
   # Sets cursor position and makes it visible.
   #
   # Coordinates are clamped to buffer bounds. Negative values are clamped to 0.

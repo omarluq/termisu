@@ -492,12 +492,13 @@ class Termisu
   def with_mode(mode : Terminal::Mode, preserve_screen : Bool = false, &)
     Log.debug { "Termisu.with_mode: #{mode}, preserve_screen: #{preserve_screen}" }
 
-    user_interactive = mode.canonical? || mode.echo?
+    # Any non-raw mode needs input processing paused to avoid conflicts
+    # between our input reader and direct STDIN access
+    needs_pause = !mode.none?
     previous_mode = @terminal.current_mode
 
-    # Pause input processing for user-interactive modes to avoid
-    # conflict between our input reader and shell/external program
-    pause_input_processing if user_interactive
+    # Pause input processing to avoid conflict with shell/external program
+    pause_input_processing if needs_pause
 
     @terminal.with_mode(mode, preserve_screen) do
       emit_mode_change(mode, previous_mode)
@@ -507,7 +508,7 @@ class Termisu
     # Emit event for restoration (back to previous mode or raw default)
     restored_mode = @terminal.current_mode
     emit_mode_change(restored_mode, mode) if restored_mode
-    resume_input_processing if user_interactive
+    resume_input_processing if needs_pause
     Log.debug { "Termisu.with_mode: restored" }
   end
 
