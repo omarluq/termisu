@@ -83,6 +83,29 @@ describe Termisu::Buffer do
     end
   end
 
+  describe "#invalidate" do
+    it "forces full re-render on next render_to" do
+      renderer = MockRenderer.new
+      buffer = Termisu::Buffer.new(5, 2)
+
+      # Initial render - sets content
+      buffer.set_cell(0, 0, 'A')
+      buffer.render_to(renderer)
+
+      # Clear renderer and render again - no changes, should render nothing new
+      renderer.clear
+      buffer.render_to(renderer)
+      renderer.write_calls.should be_empty
+
+      # Invalidate and render again - should render the 'A' again
+      renderer.clear
+      buffer.invalidate
+      buffer.render_to(renderer)
+      # Write calls contain batched strings, check that 'A' is in one of them
+      renderer.write_calls.any?(&.includes?('A')).should be_true
+    end
+  end
+
   describe "#render_to (diff-based rendering)" do
     it "only renders changed cells" do
       renderer = MockRenderer.new

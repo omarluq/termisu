@@ -404,7 +404,12 @@ class Termisu::Terminal < Termisu::Renderer
   ensure
     Log.debug { "Exiting with_mode, restoring state" }
     restore_cursor_state(previous_cursor_visible, user_interactive)
-    enter_alternate_screen if was_in_alternate && !@alternate_screen
+    if was_in_alternate && !@alternate_screen
+      enter_alternate_screen
+    end
+    # Always invalidate after non-raw modes - screen content is
+    # unpredictable after puts/print/gets during the mode block
+    invalidate_buffer unless mode.none?
     flush
   end
 
@@ -540,6 +545,15 @@ class Termisu::Terminal < Termisu::Renderer
   # Useful after terminal resize or screen corruption.
   def sync
     @buffer.sync_to(self)
+  end
+
+  # Invalidates the buffer, forcing a full re-render on next render().
+  #
+  # Call this after the terminal screen has been cleared externally.
+  # Unlike sync(), this doesn't render immediately - it marks the buffer
+  # so the next render() call will redraw everything.
+  def invalidate_buffer
+    @buffer.invalidate
   end
 
   # Sets cursor position in the buffer and makes it visible.
