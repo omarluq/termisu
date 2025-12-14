@@ -3,13 +3,13 @@ require "../spec_helper"
 describe "Terminal State Caching" do
   describe "foreground color caching" do
     it "writes escape sequence on first call" do
-      terminal = CaptureTerminal.new
+      terminal = CaptureRenderer.new
       terminal.foreground = Termisu::Color.red
       terminal.writes.should contain("\e[31m")
     end
 
     it "skips redundant escape sequence for same color" do
-      terminal = CaptureTerminal.new
+      terminal = CaptureRenderer.new
       terminal.foreground = Termisu::Color.red
       initial_count = terminal.write_count
 
@@ -20,7 +20,7 @@ describe "Terminal State Caching" do
     end
 
     it "writes escape sequence when color changes" do
-      terminal = CaptureTerminal.new
+      terminal = CaptureRenderer.new
       terminal.foreground = Termisu::Color.red
       terminal.clear_writes
 
@@ -30,7 +30,7 @@ describe "Terminal State Caching" do
     end
 
     it "handles ANSI-256 colors" do
-      terminal = CaptureTerminal.new
+      terminal = CaptureRenderer.new
       terminal.foreground = Termisu::Color.ansi256(208)
       terminal.writes.should contain("\e[38;5;208m")
 
@@ -40,7 +40,7 @@ describe "Terminal State Caching" do
     end
 
     it "handles RGB colors" do
-      terminal = CaptureTerminal.new
+      terminal = CaptureRenderer.new
       terminal.foreground = Termisu::Color.rgb(255, 128, 64)
       terminal.writes.should contain("\e[38;2;255;128;64m")
 
@@ -50,7 +50,7 @@ describe "Terminal State Caching" do
     end
 
     it "handles default color" do
-      terminal = CaptureTerminal.new
+      terminal = CaptureRenderer.new
       terminal.foreground = Termisu::Color.default
       terminal.writes.should contain("\e[39m")
 
@@ -62,13 +62,13 @@ describe "Terminal State Caching" do
 
   describe "background color caching" do
     it "writes escape sequence on first call" do
-      terminal = CaptureTerminal.new
+      terminal = CaptureRenderer.new
       terminal.background = Termisu::Color.blue
       terminal.writes.should contain("\e[44m")
     end
 
     it "skips redundant escape sequence for same color" do
-      terminal = CaptureTerminal.new
+      terminal = CaptureRenderer.new
       terminal.background = Termisu::Color.blue
       initial_count = terminal.write_count
 
@@ -79,7 +79,7 @@ describe "Terminal State Caching" do
     end
 
     it "writes escape sequence when color changes" do
-      terminal = CaptureTerminal.new
+      terminal = CaptureRenderer.new
       terminal.background = Termisu::Color.blue
       terminal.clear_writes
 
@@ -91,13 +91,13 @@ describe "Terminal State Caching" do
 
   describe "attribute caching" do
     it "writes bold on first enable" do
-      terminal = CaptureTerminal.new
+      terminal = CaptureRenderer.new
       terminal.enable_bold
       terminal.writes.should contain("\e[1m")
     end
 
     it "skips redundant bold enable" do
-      terminal = CaptureTerminal.new
+      terminal = CaptureRenderer.new
       terminal.enable_bold
       initial_count = terminal.write_count
 
@@ -108,13 +108,13 @@ describe "Terminal State Caching" do
     end
 
     it "writes underline on first enable" do
-      terminal = CaptureTerminal.new
+      terminal = CaptureRenderer.new
       terminal.enable_underline
       terminal.writes.should contain("\e[4m")
     end
 
     it "skips redundant underline enable" do
-      terminal = CaptureTerminal.new
+      terminal = CaptureRenderer.new
       terminal.enable_underline
       initial_count = terminal.write_count
 
@@ -124,19 +124,19 @@ describe "Terminal State Caching" do
     end
 
     it "writes blink on first enable" do
-      terminal = CaptureTerminal.new
+      terminal = CaptureRenderer.new
       terminal.enable_blink
       terminal.writes.should contain("\e[5m")
     end
 
     it "writes reverse on first enable" do
-      terminal = CaptureTerminal.new
+      terminal = CaptureRenderer.new
       terminal.enable_reverse
       terminal.writes.should contain("\e[7m")
     end
 
     it "tracks multiple attributes independently" do
-      terminal = CaptureTerminal.new
+      terminal = CaptureRenderer.new
       terminal.enable_bold
       terminal.enable_underline
       terminal.writes.should contain("\e[1m")
@@ -152,13 +152,13 @@ describe "Terminal State Caching" do
 
   describe "cursor visibility caching" do
     it "writes show cursor on first call" do
-      terminal = CaptureTerminal.new
+      terminal = CaptureRenderer.new
       terminal.write_show_cursor
       terminal.writes.should contain("\e[?25h")
     end
 
     it "skips redundant show cursor" do
-      terminal = CaptureTerminal.new
+      terminal = CaptureRenderer.new
       terminal.write_show_cursor
       initial_count = terminal.write_count
 
@@ -169,13 +169,13 @@ describe "Terminal State Caching" do
     end
 
     it "writes hide cursor on first call" do
-      terminal = CaptureTerminal.new
+      terminal = CaptureRenderer.new
       terminal.write_hide_cursor
       terminal.writes.should contain("\e[?25l")
     end
 
     it "skips redundant hide cursor" do
-      terminal = CaptureTerminal.new
+      terminal = CaptureRenderer.new
       terminal.write_hide_cursor
       initial_count = terminal.write_count
 
@@ -186,7 +186,7 @@ describe "Terminal State Caching" do
     end
 
     it "writes when toggling visibility" do
-      terminal = CaptureTerminal.new
+      terminal = CaptureRenderer.new
       terminal.write_show_cursor
       terminal.clear_writes
 
@@ -201,7 +201,7 @@ describe "Terminal State Caching" do
 
   describe "#reset_render_state" do
     it "clears all cached state" do
-      terminal = CaptureTerminal.new
+      terminal = CaptureRenderer.new
 
       # Set up cached state
       terminal.foreground = Termisu::Color.red
@@ -234,7 +234,7 @@ describe "Terminal State Caching" do
 
   describe "#reset_attributes" do
     it "clears color and attribute cache" do
-      terminal = CaptureTerminal.new
+      terminal = CaptureRenderer.new
 
       # Set up cached state
       terminal.foreground = Termisu::Color.red
@@ -261,7 +261,7 @@ describe "Terminal State Caching" do
 
   describe "performance optimization" do
     it "significantly reduces writes for repeated styling" do
-      terminal = CaptureTerminal.new
+      terminal = CaptureRenderer.new
 
       # Simulate rendering 100 cells with same style
       100.times do
@@ -275,7 +275,7 @@ describe "Terminal State Caching" do
     end
 
     it "handles alternating styles efficiently" do
-      terminal = CaptureTerminal.new
+      terminal = CaptureRenderer.new
 
       # Simulate checkerboard pattern with 2 styles
       10.times do
@@ -288,7 +288,7 @@ describe "Terminal State Caching" do
     end
 
     it "demonstrates caching benefit with real-world scenario" do
-      terminal = CaptureTerminal.new
+      terminal = CaptureRenderer.new
 
       # Simulate rendering a status bar (same style across entire row)
       80.times do
@@ -306,7 +306,7 @@ describe "Terminal State Caching" do
 
   describe "integration with Buffer rendering" do
     it "caching works through Renderer interface" do
-      terminal = CaptureTerminal.new
+      terminal = CaptureRenderer.new
       buffer = Termisu::Buffer.new(10, 5)
 
       # Set cells with same style

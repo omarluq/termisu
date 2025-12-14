@@ -1,16 +1,16 @@
-# Test-only Terminal subclass that captures all writes for verification.
+# Terminal subclass that captures all writes for verification.
 #
 # Useful for testing Terminal output including escape sequences
 # like BSU/ESU for synchronized updates.
 #
 # Example:
 # ```
-# terminal = TestTerminal.new(sync_updates: true)
+# terminal = CaptureTerminal.new(sync_updates: true)
 # terminal.set_cell(0, 0, 'X')
 # terminal.render
 # terminal.output.should contain(Termisu::Terminal::BSU)
 # ```
-class TestTerminal < Termisu::Terminal
+class CaptureTerminal < Termisu::Terminal
   property writes : Array(String) = [] of String
   property captured_flush_count : Int32 = 0
 
