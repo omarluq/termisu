@@ -40,7 +40,7 @@ termisu = Termisu.new
 
 begin
   # Set cells with colors and attributes
-  termisu.set_cell(0, 0, 'H', fg: Termisu::Color.red, attr: Termisu::Termisu::Attribute::Bold)
+  termisu.set_cell(0, 0, 'H', fg: Termisu::Color.red, attr: Termisu::Attribute::Bold)
   termisu.set_cell(1, 0, 'i', fg: Termisu::Color.green)
   termisu.set_cursor(2, 0)
   termisu.render
@@ -68,6 +68,7 @@ See `examples/` for complete demonstrations:
 
 - `showcase.cr` - Colors, attributes, and input handling
 - `animation.cr` - Timer-based animation with async events
+- `modes.cr` - Terminal mode switching (shell-out, password input, cbreak)
 
 ![Termisu Showcase](assets/demo-screenshot.png)
 
@@ -86,6 +87,7 @@ termisu.close          # Cleanup (always call in ensure block)
 termisu.size                  # => {width, height}
 termisu.alternate_screen?     # => true/false
 termisu.raw_mode?             # => true/false
+termisu.current_mode          # => Mode flags or nil
 ```
 
 ### Cell Buffer
@@ -122,17 +124,18 @@ event = termisu.try_poll_event            # Returns nil immediately if no event
 # Iterator
 termisu.each_event do |event|
   case event
-  when Termisu::Event::Key    then # keyboard
-  when Termisu::Event::Mouse  then # mouse click/move
-  when Termisu::Event::Resize then # terminal resized
-  when Termisu::Event::Tick   then # timer tick (if enabled)
+  when Termisu::Event::Key        then # keyboard
+  when Termisu::Event::Mouse      then # mouse click/move
+  when Termisu::Event::Resize     then # terminal resized
+  when Termisu::Event::Tick       then # timer tick (if enabled)
+  when Termisu::Event::ModeChange then # mode switched
   end
 end
 ```
 
 ### Event Types
 
-`Event::Any` is the union type: `Event::Key | Event::Mouse | Event::Resize | Event::Tick`
+`Event::Any` is the union type: `Event::Key | Event::Mouse | Event::Resize | Event::Tick | Event::ModeChange`
 
 ```crystal
 # Event::Key - Keyboard input
@@ -166,6 +169,15 @@ event.changed?                     # Dimensions changed?
 event.frame                        # Frame counter (UInt64)
 event.elapsed                      # Time since timer started
 event.delta                        # Time since last tick
+
+# Event::ModeChange - Terminal mode changed
+event.mode                         # New mode (Terminal::Mode)
+event.previous_mode                # Previous mode (Terminal::Mode?)
+event.changed?                     # Did mode actually change?
+event.to_raw?                      # Transitioning to raw mode?
+event.from_raw?                    # Transitioning from raw mode?
+event.to_user_interactive?         # Entering canonical/echo mode?
+event.from_user_interactive?       # Leaving canonical/echo mode?
 ```
 
 ### Mouse & Keyboard
@@ -188,6 +200,99 @@ termisu.disable_timer
 termisu.timer_enabled?
 termisu.timer_interval = 8.milliseconds  # Change interval
 ```
+
+### Terminal Modes
+
+Temporarily switch terminal modes for shell-out, password input, or custom I/O.
+Mode changes emit `Event::ModeChange` events and automatically coordinate with the event loop.
+
+```crystal
+# Shell-out: Exit TUI, run shell commands, return seamlessly
+termisu.with_cooked_mode(preserve_screen: false) do
+  puts "You're in the normal terminal!"
+  system("vim file.txt")
+end
+# TUI automatically restored with full redraw
+
+# Suspend alias (same as with_cooked_mode, preserve_screen: false)
+termisu.suspend do
+  system("git commit")
+end
+
+# Password input: Hidden typing (no echo)
+termisu.with_password_mode do
+  print "Password: "
+  password = gets.try(&.chomp)
+end
+
+# Cbreak mode: Character-by-character with echo (Ctrl+C works)
+termisu.with_cbreak_mode do
+  print "Press any key: "
+  char = STDIN.read_char
+end
+
+# Custom mode with specific flags
+custom = Termisu::Terminal::Mode::Echo | Termisu::Terminal::Mode::Signals
+termisu.with_mode(custom, preserve_screen: true) do
+  # Your custom mode code
+end
+
+# Check current mode
+termisu.current_mode  # => Mode flags or nil (raw mode)
+```
+
+#### Mode Flags
+
+Individual flags map to POSIX termios settings:
+
+```crystal
+Termisu::Terminal::Mode::None             # Raw mode (no processing)
+Termisu::Terminal::Mode::Canonical        # Line-buffered input (ICANON)
+Termisu::Terminal::Mode::Echo             # Echo typed characters (ECHO)
+Termisu::Terminal::Mode::Signals          # Ctrl+C/Z signals (ISIG)
+Termisu::Terminal::Mode::Extended         # Extended input processing (IEXTEN)
+Termisu::Terminal::Mode::FlowControl      # XON/XOFF flow control (IXON)
+Termisu::Terminal::Mode::OutputProcessing # Output processing (OPOST)
+Termisu::Terminal::Mode::CrToNl           # CR to NL translation (ICRNL)
+
+# Combine flags with |
+custom = Mode::Echo | Mode::Signals
+```
+
+#### Mode Presets
+
+```crystal
+Mode.raw         # None - full TUI control
+Mode.cbreak      # Echo | Signals - char-by-char with feedback
+Mode.cooked      # Canonical | Echo | Signals | Extended - shell-out
+Mode.full_cooked # All flags - complete shell emulation
+Mode.password    # Canonical | Signals - secure input (no echo)
+Mode.semi_raw    # Signals only - TUI with Ctrl+C support
+```
+
+| Preset     | Canonical | Echo | Signals | Use Case                     |
+|------------|-----------|------|---------|------------------------------|
+| raw        | -         | -    | -       | Full TUI control             |
+| cbreak     | -         | ✓    | ✓       | Char-by-char with feedback   |
+| cooked     | ✓         | ✓    | ✓       | Shell-out, external programs |
+| full_cooked| ✓         | ✓    | ✓       | Complete shell emulation     |
+| password   | ✓         | -    | ✓       | Secure text entry            |
+| semi_raw   | -         | -    | ✓       | TUI with Ctrl+C support      |
+
+#### Convenience Methods
+
+```crystal
+termisu.with_cooked_mode { }      # Shell-out mode
+termisu.with_cbreak_mode { }      # Char-by-char with echo
+termisu.with_password_mode { }    # Hidden input
+termisu.suspend { }               # Alias for with_cooked_mode(preserve_screen: false)
+termisu.with_mode(mode) { }       # Custom mode
+```
+
+#### Options
+
+- `preserve_screen: true` - Stay in alternate screen (overlay mode)
+- `preserve_screen: false` - Exit alternate screen (shell-out mode)
 
 ### Colors
 
@@ -330,6 +435,7 @@ mods.meta?
 | Async Event Loop    | ✅ Complete |
 | Resize Events       | ✅ Complete |
 | Timer/Tick Events   | ✅ Complete |
+| Terminal Modes      | ✅ Complete |
 | Unicode/Wide Chars  | 🔄 Planned  |
 
 ### Completed
@@ -345,6 +451,7 @@ mods.meta?
 - **Async Event Loop** - Crystal fiber/channel-based multiplexer
 - **Resize Events** - SIGWINCH-based with debouncing
 - **Timer Events** - Configurable tick interval for animations
+- **Terminal Modes** - Cooked, cbreak, password modes with seamless TUI restoration
 - **Performance** - RenderState optimization, escape sequence batching
 - **Terminfo tparm** - Full processor with conditionals, stack, variables
 - **Logging** - Structured async/sync dispatch, zero hot-path overhead
