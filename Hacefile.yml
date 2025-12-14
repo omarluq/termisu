@@ -263,3 +263,89 @@ tasks:
     always_run: true
     commands: |
       bin/hace profile-memcheck
+  # ===========================================
+  # E2E Testing Tasks
+  # ===========================================
+  e2e:install:
+    description: Install E2E test dependencies
+    phony: true
+    always_run: true
+    commands: |
+      cd e2e && pnpm install
+  e2e:build:
+    description: Build Crystal binaries for E2E tests
+    phony: true
+    always_run: true
+    commands: |
+      mkdir -p bin
+      crystal build examples/showcase.cr -o bin/showcase --release
+      crystal build examples/simple.cr -o bin/simple --release
+      crystal build examples/colors.cr -o bin/colors --release
+      crystal build examples/keyboard_and_mouse.cr -o bin/kmd --release
+      crystal build examples/animation.cr -o bin/animation --release
+  e2e:test:
+    description: Run E2E tests with tui-test
+    phony: true
+    always_run: true
+    commands: |
+      cd e2e && pnpm test
+  e2e:test:trace:
+    description: Run E2E tests with tracing enabled
+    phony: true
+    always_run: true
+    commands: |
+      cd e2e && pnpm test:trace
+  e2e:test:update:
+    description: Update E2E test snapshots
+    phony: true
+    always_run: true
+    commands: |
+      cd e2e && pnpm test:update
+  e2e:lint:
+    description: Lint E2E test code with Biome
+    phony: true
+    always_run: true
+    commands: |
+      cd e2e && pnpm lint
+  e2e:lint:fix:
+    description: Fix E2E lint issues with Biome
+    phony: true
+    always_run: true
+    commands: |
+      cd e2e && pnpm lint:fix
+  e2e:format:
+    description: Format E2E test code with Biome
+    phony: true
+    always_run: true
+    commands: |
+      cd e2e && pnpm format
+  e2e:format:check:
+    description: Check E2E code formatting
+    phony: true
+    always_run: true
+    commands: |
+      cd e2e && pnpm format:check
+  e2e:check:
+    description: Run all Biome checks on E2E code
+    phony: true
+    always_run: true
+    commands: |
+      cd e2e && pnpm check
+  e2e:check:fix:
+    description: Fix all Biome issues in E2E code
+    phony: true
+    always_run: true
+    commands: |
+      cd e2e && pnpm check:fix
+  e2e:typecheck:
+    description: Type-check E2E tests with TypeScript
+    phony: true
+    always_run: true
+    commands: |
+      cd e2e && pnpm typecheck
+  e2e:all:
+    description: Build binaries and run E2E tests
+    phony: true
+    always_run: true
+    commands: |
+      bin/hace e2e:build && bin/hace e2e:test

@@ -1,0 +1,28 @@
+{
+  "name": "termisu-e2e",
+  "version": "1.0.0",
+  "description": "E2E tests for Termisu TUI library",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "tui-test",
+    "test:trace": "tui-test --trace",
+    "test:update": "tui-test --update-snapshots",
+    "lint": "biome lint .",
+    "lint:fix": "biome lint --write .",
+    "format": "biome format --write .",
+    "format:check": "biome format .",
+    "check": "biome check .",
+    "check:fix": "biome check --write .",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.9.0",
+    "@microsoft/tui-test": "github:jacob314/tui-test#node_24_support",
+    "typescript": "^5.7.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "packageManager": "pnpm@9.15.1"
+}

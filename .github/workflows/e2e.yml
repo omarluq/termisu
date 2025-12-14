@@ -1,0 +1,114 @@
+name: E2E Tests
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/**/*.cr"
+      - "examples/**/*.cr"
+      - "e2e/**"
+      - ".github/workflows/e2e.yml"
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+jobs:
+  e2e:
+    name: E2E (${{ matrix.os }}, ${{ matrix.shell }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Linux with different shells
+          - os: ubuntu-latest
+            shell: bash
+          - os: ubuntu-latest
+            shell: zsh
+          - os: ubuntu-latest
+            shell: fish
+          # macOS with different shells
+          - os: macos-latest
+            shell: bash
+          - os: macos-latest
+            shell: zsh
+          - os: macos-latest
+            shell: fish
+            # Windows support is planned but not yet implemented
+            # Termisu currently uses Unix Termios APIs
+            # TODO: Add Windows matrix when WinAPI console support is added
+            # - os: windows-latest
+            #   shell: cmd
+            # - os: windows-latest
+            #   shell: powershell
+            # - os: windows-latest
+            #   shell: pwsh
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+      - name: Install Crystal
+        uses: crystal-lang/install-crystal@v1
+      - name: Install zsh (Linux)
+        if: matrix.os == 'ubuntu-latest' && matrix.shell == 'zsh'
+        run: sudo apt-get update && sudo apt-get install -y zsh
+      - name: Install fish (Linux)
+        if: matrix.os == 'ubuntu-latest' && matrix.shell == 'fish'
+        run: |
+          sudo apt-add-repository -y ppa:fish-shell/release-3
+          sudo apt-get update
+          sudo apt-get install -y fish
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: "pnpm"
+          cache-dependency-path: e2e/pnpm-lock.yaml
+      - name: Cache Crystal shards
+        uses: actions/cache@v5
+        with:
+          path: |
+            lib
+            ~/.cache/crystal
+          key: ${{ runner.os }}-shards-${{ hashFiles('shard.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-shards-
+      - name: Install shards dependencies
+        run: shards install
+      - name: Build E2E test binaries
+        run: |
+          mkdir -p bin
+          crystal build examples/showcase.cr -o bin/showcase --release
+          crystal build examples/simple.cr -o bin/simple --release
+          crystal build examples/colors.cr -o bin/colors --release
+          crystal build examples/keyboard_and_mouse.cr -o bin/kmd --release
+          crystal build examples/animation.cr -o bin/animation --release
+      - name: Install E2E dependencies
+        working-directory: e2e
+        run: pnpm install
+      - name: Run Biome checks
+        working-directory: e2e
+        run: pnpm check
+      - name: Run TypeScript type check
+        working-directory: e2e
+        run: pnpm typecheck
+      - name: Run E2E tests
+        working-directory: e2e
+        env:
+          TUI_TEST_SHELL: ${{ matrix.shell }}
+        run: pnpm test
+      - name: Upload traces on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tui-traces-${{ matrix.os }}-${{ matrix.shell }}
+          path: e2e/tui-traces/
+          retention-days: 7
+      - name: Upload snapshots on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: snapshots-${{ matrix.os }}-${{ matrix.shell }}
+          path: e2e/tests/__snapshots__/
+          retention-days: 7

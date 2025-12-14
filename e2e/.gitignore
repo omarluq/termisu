@@ -1,0 +1,22 @@
+# Dependencies
+node_modules/
+
+# Test artifacts
+tui-traces/
+test-results/
+.tui-test
+
+# Build output
+dist/
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# OS
+.DS_Store
+
+# Snapshots (keep dir with .keep, ignore snap files)
+tests/__snapshots__/*.snap
+!tests/__snapshots__/.keep
