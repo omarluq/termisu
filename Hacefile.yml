@@ -7,11 +7,11 @@ tasks:
   # Core Development Tasks
   # ===========================================
   spec:
-    description: Run crystal spec
+    description: Run crystal spec with unbuffer for TTY tests
     phony: true
     always_run: true
     commands: |
-      crystal spec
+      unbuffer crystal spec
   demo:
     description: Run demo example
     phony: true
