@@ -123,4 +123,253 @@ describe Termisu::Terminal do
       terminal.close
     end
   end
+
+  # --- Terminal Mode API Tests ---
+
+  describe "#current_mode" do
+    it "returns nil before any mode is set" do
+      terminal = Termisu::Terminal.new
+      terminal.current_mode.should be_nil
+    ensure
+      terminal.try &.close
+    end
+
+    it "returns the mode after set_mode is called" do
+      terminal = Termisu::Terminal.new
+      terminal.set_mode(Termisu::Terminal::Mode.raw)
+      terminal.current_mode.should eq(Termisu::Terminal::Mode.raw)
+    ensure
+      terminal.try &.close
+    end
+  end
+
+  describe "#set_mode" do
+    it "sets raw mode and updates raw_mode? tracking" do
+      terminal = Termisu::Terminal.new
+      terminal.set_mode(Termisu::Terminal::Mode.raw)
+      terminal.current_mode.should eq(Termisu::Terminal::Mode.raw)
+      terminal.raw_mode?.should be_true
+    ensure
+      terminal.try &.close
+    end
+
+    it "sets cooked mode and updates raw_mode? tracking" do
+      terminal = Termisu::Terminal.new
+      terminal.set_mode(Termisu::Terminal::Mode.cooked)
+      terminal.current_mode.should eq(Termisu::Terminal::Mode.cooked)
+      terminal.raw_mode?.should be_false
+    ensure
+      terminal.try &.close
+    end
+
+    it "sets cbreak mode" do
+      terminal = Termisu::Terminal.new
+      terminal.set_mode(Termisu::Terminal::Mode.cbreak)
+      terminal.current_mode.should eq(Termisu::Terminal::Mode.cbreak)
+      terminal.raw_mode?.should be_false
+    ensure
+      terminal.try &.close
+    end
+
+    it "sets password mode" do
+      terminal = Termisu::Terminal.new
+      terminal.set_mode(Termisu::Terminal::Mode.password)
+      terminal.current_mode.should eq(Termisu::Terminal::Mode.password)
+      terminal.raw_mode?.should be_false
+    ensure
+      terminal.try &.close
+    end
+
+    it "handles mode transitions" do
+      terminal = Termisu::Terminal.new
+
+      terminal.set_mode(Termisu::Terminal::Mode.raw)
+      terminal.raw_mode?.should be_true
+
+      terminal.set_mode(Termisu::Terminal::Mode.cooked)
+      terminal.raw_mode?.should be_false
+
+      terminal.set_mode(Termisu::Terminal::Mode.raw)
+      terminal.raw_mode?.should be_true
+    ensure
+      terminal.try &.close
+    end
+  end
+
+  describe "#with_mode" do
+    it "sets mode within block and restores after" do
+      terminal = Termisu::Terminal.new
+      terminal.set_mode(Termisu::Terminal::Mode.raw)
+      terminal.raw_mode?.should be_true
+
+      terminal.with_mode(Termisu::Terminal::Mode.cooked) do
+        terminal.current_mode.should eq(Termisu::Terminal::Mode.cooked)
+        terminal.raw_mode?.should be_false
+      end
+
+      terminal.current_mode.should eq(Termisu::Terminal::Mode.raw)
+      terminal.raw_mode?.should be_true
+    ensure
+      terminal.try &.close
+    end
+
+    it "restores mode on exception" do
+      terminal = Termisu::Terminal.new
+      terminal.set_mode(Termisu::Terminal::Mode.raw)
+
+      expect_raises(Exception, "test") do
+        terminal.with_mode(Termisu::Terminal::Mode.cooked) do
+          terminal.raw_mode?.should be_false
+          raise "test"
+        end
+      end
+
+      terminal.current_mode.should eq(Termisu::Terminal::Mode.raw)
+      terminal.raw_mode?.should be_true
+    ensure
+      terminal.try &.close
+    end
+
+    it "returns block result" do
+      terminal = Termisu::Terminal.new
+      result = terminal.with_mode(Termisu::Terminal::Mode.cooked) { 42 }
+      result.should eq(42)
+    ensure
+      terminal.try &.close
+    end
+
+    it "handles nested with_mode calls" do
+      terminal = Termisu::Terminal.new
+      terminal.set_mode(Termisu::Terminal::Mode.raw)
+
+      terminal.with_mode(Termisu::Terminal::Mode.cooked) do
+        terminal.current_mode.should eq(Termisu::Terminal::Mode.cooked)
+
+        terminal.with_mode(Termisu::Terminal::Mode.password) do
+          terminal.current_mode.should eq(Termisu::Terminal::Mode.password)
+        end
+
+        terminal.current_mode.should eq(Termisu::Terminal::Mode.cooked)
+      end
+
+      terminal.current_mode.should eq(Termisu::Terminal::Mode.raw)
+    ensure
+      terminal.try &.close
+    end
+
+    it "defaults to raw mode when no previous mode was set" do
+      terminal = Termisu::Terminal.new
+      terminal.current_mode.should be_nil
+
+      terminal.with_mode(Termisu::Terminal::Mode.cooked) do
+        terminal.current_mode.should eq(Termisu::Terminal::Mode.cooked)
+      end
+
+      # Should restore to raw mode (default) since no previous mode
+      terminal.current_mode.should eq(Termisu::Terminal::Mode.raw)
+    ensure
+      terminal.try &.close
+    end
+
+    it "respects preserve_screen parameter" do
+      terminal = Termisu::Terminal.new
+      # Cannot directly test alternate screen without visible effects,
+      # but we verify the method accepts the parameter
+      terminal.with_mode(Termisu::Terminal::Mode.cooked, preserve_screen: true) do
+        terminal.current_mode.should eq(Termisu::Terminal::Mode.cooked)
+      end
+
+      terminal.with_mode(Termisu::Terminal::Mode.cooked, preserve_screen: false) do
+        terminal.current_mode.should eq(Termisu::Terminal::Mode.cooked)
+      end
+    ensure
+      terminal.try &.close
+    end
+  end
+
+  describe "#with_cooked_mode" do
+    it "switches to cooked mode within block" do
+      terminal = Termisu::Terminal.new
+      terminal.set_mode(Termisu::Terminal::Mode.raw)
+
+      terminal.with_cooked_mode do
+        terminal.current_mode.should eq(Termisu::Terminal::Mode.cooked)
+        terminal.raw_mode?.should be_false
+      end
+
+      terminal.current_mode.should eq(Termisu::Terminal::Mode.raw)
+    ensure
+      terminal.try &.close
+    end
+
+    it "returns block result" do
+      terminal = Termisu::Terminal.new
+      result = terminal.with_cooked_mode { "hello" }
+      result.should eq("hello")
+    ensure
+      terminal.try &.close
+    end
+
+    it "restores mode on exception" do
+      terminal = Termisu::Terminal.new
+      terminal.set_mode(Termisu::Terminal::Mode.raw)
+
+      expect_raises(Exception, "test") do
+        terminal.with_cooked_mode { raise "test" }
+      end
+
+      terminal.current_mode.should eq(Termisu::Terminal::Mode.raw)
+    ensure
+      terminal.try &.close
+    end
+  end
+
+  describe "#with_cbreak_mode" do
+    it "switches to cbreak mode within block" do
+      terminal = Termisu::Terminal.new
+      terminal.set_mode(Termisu::Terminal::Mode.raw)
+
+      terminal.with_cbreak_mode do
+        terminal.current_mode.should eq(Termisu::Terminal::Mode.cbreak)
+      end
+
+      terminal.current_mode.should eq(Termisu::Terminal::Mode.raw)
+    ensure
+      terminal.try &.close
+    end
+
+    it "defaults to preserve_screen true" do
+      terminal = Termisu::Terminal.new
+      # Method accepts no args, which means preserve_screen defaults to true
+      terminal.with_cbreak_mode do
+        terminal.current_mode.should eq(Termisu::Terminal::Mode.cbreak)
+      end
+    ensure
+      terminal.try &.close
+    end
+  end
+
+  describe "#with_password_mode" do
+    it "switches to password mode within block" do
+      terminal = Termisu::Terminal.new
+      terminal.set_mode(Termisu::Terminal::Mode.raw)
+
+      terminal.with_password_mode do
+        terminal.current_mode.should eq(Termisu::Terminal::Mode.password)
+      end
+
+      terminal.current_mode.should eq(Termisu::Terminal::Mode.raw)
+    ensure
+      terminal.try &.close
+    end
+
+    it "defaults to preserve_screen true" do
+      terminal = Termisu::Terminal.new
+      terminal.with_password_mode do
+        terminal.current_mode.should eq(Termisu::Terminal::Mode.password)
+      end
+    ensure
+      terminal.try &.close
+    end
+  end
 end

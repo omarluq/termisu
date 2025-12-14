@@ -337,6 +337,151 @@ class Termisu::Terminal < Termisu::Renderer
     @backend.with_raw_mode { yield }
   end
 
+  # --- Terminal Mode API ---
+
+  # Returns the current terminal mode, or nil if not yet set.
+  #
+  # Delegates to underlying Backend instance.
+  def current_mode : Terminal::Mode?
+    @backend.current_mode
+  end
+
+  # Sets terminal to specific mode using Terminal::Mode flags.
+  #
+  # Updates raw_mode_enabled tracking based on whether mode is raw.
+  # Does not handle screen or cursor transitions - use with_mode for that.
+  #
+  # Parameters:
+  # - mode: Terminal::Mode flags specifying desired behavior
+  #
+  # Example:
+  # ```
+  # terminal.set_mode(Terminal::Mode.cooked)
+  # terminal.set_mode(Terminal::Mode.raw)
+  # ```
+  # ameba:disable Naming/AccessorMethodName
+  def set_mode(mode : Terminal::Mode)
+    Log.debug { "Setting mode: #{mode}" }
+    @backend.set_mode(mode)
+  end
+
+  # Executes a block with specific terminal mode, restoring previous mode after.
+  #
+  # This is the recommended way to temporarily switch modes for operations
+  # like shell-out or password input. Handles:
+  # - Mode switching via Backend
+  # - Alternate screen exit/entry based on preserve_screen parameter
+  # - Cursor visibility (shown for user-interactive modes)
+  #
+  # Parameters:
+  # - mode: Terminal::Mode to use within the block
+  # - preserve_screen: If false (default) and mode is canonical, exits alternate
+  #   screen during block. If true, stays in alternate screen.
+  #
+  # Example:
+  # ```
+  # terminal.with_mode(Terminal::Mode.cooked) do
+  #   system("vim file.txt")
+  # end
+  # # Previous mode and screen state restored
+  # ```
+  def with_mode(mode : Terminal::Mode, preserve_screen : Bool = false, &)
+    Log.debug { "Entering with_mode: #{mode}, preserve_screen: #{preserve_screen}" }
+    user_interactive = mode.canonical? || mode.echo?
+
+    # Track state to restore
+    was_in_alternate = @alternate_screen
+    previous_cursor_visible = @cached_cursor_visible
+
+    # For canonical/echo modes, exit alternate screen unless preserving
+    exit_alternate_screen if !preserve_screen && user_interactive && was_in_alternate
+
+    # Show cursor for user-interactive modes
+    prepare_cursor_for_mode(user_interactive)
+
+    # Switch mode via backend (handles termios and tracking)
+    @backend.with_mode(mode) { yield }
+  ensure
+    Log.debug { "Exiting with_mode, restoring state" }
+    restore_cursor_state(previous_cursor_visible, user_interactive)
+    enter_alternate_screen if was_in_alternate && !@alternate_screen
+    flush
+  end
+
+  # Prepares cursor visibility for mode transition.
+  private def prepare_cursor_for_mode(user_interactive : Bool)
+    return unless user_interactive
+    write_show_cursor
+    flush
+  end
+
+  # Restores cursor visibility after mode transition.
+  private def restore_cursor_state(previous_visible : Bool?, user_interactive : Bool?)
+    if previous_visible == false || !user_interactive
+      write_hide_cursor
+    elsif previous_visible == true
+      write_show_cursor
+    end
+  end
+
+  # Executes a block with cooked (shell-like) mode.
+  #
+  # Cooked mode enables canonical input, echo, and signal handling -
+  # ideal for shell-out operations where the subprocess needs full
+  # terminal control.
+  #
+  # By default, exits alternate screen to show the normal terminal,
+  # then re-enters alternate screen after the block.
+  #
+  # Example:
+  # ```
+  # terminal.with_cooked_mode do
+  #   system("vim file.txt")
+  # end
+  # ```
+  def with_cooked_mode(preserve_screen : Bool = false, &)
+    with_mode(Terminal::Mode.cooked, preserve_screen) { yield }
+  end
+
+  # Executes a block with cbreak mode.
+  #
+  # Cbreak mode provides character-by-character input with echo and
+  # signal handling. Useful for interactive prompts where you want
+  # immediate response but still show typed characters.
+  #
+  # By default, preserves alternate screen since cbreak is typically
+  # used within a TUI context.
+  #
+  # Example:
+  # ```
+  # terminal.with_cbreak_mode do
+  #   print "Press any key: "
+  #   key = STDIN.read_char
+  # end
+  # ```
+  def with_cbreak_mode(preserve_screen : Bool = true, &)
+    with_mode(Terminal::Mode.cbreak, preserve_screen) { yield }
+  end
+
+  # Executes a block with password input mode.
+  #
+  # Password mode enables canonical (line-buffered) input with signal
+  # handling but disables echo. Perfect for secure password entry.
+  #
+  # By default, preserves alternate screen since password prompts
+  # often appear within a TUI context.
+  #
+  # Example:
+  # ```
+  # terminal.with_password_mode do
+  #   print "Password: "
+  #   password = gets
+  # end
+  # ```
+  def with_password_mode(preserve_screen : Bool = true, &)
+    with_mode(Terminal::Mode.password, preserve_screen) { yield }
+  end
+
   # Closes the terminal and underlying backend.
   def close
     Log.debug { "Closing terminal" }

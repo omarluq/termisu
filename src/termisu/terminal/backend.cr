@@ -1,7 +1,7 @@
 # Low-level terminal I/O combining TTY and Termios state management.
 #
 # Provides basic terminal operations, managing both the underlying
-# TTY file descriptors and terminal attributes (raw mode).
+# TTY file descriptors and terminal attributes (mode control).
 # Used internally by Terminal for I/O operations.
 #
 # Example:
@@ -11,6 +11,10 @@
 # backend.write("Hello, terminal!")
 # backend.flush
 # backend.close
+#
+# # Or use mode switching:
+# backend.set_mode(Terminal::Mode.cooked)
+# backend.with_mode(Terminal::Mode.password) { gets }
 # ```
 class Termisu::Terminal::Backend
   @tty : TTY
@@ -104,6 +108,59 @@ class Termisu::Terminal::Backend
     yield
   ensure
     disable_raw_mode
+  end
+
+  # --- Terminal Mode API ---
+
+  # Sets terminal to specific mode using Terminal::Mode flags.
+  #
+  # Updates raw_mode_enabled tracking based on whether mode is raw
+  # (none? means no flags set = raw mode).
+  #
+  # Parameters:
+  # - mode: Terminal::Mode flags specifying desired behavior
+  #
+  # Example:
+  # ```
+  # backend.set_mode(Terminal::Mode.cooked) # Shell-out mode
+  # backend.set_mode(Terminal::Mode.raw)    # Full TUI control
+  # ```
+  # ameba:disable Naming/AccessorMethodName
+  def set_mode(mode : Terminal::Mode)
+    @termios.set_mode(mode)
+    # Raw mode = no flags set (value 0). Can't use none? due to @[Flags] semantics.
+    @raw_mode_enabled = mode.value == 0
+  end
+
+  # Returns the current terminal mode, or nil if not yet set.
+  #
+  # Delegates to underlying Termios instance.
+  def current_mode : Terminal::Mode?
+    @termios.current_mode
+  end
+
+  # Executes a block with specific terminal mode, restoring previous mode after.
+  #
+  # This is the RAII pattern for safe mode switching. The previous mode
+  # is always restored, even if the block raises an exception.
+  #
+  # Parameters:
+  # - mode: Terminal::Mode to use within the block
+  #
+  # Example:
+  # ```
+  # backend.with_mode(Terminal::Mode.cooked) do
+  #   system("vim file.txt")
+  # end
+  # # Previous mode automatically restored
+  # ```
+  def with_mode(mode : Terminal::Mode, &)
+    previous = current_mode
+    set_mode(mode)
+    yield
+  ensure
+    # Restore previous mode, or raw mode if no previous mode was set
+    set_mode(previous || Terminal::Mode.raw)
   end
 
   # Closes the terminal backend, disabling raw mode and closing TTY.
