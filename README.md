@@ -68,7 +68,6 @@ See `examples/` for complete demonstrations:
 
 - `showcase.cr` - Colors, attributes, and input handling
 - `animation.cr` - Timer-based animation with async events
-- `modes.cr` - Terminal mode switching (shell-out, password input, cbreak)
 
 ![Termisu Showcase](assets/demo-screenshot.png)
 
