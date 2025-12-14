@@ -416,7 +416,7 @@ describe Termisu::Input::Parser do
         if event.is_a?(Termisu::Event::Mouse)
           event.x.should eq(10)
           event.y.should eq(20)
-          event.button.should eq(Termisu::Event::MouseButton::Left)
+          event.button.should eq(Termisu::Event::Mouse::Button::Left)
         end
       end
 
@@ -425,7 +425,7 @@ describe Termisu::Input::Parser do
         event = parse_sequence(seq)
         event.should be_a(Termisu::Event::Mouse)
         if event.is_a?(Termisu::Event::Mouse)
-          event.button.should eq(Termisu::Event::MouseButton::Middle)
+          event.button.should eq(Termisu::Event::Mouse::Button::Middle)
         end
       end
 
@@ -434,7 +434,7 @@ describe Termisu::Input::Parser do
         event = parse_sequence(seq)
         event.should be_a(Termisu::Event::Mouse)
         if event.is_a?(Termisu::Event::Mouse)
-          event.button.should eq(Termisu::Event::MouseButton::Right)
+          event.button.should eq(Termisu::Event::Mouse::Button::Right)
         end
       end
 
@@ -444,7 +444,7 @@ describe Termisu::Input::Parser do
         event = parse_sequence(seq)
         event.should be_a(Termisu::Event::Mouse)
         if event.is_a?(Termisu::Event::Mouse)
-          event.button.should eq(Termisu::Event::MouseButton::Release)
+          event.button.should eq(Termisu::Event::Mouse::Button::Release)
         end
       end
 
@@ -453,7 +453,7 @@ describe Termisu::Input::Parser do
         event = parse_sequence(seq)
         event.should be_a(Termisu::Event::Mouse)
         if event.is_a?(Termisu::Event::Mouse)
-          event.button.should eq(Termisu::Event::MouseButton::WheelUp)
+          event.button.should eq(Termisu::Event::Mouse::Button::WheelUp)
           event.wheel?.should be_true
         end
       end
@@ -463,7 +463,7 @@ describe Termisu::Input::Parser do
         event = parse_sequence(seq)
         event.should be_a(Termisu::Event::Mouse)
         if event.is_a?(Termisu::Event::Mouse)
-          event.button.should eq(Termisu::Event::MouseButton::WheelDown)
+          event.button.should eq(Termisu::Event::Mouse::Button::WheelDown)
         end
       end
 
@@ -513,7 +513,7 @@ describe Termisu::Input::Parser do
         event = parse_sequence(seq)
         event.should be_a(Termisu::Event::Mouse)
         if event.is_a?(Termisu::Event::Mouse)
-          event.button.should eq(Termisu::Event::MouseButton::Left)
+          event.button.should eq(Termisu::Event::Mouse::Button::Left)
           event.x.should eq(1)
           event.y.should eq(1)
         end
@@ -525,7 +525,7 @@ describe Termisu::Input::Parser do
         event = parse_sequence(seq)
         event.should be_a(Termisu::Event::Mouse)
         if event.is_a?(Termisu::Event::Mouse)
-          event.button.should eq(Termisu::Event::MouseButton::Right)
+          event.button.should eq(Termisu::Event::Mouse::Button::Right)
           event.x.should eq(50)
           event.y.should eq(25)
         end
@@ -537,7 +537,7 @@ describe Termisu::Input::Parser do
         event = parse_sequence(seq)
         event.should be_a(Termisu::Event::Mouse)
         if event.is_a?(Termisu::Event::Mouse)
-          event.button.should eq(Termisu::Event::MouseButton::Release)
+          event.button.should eq(Termisu::Event::Mouse::Button::Release)
         end
       end
 
@@ -547,7 +547,7 @@ describe Termisu::Input::Parser do
         event = parse_sequence(seq)
         event.should be_a(Termisu::Event::Mouse)
         if event.is_a?(Termisu::Event::Mouse)
-          event.button.should eq(Termisu::Event::MouseButton::WheelUp)
+          event.button.should eq(Termisu::Event::Mouse::Button::WheelUp)
         end
       end
 
