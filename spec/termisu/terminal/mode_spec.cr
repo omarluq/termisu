@@ -107,6 +107,31 @@ describe Termisu::Terminal::Mode do
         mode.extended?.should be_false
       end
     end
+
+    describe ".full_cooked" do
+      it "returns all flags including extended ones" do
+        mode = Termisu::Terminal::Mode.full_cooked
+        expected = Termisu::Terminal::Mode::Canonical |
+                   Termisu::Terminal::Mode::Echo |
+                   Termisu::Terminal::Mode::Signals |
+                   Termisu::Terminal::Mode::Extended |
+                   Termisu::Terminal::Mode::FlowControl |
+                   Termisu::Terminal::Mode::OutputProcessing |
+                   Termisu::Terminal::Mode::CrToNl
+        mode.should eq(expected)
+      end
+
+      it "has all flags enabled" do
+        mode = Termisu::Terminal::Mode.full_cooked
+        mode.canonical?.should be_true
+        mode.echo?.should be_true
+        mode.signals?.should be_true
+        mode.extended?.should be_true
+        mode.flow_control?.should be_true
+        mode.output_processing?.should be_true
+        mode.cr_to_nl?.should be_true
+      end
+    end
   end
 
   describe "flag combinations" do
