@@ -30,12 +30,17 @@ class Termisu
   #
   # The Event::Loop is started with Input and Resize sources by default.
   # Timer source is optional and can be enabled with `enable_timer`.
-  def initialize
+  #
+  # Parameters:
+  # - `sync_updates` - Enable DEC mode 2026 synchronized updates (default: true).
+  #   When enabled, render operations are wrapped in BSU/ESU sequences to
+  #   prevent screen tearing. Unsupported terminals ignore these sequences.
+  def initialize(*, sync_updates : Bool = true)
     Logging.setup
 
     Log.info { "Initializing Termisu v#{VERSION}" }
 
-    @terminal = Terminal.new
+    @terminal = Terminal.new(sync_updates: sync_updates)
     @reader = Reader.new(@terminal.infd)
     @input_parser = Input::Parser.new(@reader)
 
@@ -101,6 +106,20 @@ class Termisu
 
   # Returns true if raw mode is enabled.
   delegate raw_mode?, to: @terminal
+
+  # Returns true if synchronized updates (DEC mode 2026) are enabled.
+  #
+  # When enabled, render operations are wrapped in BSU/ESU sequences
+  # to prevent screen tearing. Enabled by default.
+  delegate sync_updates?, to: @terminal
+
+  # Sets whether synchronized updates are enabled.
+  #
+  # Can be toggled at runtime. Set to false for debugging or
+  # compatibility with terminals that misbehave with sync sequences.
+  def sync_updates=(value : Bool)
+    @terminal.sync_updates = value
+  end
 
   # --- Cell Buffer Operations ---
 

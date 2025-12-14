@@ -28,6 +28,7 @@ class Termisu::Terminal < Termisu::Renderer
   @alternate_screen : Bool = false
   @mouse_enabled : Bool = false
   @enhanced_keyboard : Bool = false
+  @sync_updates : Bool = true
 
   # Cached render state for direct API optimization.
   # Prevents redundant escape sequences when the same style is set repeatedly.
@@ -41,13 +42,16 @@ class Termisu::Terminal < Termisu::Renderer
   # Parameters:
   # - `backend` - Terminal::Backend instance for I/O operations (default: Terminal::Backend.new)
   # - `terminfo` - Terminfo instance for capability strings (default: Terminfo.new)
+  # - `sync_updates` - Enable DEC mode 2026 synchronized updates (default: true)
   def initialize(
     @backend : Terminal::Backend = Terminal::Backend.new,
     @terminfo : Terminfo = Terminfo.new,
+    *,
+    @sync_updates : Bool = true,
   )
     width, height = size
     @buffer = Buffer.new(width, height)
-    Log.debug { "Terminal initialized: #{width}x#{height}" }
+    Log.debug { "Terminal initialized: #{width}x#{height}, sync_updates: #{@sync_updates}" }
   end
 
   # Enters alternate screen mode.
@@ -536,15 +540,37 @@ class Termisu::Terminal < Termisu::Renderer
   #
   # Only cells that have changed since the last render are redrawn (diff-based).
   # This is more efficient than full redraws for partial updates.
+  #
+  # When sync_updates is enabled, wraps the render in DEC mode 2026 sequences
+  # (BSU/ESU) to prevent screen tearing during rapid updates.
   def render
-    @buffer.render_to(self)
+    begin_sync_update
+    @buffer.render_to(self, auto_flush: !@sync_updates)
+    end_sync_update
   end
 
   # Forces a full redraw of all cells.
   #
   # Useful after terminal resize or screen corruption.
+  #
+  # When sync_updates is enabled, wraps the sync in DEC mode 2026 sequences
+  # (BSU/ESU) to prevent screen tearing during the full redraw.
   def sync
-    @buffer.sync_to(self)
+    begin_sync_update
+    @buffer.sync_to(self, auto_flush: !@sync_updates)
+    end_sync_update
+  end
+
+  # Emits BSU (Begin Synchronized Update) sequence if sync_updates is enabled.
+  private def begin_sync_update
+    write(BSU) if @sync_updates
+  end
+
+  # Emits ESU (End Synchronized Update) sequence and flushes if sync_updates is enabled.
+  private def end_sync_update
+    return unless @sync_updates
+    write(ESU)
+    flush
   end
 
   # Invalidates the buffer, forcing a full re-render on next render().
@@ -580,6 +606,27 @@ class Termisu::Terminal < Termisu::Renderer
   def resize_buffer(width : Int32, height : Int32)
     @buffer.resize(width, height)
   end
+
+  # --- Synchronized Updates (DEC Private Mode 2026) ---
+
+  # Synchronized update escape sequences.
+  # Prevents screen tearing by buffering output between BSU and ESU.
+  # Supported by: Windows Terminal, Kitty, iTerm2, Wezterm, Alacritty 0.13+,
+  # foot, mintty, Ghostty. Unsupported terminals simply ignore these sequences.
+  BSU = "\e[?2026h" # Begin Synchronized Update
+  ESU = "\e[?2026l" # End Synchronized Update
+
+  # Returns whether synchronized updates are enabled.
+  #
+  # When enabled, render operations are wrapped in BSU/ESU sequences
+  # to prevent screen tearing. Enabled by default.
+  getter? sync_updates : Bool
+
+  # Sets whether synchronized updates are enabled.
+  #
+  # Can be toggled at runtime. Set to false for debugging or
+  # compatibility with terminals that misbehave with sync sequences.
+  setter sync_updates : Bool
 
   # --- Mouse Support ---
 
