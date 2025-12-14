@@ -372,4 +372,49 @@ describe Termisu::Terminal do
       terminal.try &.close
     end
   end
+
+  # --- Synchronized Updates (DEC Mode 2026) ---
+
+  describe "synchronized updates" do
+    describe "escape sequence constants" do
+      it "defines BSU (Begin Synchronized Update) sequence" do
+        Termisu::Terminal::BSU.should eq("\e[?2026h")
+      end
+
+      it "defines ESU (End Synchronized Update) sequence" do
+        Termisu::Terminal::ESU.should eq("\e[?2026l")
+      end
+    end
+
+    describe "#sync_updates?" do
+      it "defaults to true" do
+        terminal = Termisu::Terminal.new
+        terminal.sync_updates?.should be_true
+      ensure
+        terminal.try &.close
+      end
+    end
+
+    describe "#sync_updates=" do
+      it "can disable sync updates at runtime" do
+        terminal = Termisu::Terminal.new
+        terminal.sync_updates?.should be_true
+
+        terminal.sync_updates = false
+        terminal.sync_updates?.should be_false
+      ensure
+        terminal.try &.close
+      end
+
+      it "can re-enable sync updates at runtime" do
+        terminal = Termisu::Terminal.new(sync_updates: false)
+        terminal.sync_updates?.should be_false
+
+        terminal.sync_updates = true
+        terminal.sync_updates?.should be_true
+      ensure
+        terminal.try &.close
+      end
+    end
+  end
 end

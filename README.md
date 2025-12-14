@@ -436,6 +436,7 @@ mods.meta?
 | Resize Events       | ✅ Complete |
 | Timer/Tick Events   | ✅ Complete |
 | Terminal Modes      | ✅ Complete |
+| Synchronized Updates| ✅ Complete |
 | Unicode/Wide Chars  | 🔄 Planned  |
 
 ### Completed
@@ -455,11 +456,11 @@ mods.meta?
 - **Performance** - RenderState optimization, escape sequence batching
 - **Terminfo tparm** - Full processor with conditionals, stack, variables
 - **Logging** - Structured async/sync dispatch, zero hot-path overhead
+- **Synchronized Updates** - DEC mode 2026 (prevents screen tearing)
 
 ### Planned
 
 - **Unicode/wide character support** - CJK, emoji (wcwidth)
-- **Synchronized updates** - DEC mode 2026 (prevents screen tearing)
 - **Image protocols** - Sixel and Kitty graphics for inline images
 
 ## Inspiration

@@ -137,7 +137,9 @@ class Termisu::Buffer
   #
   # Parameters:
   # - renderer: The renderer to render cells to
-  def render_to(renderer : Renderer)
+  # - auto_flush: Whether to flush at the end (default: true). Set to false
+  #   when caller needs to control flush timing (e.g., for synchronized updates).
+  def render_to(renderer : Renderer, auto_flush : Bool = true)
     @height.times do |row|
       render_row_diff(renderer, row)
     end
@@ -145,13 +147,18 @@ class Termisu::Buffer
     # Render cursor
     render_cursor(renderer)
 
-    renderer.flush
+    renderer.flush if auto_flush
   end
 
   # Forces a full redraw of all cells to the renderer, ignoring the diff.
   #
   # Useful after terminal resize or corruption.
-  def sync_to(renderer : Renderer)
+  #
+  # Parameters:
+  # - renderer: The renderer to render cells to
+  # - auto_flush: Whether to flush at the end (default: true). Set to false
+  #   when caller needs to control flush timing (e.g., for synchronized updates).
+  def sync_to(renderer : Renderer, auto_flush : Bool = true)
     # Reset render state to force all sequences to be emitted
     @render_state.reset
 
@@ -162,7 +169,7 @@ class Termisu::Buffer
     # Render cursor
     render_cursor(renderer)
 
-    renderer.flush
+    renderer.flush if auto_flush
   end
 
   # Resizes the buffer to new dimensions.
