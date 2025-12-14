@@ -57,23 +57,37 @@ test.describe("Animation Example", () => {
     });
 
     test("animation updates over time", async ({ terminal }) => {
-      // Wait for initial render
+      // Wait for initial render and extract initial frame number
       await expect(terminal.getByText(/Frame: \d+/g)).toBeVisible();
 
-      // Get initial state
-      const initialBuffer = terminal.serialize();
-      const initialContent = JSON.stringify(initialBuffer);
+      // Extract initial frame number from buffer
+      const getFrameNumber = (): number | null => {
+        const buffer = terminal.getBuffer();
+        for (const row of buffer) {
+          const text = row.join("");
+          const match = text.match(/Frame: (\d+)/);
+          if (match) return parseInt(match[1], 10);
+        }
+        return null;
+      };
 
-      // Wait a bit for animation frames (animation runs at ~60 FPS)
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      const initialFrame = getFrameNumber();
+      expect(initialFrame).not.toBeNull();
 
-      // Get updated state
-      const updatedBuffer = terminal.serialize();
-      const updatedContent = JSON.stringify(updatedBuffer);
+      // Poll until frame advances (more reliable than fixed timeout)
+      let updatedFrame = initialFrame;
+      const maxWait = 2000; // 2 second max wait
+      const pollInterval = 50;
+      let elapsed = 0;
 
-      // Animation should have changed something (frame counter or ball position)
-      // Note: This tests that the animation is actually running
-      expect(updatedContent).not.toBe(initialContent);
+      while (updatedFrame === initialFrame && elapsed < maxWait) {
+        await new Promise((resolve) => setTimeout(resolve, pollInterval));
+        elapsed += pollInterval;
+        updatedFrame = getFrameNumber();
+      }
+
+      // Animation should have advanced at least one frame
+      expect(updatedFrame).not.toBe(initialFrame);
     });
   });
 
