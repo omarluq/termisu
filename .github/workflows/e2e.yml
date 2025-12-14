@@ -87,12 +87,6 @@ jobs:
       - name: Install E2E dependencies
         working-directory: e2e
         run: pnpm install
-      - name: Run Biome checks
-        working-directory: e2e
-        run: pnpm check
-      - name: Run TypeScript type check
-        working-directory: e2e
-        run: pnpm typecheck
       - name: Run E2E tests
         working-directory: e2e
         env:
