@@ -415,10 +415,10 @@ class Termisu::Input::Parser
     x = parts[1].to_i? || 1
     y = parts[2].to_i? || 1
 
-    button = Event::MouseButton.from_cb(cb)
+    button = Event::Mouse::Button.from_cb(cb)
     # Wheel events are instantaneous - they don't have release events
     is_wheel = button.wheel_up? || button.wheel_down? || button.wheel_left? || button.wheel_right?
-    button = Event::MouseButton::Release if is_release && !is_wheel
+    button = Event::Mouse::Button::Release if is_release && !is_wheel
 
     modifiers = Modifier.from_mouse_cb(cb)
     motion = (cb & MOUSE_MOTION_BIT) != 0
@@ -447,7 +447,7 @@ class Termisu::Input::Parser
     cx = cx.clamp(1, 223)
     cy = cy.clamp(1, 223)
 
-    button = Event::MouseButton.from_cb(cb)
+    button = Event::Mouse::Button.from_cb(cb)
     modifiers = Modifier.from_mouse_cb(cb)
     motion = (cb & MOUSE_MOTION_BIT) != 0
 

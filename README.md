@@ -145,13 +145,13 @@ event.ctrl? / event.alt? / event.shift? / event.meta?
 
 # Event::Mouse - Mouse input
 event.x, event.y                   # Position (1-based)
-event.button                       # => MouseButton
+event.button                       # => Mouse::Button
 event.motion?                      # Mouse moved while button held
 event.press?                       # Button press (not release/motion)
 event.wheel?                       # Scroll wheel event
 event.ctrl? / event.alt? / event.shift?
 
-# MouseButton enum
+# Mouse::Button enum
 event.button.left?
 event.button.middle?
 event.button.right?
