@@ -262,12 +262,12 @@ custom = Mode::Echo | Mode::Signals
 #### Mode Presets
 
 ```crystal
-Mode.raw         # None - full TUI control
-Mode.cbreak      # Echo | Signals - char-by-char with feedback
-Mode.cooked      # Canonical | Echo | Signals | Extended - shell-out
-Mode.full_cooked # All flags - complete shell emulation
-Mode.password    # Canonical | Signals - secure input (no echo)
-Mode.semi_raw    # Signals only - TUI with Ctrl+C support
+Mode.raw         # Full TUI control
+Mode.cbreak      # Char-by-char with feedback
+Mode.cooked      # Shell-out, external programs
+Mode.full_cooked # Complete shell emulation
+Mode.password    # Secure input (no echo)
+Mode.semi_raw    # TUI with Ctrl+C support
 ```
 
 | Preset     | Canonical | Echo | Signals | Use Case                     |
