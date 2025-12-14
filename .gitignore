@@ -21,3 +21,8 @@
 # Hace cache
 /.croupier/
 .croupier
+
+# E2E test artifacts
+/e2e/node_modules/
+/e2e/tui-traces/
+/e2e/test-results/

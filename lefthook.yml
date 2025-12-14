@@ -14,3 +14,10 @@ pre-commit:
       glob: "*.{yml,yaml}"
       run: yamlfmt {staged_files}
       stage_fixed: true
+    e2e-lint:
+      glob: "e2e/**/*.{ts,tsx,js,json}"
+      run: bin/hace e2e:lint
+    e2e-format:
+      glob: "e2e/**/*.{ts,tsx,js,json}"
+      run: bin/hace e2e:format
+      stage_fixed: true
