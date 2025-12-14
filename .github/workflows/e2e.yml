@@ -100,14 +100,14 @@ jobs:
         run: pnpm test
       - name: Upload traces on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: tui-traces-${{ matrix.os }}-${{ matrix.shell }}
           path: e2e/tui-traces/
           retention-days: 7
       - name: Upload snapshots on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: snapshots-${{ matrix.os }}-${{ matrix.shell }}
           path: e2e/tests/__snapshots__/
