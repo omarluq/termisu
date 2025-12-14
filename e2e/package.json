@@ -17,7 +17,7 @@
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
-    "@biomejs/biome": "^1.9.0",
+    "@biomejs/biome": "^2.0.0",
     "@microsoft/tui-test": "github:jacob314/tui-test#node_24_support",
     "typescript": "^5.7.0"
   },
