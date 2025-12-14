@@ -464,6 +464,120 @@ class Termisu
     self
   end
 
+  # --- Terminal Mode API ---
+
+  # Returns the current terminal mode, or nil if not yet set.
+  delegate current_mode, to: @terminal
+
+  # Executes a block with specific terminal mode, restoring previous mode after.
+  #
+  # This is the recommended way to temporarily switch modes for operations
+  # like shell-out or password input. Handles:
+  # - Event loop coordination (pauses input for user-interactive modes)
+  # - Mode switching via Terminal (which handles termios, screen, cursor)
+  # - Automatic restoration on block exit or exception
+  #
+  # Parameters:
+  # - mode: Terminal::Mode to use within the block
+  # - preserve_screen: If false (default) and mode is canonical, exits alternate
+  #   screen during block. If true, stays in alternate screen.
+  #
+  # Example:
+  # ```
+  # termisu.with_mode(Terminal::Mode.cooked) do
+  #   system("vim file.txt")
+  # end
+  # # Terminal state fully restored
+  # ```
+  def with_mode(mode : Terminal::Mode, preserve_screen : Bool = false, &)
+    Log.debug { "Termisu.with_mode: #{mode}, preserve_screen: #{preserve_screen}" }
+
+    user_interactive = mode.canonical? || mode.echo?
+
+    # Pause input processing for user-interactive modes to avoid
+    # conflict between our input reader and shell/external program
+    pause_input_processing if user_interactive
+
+    @terminal.with_mode(mode, preserve_screen) { yield }
+  ensure
+    resume_input_processing if user_interactive
+    Log.debug { "Termisu.with_mode: restored" }
+  end
+
+  # Executes a block with cooked (shell-like) mode.
+  #
+  # Cooked mode enables canonical input, echo, and signal handling -
+  # ideal for shell-out operations where the subprocess needs full
+  # terminal control.
+  #
+  # Event loop input processing is paused during the block to avoid
+  # conflicts with the shell or subprocess.
+  #
+  # Example:
+  # ```
+  # termisu.with_cooked_mode do
+  #   system("vim file.txt")
+  # end
+  # # Back to TUI mode, event loop active
+  # ```
+  def with_cooked_mode(preserve_screen : Bool = false, &)
+    with_mode(Terminal::Mode.cooked, preserve_screen) { yield }
+  end
+
+  # Executes a block with cbreak mode.
+  #
+  # Cbreak mode provides character-by-character input with echo and
+  # signal handling. Useful for interactive prompts within a TUI.
+  #
+  # Event loop input processing is paused during the block.
+  #
+  # Example:
+  # ```
+  # termisu.with_cbreak_mode do
+  #   print "Press any key: "
+  #   key = STDIN.read_char
+  # end
+  # ```
+  def with_cbreak_mode(preserve_screen : Bool = true, &)
+    with_mode(Terminal::Mode.cbreak, preserve_screen) { yield }
+  end
+
+  # Executes a block with password input mode.
+  #
+  # Password mode enables canonical (line-buffered) input with signal
+  # handling but disables echo. Perfect for secure password entry.
+  #
+  # Example:
+  # ```
+  # password = termisu.with_password_mode do
+  #   print "Password: "
+  #   gets
+  # end
+  # ```
+  def with_password_mode(preserve_screen : Bool = true, &)
+    with_mode(Terminal::Mode.password, preserve_screen) { yield }
+  end
+
+  # Pauses input processing for mode transitions.
+  #
+  # Stops the input source and clears any pending input to avoid
+  # conflicts when switching to user-interactive modes.
+  private def pause_input_processing
+    Log.debug { "Pausing input processing" }
+    @input_source.stop
+    @reader.clear_buffer
+  end
+
+  # Resumes input processing after mode transitions.
+  #
+  # Clears any stale input and restarts the input source to
+  # continue receiving events.
+  private def resume_input_processing
+    Log.debug { "Resuming input processing" }
+    @reader.clear_buffer
+    @input_source.start(@event_loop.output)
+  end
+
   # --- Mouse Support ---
 
   # Enables mouse input tracking.
