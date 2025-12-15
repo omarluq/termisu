@@ -1,0 +1,289 @@
+# POSIX poll-based event poller (fallback).
+#
+# Provides portable event handling using the POSIX poll() syscall
+# with software-based timer implementation using monotonic clock.
+#
+# ## Features
+#
+# - Works on all POSIX-compliant systems
+# - Software-based timers using Time.monotonic
+# - Automatic timeout calculation for timer precision
+#
+# ## Timer Implementation
+#
+# Timers are tracked as monotonic clock deadlines. The poll timeout
+# is calculated as the minimum of user timeout and next timer deadline.
+# This provides reasonable timer precision (~1ms) on most systems.
+#
+# ## Trade-offs
+#
+# Less efficient than epoll/kqueue:
+# - O(n) fd scanning vs O(1) for epoll
+# - Software timers vs kernel timers
+# - More syscalls when idle
+#
+# Use Linux or Kqueue backends when available.
+
+# LibC poll bindings (not always provided by Crystal stdlib)
+lib LibC
+  struct Pollfd
+    fd : Int32
+    events : Short
+    revents : Short
+  end
+
+  fun poll(fds : Pollfd*, nfds : UInt64, timeout : Int32) : Int32
+
+  POLLIN  = 0x0001_i16
+  POLLOUT = 0x0004_i16
+  POLLERR = 0x0008_i16
+end
+
+class Termisu::Event::Poller::Poll < Termisu::Event::Poller
+  Log = Termisu::Logs::Event
+
+  # Internal timer state using monotonic clock
+  private struct TimerState
+    getter interval : Time::Span
+    getter next_deadline : Time::Span
+    getter? repeating : Bool
+
+    def initialize(@interval : Time::Span, @repeating : Bool)
+      @next_deadline = Time.monotonic + @interval
+    end
+
+    # Creates a new state with updated deadline
+    def reset : TimerState
+      TimerState.new(@interval, @repeating)
+    end
+  end
+
+  @fds : Array(LibC::Pollfd)
+  @timers : Hash(UInt64, TimerState)
+  @next_timer_id : UInt64
+  @closed : Bool
+
+  def initialize
+    @fds = [] of LibC::Pollfd
+    @timers = {} of UInt64 => TimerState
+    @next_timer_id = 0_u64
+    @closed = false
+    Log.debug { "Poll fallback poller created" }
+  end
+
+  def register_fd(fd : Int32, events : FDEvents) : Nil
+    raise "Poller is closed" if @closed
+
+    # Check if already registered and update
+    # NOTE: Structs are value types - must replace the entire element
+    existing_idx = @fds.index { |pfd| pfd.fd == fd }
+    if existing_idx
+      updated = @fds[existing_idx]
+      updated.events = events_to_poll(events)
+      @fds[existing_idx] = updated
+    else
+      pollfd = LibC::Pollfd.new
+      pollfd.fd = fd
+      pollfd.events = events_to_poll(events)
+      pollfd.revents = 0
+      @fds << pollfd
+    end
+    Log.debug { "Registered fd=#{fd} for events=#{events}" }
+  end
+
+  def unregister_fd(fd : Int32) : Nil
+    return if @closed
+
+    @fds.reject! { |pfd| pfd.fd == fd }
+    Log.debug { "Unregistered fd=#{fd}" }
+  end
+
+  def add_timer(interval : Time::Span, repeating : Bool = true) : TimerHandle
+    raise "Poller is closed" if @closed
+
+    id = @next_timer_id
+    @next_timer_id &+= 1
+    @timers[id] = TimerState.new(interval, repeating)
+    Log.debug { "Added timer id=#{id} interval=#{interval} repeating=#{repeating}" }
+    TimerHandle.new(id)
+  end
+
+  def modify_timer(handle : TimerHandle, interval : Time::Span) : Nil
+    raise "Poller is closed" if @closed
+
+    state = @timers[handle.id]?
+    unless state
+      raise ArgumentError.new("Invalid timer handle: #{handle.id}")
+    end
+
+    @timers[handle.id] = TimerState.new(interval, state.repeating?)
+    Log.debug { "Modified timer id=#{handle.id} new_interval=#{interval}" }
+  end
+
+  def remove_timer(handle : TimerHandle) : Nil
+    return if @closed
+
+    @timers.delete(handle.id)
+    Log.debug { "Removed timer id=#{handle.id}" }
+  end
+
+  def wait : PollResult?
+    wait_internal(nil)
+  end
+
+  def wait(timeout : Time::Span) : PollResult?
+    wait_internal(timeout)
+  end
+
+  def close : Nil
+    return if @closed
+    @closed = true
+
+    @fds.clear
+    @timers.clear
+    Log.debug { "Poll fallback poller closed" }
+  end
+
+  # Internal wait with optional timeout
+  private def wait_internal(user_timeout : Time::Span?) : PollResult?
+    return nil if @closed
+
+    loop do
+      # Calculate effective timeout
+      timeout_ms = calculate_timeout(user_timeout)
+
+      # Check for already-expired timers before poll
+      if timer_result = check_expired_timers
+        return timer_result
+      end
+
+      # poll() syscall
+      result = poll_with_eintr(timeout_ms)
+
+      if result < 0
+        raise IO::Error.from_errno("poll")
+      end
+
+      # Check timers first (higher priority)
+      if timer_result = check_expired_timers
+        return timer_result
+      end
+
+      # Check for timeout (no events, no timers)
+      if result == 0 && @timers.empty?
+        return nil
+      end
+
+      # Check fd events
+      @fds.each do |pfd|
+        next if pfd.revents == 0
+
+        type = poll_to_result_type(pfd.revents)
+        pfd.revents = 0
+        return PollResult.new(type: type, fd: pfd.fd)
+      end
+
+      # No events found, continue polling
+      # This can happen if timeout was from timer calculation
+      # but timer hasn't quite expired yet due to timing variance
+    end
+  end
+
+  # Calculates poll timeout based on timer deadlines and user timeout
+  private def calculate_timeout(user_timeout : Time::Span?) : Int32
+    timer_timeout = timer_timeout_ms
+    user_ms = user_timeout.try(&.total_milliseconds.to_i.clamp(0, Int32::MAX))
+
+    if timer_timeout.nil? && user_ms.nil?
+      -1 # Infinite wait
+    elsif timer_timeout.nil?
+      user_ms.as(Int32)
+    elsif user_ms.nil?
+      timer_timeout
+    else
+      Math.min(timer_timeout, user_ms.as(Int32))
+    end
+  end
+
+  # Returns timeout until next timer in milliseconds, or nil if no timers
+  private def timer_timeout_ms : Int32?
+    return nil if @timers.empty?
+
+    now = Time.monotonic
+    min_timeout = Int32::MAX
+
+    @timers.each_value do |state|
+      remaining = state.next_deadline - now
+      ms = remaining.total_milliseconds.to_i.clamp(0, Int32::MAX)
+      min_timeout = ms if ms < min_timeout
+    end
+
+    min_timeout
+  end
+
+  # Checks for expired timers and returns result if found
+  private def check_expired_timers : PollResult?
+    return nil if @timers.empty?
+
+    now = Time.monotonic
+
+    @timers.each do |id, state|
+      next unless now >= state.next_deadline
+
+      expirations = calculate_expirations(state, now)
+
+      if state.repeating?
+        @timers[id] = state.reset
+      else
+        @timers.delete(id)
+      end
+
+      return PollResult.new(
+        type: PollResult::Type::Timer,
+        timer_handle: TimerHandle.new(id),
+        timer_expirations: expirations
+      )
+    end
+
+    nil
+  end
+
+  # Calculates number of timer expirations (for missed ticks)
+  private def calculate_expirations(state : TimerState, now : Time::Span) : UInt64
+    return 1_u64 unless state.repeating?
+
+    # How many intervals have passed since original deadline
+    elapsed = now - (state.next_deadline - state.interval)
+    (elapsed / state.interval).to_u64.clamp(1_u64, UInt64::MAX)
+  end
+
+  # Calls poll() with EINTR retry
+  private def poll_with_eintr(timeout_ms : Int32) : Int32
+    loop do
+      result = LibC.poll(@fds.to_unsafe, @fds.size, timeout_ms)
+      if result < 0 && Errno.value == Errno::EINTR
+        next
+      end
+      return result
+    end
+  end
+
+  # Converts FDEvents to poll event mask
+  private def events_to_poll(events : FDEvents) : Int16
+    result = 0_i16
+    result |= LibC::POLLIN if events.read?
+    result |= LibC::POLLOUT if events.write?
+    result
+  end
+
+  # Converts poll revents to PollResult::Type
+  private def poll_to_result_type(revents : Int16) : PollResult::Type
+    if (revents & LibC::POLLERR) != 0
+      PollResult::Type::FDError
+    elsif (revents & LibC::POLLOUT) != 0
+      PollResult::Type::FDWritable
+    else
+      PollResult::Type::FDReadable
+    end
+  end
+end
