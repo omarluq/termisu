@@ -11,8 +11,12 @@ on:
   workflow_dispatch:
 jobs:
   test:
-    name: Run Tests
-    runs-on: ubuntu-latest
+    name: Run Tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
     permissions:
       checks: write
       contents: read
@@ -21,7 +25,11 @@ jobs:
         uses: actions/checkout@v6
       - name: Setup Crystal
         uses: ./.github/actions/setup-crystal
-      - name: Install expect (for unbuffer)
+      - name: Install expect (Linux)
+        if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y expect
+      - name: Install expect (macOS)
+        if: runner.os == 'macOS'
+        run: brew install expect
       - name: Run tests
         run: unbuffer crystal spec -v
