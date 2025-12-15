@@ -34,19 +34,15 @@ jobs:
         uses: actions/cache@v5
         with:
           path: /usr/local/bin/kcov
-          key: kcov-master-${{ runner.os }}
+          key: kcov-v43-${{ runner.os }}
       - name: Install kcov
         if: steps.cache-kcov.outputs.cache-hit != 'true'
         run: |
-          sudo apt-get update
-          sudo apt-get install -y libcurl4-openssl-dev libelf-dev libdw-dev cmake gcc binutils-dev
-          wget https://github.com/SimonKagstrom/kcov/archive/master.tar.gz
-          tar xzf master.tar.gz
-          cd kcov-master
-          mkdir build && cd build
-          cmake ..
-          make
-          sudo make install
+          wget -q https://github.com/SimonKagstrom/kcov/releases/download/v43/kcov-v43-linux-x86_64.tar.gz
+          tar xzf kcov-v43-linux-x86_64.tar.gz
+          sudo cp -r usr/local/* /usr/local/
+      - name: Install kcov runtime dependencies
+        run: sudo apt-get update && sudo apt-get install -y libdw1 libcurl4
       - name: Install expect (for unbuffer)
         run: sudo apt-get install -y expect
       - name: Build test binary
