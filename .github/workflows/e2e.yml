@@ -51,7 +51,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
       - name: Download binaries
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@v7
         with:
           name: e2e-binaries-${{ matrix.os == 'ubuntu-latest' && 'linux' || 'macos' }}
           path: bin/
