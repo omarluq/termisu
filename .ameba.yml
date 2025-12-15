@@ -5,3 +5,7 @@
 #
 # For more details on any individual rule, run `ameba --only RuleName`.
 Version: "1.7.0-dev"
+# Shared test macros are not spec files - exclude from filename check
+Lint/SpecFilename:
+  Excluded:
+    - spec/shared/**/*
