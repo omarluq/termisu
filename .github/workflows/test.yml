@@ -19,19 +19,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
-      - name: Install Crystal
-        uses: crystal-lang/install-crystal@v1
-      - name: Cache Crystal shards
-        uses: actions/cache@v5
-        with:
-          path: |
-            lib
-            ~/.cache/crystal
-          key: ${{ runner.os }}-shards-${{ hashFiles('shard.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-shards-
-      - name: Install shards dependencies
-        run: shards install
+      - name: Setup Crystal
+        uses: ./.github/actions/setup-crystal
       - name: Install expect (for unbuffer)
         run: sudo apt-get update && sudo apt-get install -y expect
       - name: Run tests

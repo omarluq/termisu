@@ -27,19 +27,10 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
-      - name: Install pnpm
-        uses: pnpm/action-setup@v4
+      - name: Setup Node.js with pnpm
+        uses: ./.github/actions/setup-node-pnpm
         with:
-          version: 10
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: 24
-          cache: "pnpm"
-          cache-dependency-path: e2e/pnpm-lock.yaml
-      - name: Install dependencies
-        working-directory: e2e
-        run: pnpm install --frozen-lockfile --ignore-scripts
+          ignore-scripts: "true"
       - name: Run Biome lint
         working-directory: e2e
         run: pnpm lint
