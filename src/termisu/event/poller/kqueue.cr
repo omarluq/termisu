@@ -192,9 +192,8 @@
           return PollResult.new(type: PollResult::Type::FDReadable, fd: event.ident.to_i32)
         when LibC::EVFILT_WRITE
           return PollResult.new(type: PollResult::Type::FDWritable, fd: event.ident.to_i32)
-        when LibC::EVFILT_SIGNAL
-          return PollResult.new(type: PollResult::Type::Signal, fd: event.ident.to_i32)
         else
+          # Includes EVFILT_SIGNAL and error conditions
           return PollResult.new(type: PollResult::Type::FDError, fd: event.ident.to_i32)
         end
       end
