@@ -39,7 +39,7 @@ jobs:
           cache-dependency-path: e2e/pnpm-lock.yaml
       - name: Install dependencies
         working-directory: e2e
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --frozen-lockfile --ignore-scripts
       - name: Run Biome lint
         working-directory: e2e
         run: pnpm lint
