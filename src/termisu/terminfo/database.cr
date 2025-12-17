@@ -9,7 +9,8 @@
 # 2. `$HOME/.terminfo` (user-specific database)
 # 3. `$TERMINFO_DIRS` (colon-separated list)
 # 4. `/lib/terminfo` (system library)
-# 5. `/usr/share/terminfo` (standard location)
+# 5. `/usr/local/share/terminfo` (FreeBSD ports, Homebrew)
+# 6. `/usr/share/terminfo` (standard location)
 #
 # ## Path Formats
 #
@@ -47,6 +48,7 @@ class Termisu::Terminfo::Database
       try_home_terminfo ||
       try_terminfo_dirs ||
       try_lib_terminfo ||
+      try_usr_local_share ||
       try_usr_share ||
       raise "Could not find terminfo database for #{@name}"
   end
@@ -77,6 +79,10 @@ class Termisu::Terminfo::Database
 
   private def try_lib_terminfo : Bytes?
     try_path("/lib/terminfo")
+  end
+
+  private def try_usr_local_share : Bytes?
+    try_path("/usr/local/share/terminfo")
   end
 
   private def try_usr_share : Bytes?
