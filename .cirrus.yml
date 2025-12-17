@@ -1,11 +1,24 @@
 container:
   image: crystallang/crystal:latest
+env:
+  TERM: xterm-256color
+# Reusable cache configs
+shard_cache: &shard_cache
+  fingerprint_script: cat shard.yml
+  populate_script: shards install
+  folder: lib
+bin_cache: &bin_cache
+  fingerprint_script: cat shard.yml
+  populate_script: shards build ameba
+  folder: bin
+format_task:
+  shard_cache: *shard_cache
+  format_script: crystal tool format --check
+lint_task:
+  shard_cache: *shard_cache
+  bin_cache: *bin_cache
+  lint_script: bin/ameba
 spec_task:
-  env:
-    TERM: xterm-256color
-  shard_cache:
-    fingerprint_script: cat shard.yml
-    populate_script: shards install
-    folder: lib
+  shard_cache: *shard_cache
   install_expect_script: apt-get update && apt-get install -y expect
   spec_script: unbuffer crystal spec -v
