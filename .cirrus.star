@@ -2,127 +2,63 @@
 
 load("github.com/cirrus-modules/helpers", "task", "container", "macos_instance", "freebsd_instance", "cache", "script")
 
-# Crystal configuration
+# =============================================================================
+# Configuration
+# =============================================================================
+
 CRYSTAL_IMAGE = "crystallang/crystal:latest"
 MACOS_IMAGE = "ghcr.io/cirruslabs/macos-runner:sonoma"
 FREEBSD_IMAGE = "freebsd-15-0-amd64-ufs"
 
-def crystal_env():
-    return {"TERM": "xterm-256color"}
+ENV = {"TERM": "xterm-256color"}
+
+# Platform definitions: (name, instance, crystal_install, expect_install, spec_cmd)
+PLATFORMS = [
+    ("linux", container(CRYSTAL_IMAGE), None, "apt-get update && apt-get install -y expect", "unbuffer crystal spec -v"),
+    ("macos", macos_instance(MACOS_IMAGE), "brew install crystal", "brew install expect", "unbuffer crystal spec -v"),
+    ("freebsd", freebsd_instance(image_family=FREEBSD_IMAGE), "pkg install -y crystal shards", "pkg install -y expect", "expect_unbuffer crystal spec -v"),
+    # ("windows", windows_container(), "choco install crystal -y", None, "crystal spec -v"),
+]
+
+# =============================================================================
+# Caches
+# =============================================================================
 
 def shards_cache():
-    return cache(
-        name="shards",
-        folder="lib",
-        fingerprint_script="cat shard.yml",
-        populate_script="shards install",
-    )
+    return cache(name="shards", folder="lib", fingerprint_script="cat shard.yml", populate_script="shards install")
 
 def bin_cache():
-    return cache(
-        name="bin",
-        folder="bin",
-        fingerprint_script="cat shard.yml",
-        populate_script="shards build ameba",
-    )
+    return cache(name="bin", folder="bin", fingerprint_script="cat shard.yml", populate_script="shards build ameba")
 
 # =============================================================================
-# Lint & Format Tasks (Linux only)
+# Task Builders
 # =============================================================================
 
-def format_task():
-    return task(
-        name="format",
-        instance=container(CRYSTAL_IMAGE),
-        env=crystal_env(),
-        instructions=[
-            shards_cache(),
-            script("format", "crystal tool format --check"),
-        ],
-    )
+def make_task(name, instance, instructions):
+    """Build a task with common settings."""
+    return task(name=name, instance=instance, env=ENV, instructions=instructions)
 
-def lint_task():
-    return task(
-        name="lint",
-        instance=container(CRYSTAL_IMAGE),
-        env=crystal_env(),
-        instructions=[
-            shards_cache(),
-            bin_cache(),
-            script("lint", "bin/ameba"),
-        ],
-    )
-
-# =============================================================================
-# Spec Tasks (Multi-platform)
-# =============================================================================
-
-def spec_linux_task():
-    """Run specs on Linux (epoll backend)."""
-    return task(
-        name="spec_linux",
-        instance=container(CRYSTAL_IMAGE),
-        env=crystal_env(),
-        instructions=[
-            shards_cache(),
-            script("install_expect", "apt-get update && apt-get install -y expect"),
-            script("spec", "unbuffer crystal spec -v"),
-        ],
-    )
-
-def spec_macos_task():
-    """Run specs on macOS (kqueue backend)."""
-    return task(
-        name="spec_macos",
-        instance=macos_instance(MACOS_IMAGE),
-        env=crystal_env(),
-        instructions=[
-            script("install_crystal", "brew install crystal"),
-            shards_cache(),
-            script("install_expect", "brew install expect"),
-            script("spec", "unbuffer crystal spec -v"),
-        ],
-    )
-
-def spec_freebsd_task():
-    """Run specs on FreeBSD (kqueue backend)."""
-    return task(
-        name="spec_freebsd",
-        instance=freebsd_instance(image_family=FREEBSD_IMAGE),
-        env=crystal_env(),
-        instructions=[
-            script("install_crystal", "pkg install -y crystal shards"),
-            shards_cache(),
-            script("install_expect", "pkg install -y expect"),
-            script("spec", "unbuffer crystal spec -v"),
-        ],
-    )
-
-# def spec_windows_task():
-#     """Run specs on Windows (poll backend)."""
-#     return task(
-#         name="spec_windows",
-#         instance=windows_container(),
-#         env=crystal_env(),
-#         instructions=[
-#             script("install_crystal", "choco install crystal -y"),
-#             shards_cache(),
-#             script("spec", "crystal spec -v"),
-#         ],
-#     )
+def spec_task(platform, instance, crystal_install=None, expect_install=None, spec_cmd="crystal spec -v"):
+    """Build a spec task for a given platform."""
+    instructions = []
+    if crystal_install:
+        instructions.append(script("install_crystal", crystal_install))
+    instructions.append(shards_cache())
+    if expect_install:
+        instructions.append(script("install_expect", expect_install))
+    instructions.append(script("spec", spec_cmd))
+    return make_task("spec_" + platform, instance, instructions)
 
 # =============================================================================
 # Main
 # =============================================================================
 
 def main(ctx):
+    linux = container(CRYSTAL_IMAGE)
+
     return [
         # Lint & format (Linux only)
-        format_task(),
-        lint_task(),
+        make_task("format", linux, [shards_cache(), script("format", "crystal tool format --check")]),
+        make_task("lint", linux, [shards_cache(), bin_cache(), script("lint", "bin/ameba")]),
         # Specs (multi-platform)
-        spec_linux_task(),
-        spec_macos_task(),
-        spec_freebsd_task(),
-        # spec_windows_task(),  # TODO: Enable when Crystal Windows support matures
-    ]
+    ] + [spec_task(name, inst, crystal, expect, cmd) for name, inst, crystal, expect, cmd in PLATFORMS]
