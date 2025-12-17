@@ -54,7 +54,7 @@ class Termisu
 
     # Timer source is optional (nil by default)
     # Can be either sleep-based Timer or kernel-level SystemTimer
-    @timer_source = nil.as(Event::Source?)
+    @timer_source = nil.as((Event::Source::Timer | Event::Source::SystemTimer)?)
 
     # Create and configure event loop
     @event_loop = Event::Loop.new
@@ -462,22 +462,14 @@ class Termisu
   # termisu.timer_interval = 8.milliseconds # 120 FPS
   # ```
   def timer_interval=(interval : Time::Span) : Time::Span
-    case source = @timer_source
-    when Event::Source::Timer       then source.interval = interval
-    when Event::Source::SystemTimer then source.interval = interval
-    else
-      raise "Timer not enabled. Call enable_timer or enable_system_timer first."
-    end
-    interval
+    source = @timer_source
+    raise "Timer not enabled. Call enable_timer or enable_system_timer first." unless source
+    source.interval = interval
   end
 
   # Returns the current timer interval, or nil if timer is disabled.
   def timer_interval : Time::Span?
-    case source = @timer_source
-    when Event::Source::Timer       then source.interval
-    when Event::Source::SystemTimer then source.interval
-    else                                 nil
-    end
+    @timer_source.try(&.interval)
   end
 
   # --- Custom Event Source API ---
