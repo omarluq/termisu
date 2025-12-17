@@ -1,0 +1,10 @@
+container:
+  image: crystallang/crystal:latest
+spec_task:
+  env:
+    TERM: xterm-256color
+  shard_cache:
+    fingerprint_script: cat shard.yml
+    populate_script: shards install
+    folder: lib
+  spec_script: crystal spec -v
