@@ -20,7 +20,11 @@
 #
 # All kevent calls retry on EINTR for signal interrupt handling.
 {% if flag?(:darwin) || flag?(:freebsd) || flag?(:openbsd) %}
-  require "c/sys/event"
+  {% if flag?(:darwin) %}
+    require "c/sys/event"
+  {% else %}
+    require "../../lib_c/kqueue"
+  {% end %}
 
   class Termisu::Event::Poller::Kqueue < Termisu::Event::Poller
     Log = Termisu::Logs::Event
