@@ -53,7 +53,8 @@ class Termisu
     @resize_source = Event::Source::Resize.new(-> { @terminal.size })
 
     # Timer source is optional (nil by default)
-    @timer_source = nil.as(Event::Source::Timer?)
+    # Can be either sleep-based Timer or kernel-level SystemTimer
+    @timer_source = nil.as(Event::Source?)
 
     # Create and configure event loop
     @event_loop = Event::Loop.new
@@ -344,10 +345,14 @@ class Termisu
 
   # --- Timer Support ---
 
-  # Enables the timer source for animation and game loops.
+  # Enables the sleep-based timer source for animation and game loops.
   #
   # When enabled, Tick events are emitted at the specified interval.
   # Default interval is 16ms (~60 FPS).
+  #
+  # Note: The sleep-based timer has ~5ms overhead per frame due to
+  # processing time not being compensated. For more precise timing,
+  # use `enable_system_timer` which uses kernel-level timers.
   #
   # Parameters:
   # - interval: Time between tick events (default: 16ms for 60 FPS)
@@ -376,6 +381,50 @@ class Termisu
     @event_loop.add_source(timer)
 
     Log.debug { "Timer enabled with interval: #{interval}" }
+
+    self
+  end
+
+  # Enables the kernel-level system timer for precise animation timing.
+  #
+  # Uses platform-specific timers for high-precision tick events:
+  # - Linux: timerfd with epoll (<1ms precision)
+  # - macOS/BSD: kqueue EVFILT_TIMER
+  # - Fallback: monotonic clock with poll
+  #
+  # The SystemTimer compensates for processing time, maintaining consistent
+  # frame rates. It also provides `missed_ticks` count for detecting dropped
+  # frames when processing takes longer than the interval.
+  #
+  # Parameters:
+  # - interval: Time between tick events (default: 16ms for 60 FPS)
+  #
+  # Example:
+  # ```
+  # termisu.enable_system_timer(16.milliseconds) # 60 FPS with kernel timing
+  #
+  # termisu.each_event do |event|
+  #   case event
+  #   when Termisu::Event::Tick
+  #     if event.missed_ticks > 0
+  #       puts "Dropped #{event.missed_ticks} frame(s)"
+  #     end
+  #     termisu.render
+  #   when Termisu::Event::Key
+  #     break if event.key.escape?
+  #   end
+  # end
+  #
+  # termisu.disable_timer
+  # ```
+  def enable_system_timer(interval : Time::Span = 16.milliseconds) : self
+    return self if @timer_source
+
+    timer = Event::Source::SystemTimer.new(interval)
+    @timer_source = timer
+    @event_loop.add_source(timer)
+
+    Log.debug { "SystemTimer enabled with interval: #{interval}" }
 
     self
   end
@@ -413,16 +462,22 @@ class Termisu
   # termisu.timer_interval = 8.milliseconds # 120 FPS
   # ```
   def timer_interval=(interval : Time::Span) : Time::Span
-    if timer = @timer_source
-      timer.interval = interval
+    case source = @timer_source
+    when Event::Source::Timer       then source.interval = interval
+    when Event::Source::SystemTimer then source.interval = interval
     else
-      raise "Timer not enabled. Call enable_timer first."
+      raise "Timer not enabled. Call enable_timer or enable_system_timer first."
     end
+    interval
   end
 
   # Returns the current timer interval, or nil if timer is disabled.
   def timer_interval : Time::Span?
-    @timer_source.try(&.interval)
+    case source = @timer_source
+    when Event::Source::Timer       then source.interval
+    when Event::Source::SystemTimer then source.interval
+    else                                 nil
+    end
   end
 
   # --- Custom Event Source API ---
