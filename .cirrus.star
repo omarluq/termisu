@@ -1,12 +1,11 @@
 """Cirrus CI configuration for Termisu."""
 
-load("github.com/cirrus-modules/helpers", "task", "container", "cache", "script")
+load("github.com/cirrus-modules/helpers", "task", "container", "macos_instance", "freebsd_instance", "cache", "script")
 
 # Crystal configuration
-IMAGE = "crystallang/crystal:latest"
-
-def crystal_container():
-    return container(IMAGE)
+CRYSTAL_IMAGE = "crystallang/crystal:latest"
+MACOS_IMAGE = "ghcr.io/cirruslabs/macos-runner:sonoma"
+FREEBSD_IMAGE = "freebsd-15-0-amd64-ufs"
 
 def crystal_env():
     return {"TERM": "xterm-256color"}
@@ -27,11 +26,14 @@ def bin_cache():
         populate_script="shards build ameba",
     )
 
-# Tasks
+# =============================================================================
+# Lint & Format Tasks (Linux only)
+# =============================================================================
+
 def format_task():
     return task(
         name="format",
-        instance=crystal_container(),
+        instance=container(CRYSTAL_IMAGE),
         env=crystal_env(),
         instructions=[
             shards_cache(),
@@ -42,7 +44,7 @@ def format_task():
 def lint_task():
     return task(
         name="lint",
-        instance=crystal_container(),
+        instance=container(CRYSTAL_IMAGE),
         env=crystal_env(),
         instructions=[
             shards_cache(),
@@ -51,10 +53,15 @@ def lint_task():
         ],
     )
 
-def spec_task():
+# =============================================================================
+# Spec Tasks (Multi-platform)
+# =============================================================================
+
+def spec_linux_task():
+    """Run specs on Linux (epoll backend)."""
     return task(
-        name="spec",
-        instance=crystal_container(),
+        name="spec_linux",
+        instance=container(CRYSTAL_IMAGE),
         env=crystal_env(),
         instructions=[
             shards_cache(),
@@ -63,9 +70,59 @@ def spec_task():
         ],
     )
 
+def spec_macos_task():
+    """Run specs on macOS (kqueue backend)."""
+    return task(
+        name="spec_macos",
+        instance=macos_instance(MACOS_IMAGE),
+        env=crystal_env(),
+        instructions=[
+            script("install_crystal", "brew install crystal"),
+            shards_cache(),
+            script("install_expect", "brew install expect"),
+            script("spec", "unbuffer crystal spec -v"),
+        ],
+    )
+
+def spec_freebsd_task():
+    """Run specs on FreeBSD (kqueue backend)."""
+    return task(
+        name="spec_freebsd",
+        instance=freebsd_instance(image_family=FREEBSD_IMAGE),
+        env=crystal_env(),
+        instructions=[
+            script("install_crystal", "pkg install -y crystal shards"),
+            shards_cache(),
+            script("install_expect", "pkg install -y expect"),
+            script("spec", "unbuffer crystal spec -v"),
+        ],
+    )
+
+# def spec_windows_task():
+#     """Run specs on Windows (poll backend)."""
+#     return task(
+#         name="spec_windows",
+#         instance=windows_container(),
+#         env=crystal_env(),
+#         instructions=[
+#             script("install_crystal", "choco install crystal -y"),
+#             shards_cache(),
+#             script("spec", "crystal spec -v"),
+#         ],
+#     )
+
+# =============================================================================
+# Main
+# =============================================================================
+
 def main(ctx):
     return [
+        # Lint & format (Linux only)
         format_task(),
         lint_task(),
-        spec_task(),
+        # Specs (multi-platform)
+        spec_linux_task(),
+        spec_macos_task(),
+        spec_freebsd_task(),
+        # spec_windows_task(),  # TODO: Enable when Crystal Windows support matures
     ]
