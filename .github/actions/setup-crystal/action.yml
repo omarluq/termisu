@@ -1,0 +1,32 @@
+name: Setup Crystal
+description: Install Crystal, cache shards, and install dependencies
+inputs:
+  crystal-version:
+    description: Crystal version to install
+    required: false
+    default: latest
+  install-shards:
+    description: Whether to run shards install
+    required: false
+    default: "true"
+runs:
+  using: composite
+  steps:
+    - name: Install Crystal
+      uses: crystal-lang/install-crystal@v1
+      with:
+        crystal: ${{ inputs.crystal-version }}
+    - name: Cache Crystal shards
+      if: inputs.install-shards == 'true'
+      uses: actions/cache@v5
+      with:
+        path: |
+          lib
+          ~/.cache/crystal
+        key: ${{ runner.os }}-shards-${{ hashFiles('shard.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-shards-
+    - name: Install shards dependencies
+      if: inputs.install-shards == 'true'
+      shell: bash
+      run: shards install
