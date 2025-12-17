@@ -192,9 +192,24 @@ describe Termisu::Event::Poller::Poll do
       writer.print("test")
       writer.flush
 
-      # This should timeout since we're only watching for write and fd is readable
-      result = poller.wait(20.milliseconds)
-      result.should be_nil
+      # This should timeout since we're only watching for write and fd is readable.
+      #
+      # NOTE: FreeBSD returns POLLOUT immediately for pipe read-ends registered
+      # for write events. This is unspecified POSIX behavior - the spec doesn't
+      # define what happens when polling a read-only fd for writability.
+      #
+      # Platform interpretations differ:
+      # - FreeBSD: "operation won't block" = true (fails with EBADF, doesn't block)
+      # - Linux: "operation can succeed" = false (write can never succeed)
+      #
+      # Both interpretations are valid. See:
+      # - POSIX poll(): https://pubs.opengroup.org/onlinepubs/9699919799/functions/poll.html
+      # - Platform variance: https://www.greenend.org.uk/rjk/tech/poll.html
+      # - FreeBSD fixes: https://reviews.freebsd.org/D24528
+      {% unless flag?(:freebsd) %}
+        result = poller.wait(20.milliseconds)
+        result.should be_nil
+      {% end %}
 
       reader.close
       writer.close
