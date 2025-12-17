@@ -168,6 +168,7 @@ event.changed?                     # Dimensions changed?
 event.frame                        # Frame counter (UInt64)
 event.elapsed                      # Time since timer started
 event.delta                        # Time since last tick
+event.missed_ticks                 # Ticks missed due to slow processing (UInt64)
 
 # Event::ModeChange - Terminal mode changed
 event.mode                         # New mode (Terminal::Mode)
@@ -194,11 +195,49 @@ termisu.enhanced_keyboard?
 ### Timer (for animations)
 
 ```crystal
+# Sleep-based timer (portable, good for most use cases)
 termisu.enable_timer(16.milliseconds)    # ~60 FPS tick events
-termisu.disable_timer
+
+# Kernel-level timer (Linux timerfd/epoll, macOS kqueue)
+# More precise timing, better for high frame rates
+termisu.enable_system_timer(16.milliseconds)
+
+termisu.disable_timer                    # Disable either timer type
 termisu.timer_enabled?
-termisu.timer_interval = 8.milliseconds  # Change interval
+termisu.timer_interval = 8.milliseconds  # Change interval at runtime
 ```
+
+#### Timer Comparison
+
+| Feature | Timer (sleep) | SystemTimer (kernel) |
+|---------|---------------|----------------------|
+| Mechanism | `sleep` in fiber | timerfd/epoll (Linux), kqueue (macOS) |
+| Precision | ~1-2ms jitter | Sub-millisecond |
+| Max FPS | ~48 FPS reliable | ~90 FPS reliable |
+| Missed tick detection | No | Yes (`event.missed_ticks`) |
+| Portability | All platforms | Linux, macOS, BSD |
+| Best for | Simple animations, low FPS | Games, smooth animations |
+
+#### Benchmark Results
+
+| Target FPS | Target Interval | Timer (sleep) | SystemTimer (kernel) | Notes |
+|------------|-----------------|---------------|----------------------|-------|
+| 30 | 33ms | ⚠️ 41ms (~24 FPS) | ✅ 33ms (~30 FPS) | Sleep overshoots |
+| 60 | 16ms | ⚠️ 21ms (~48 FPS) | ✅ 17ms (~60 FPS) | Sleep hits ~21ms floor |
+| 90 | 11ms | ⚠️ 21ms (~48 FPS) | ✅ 11ms (~90 FPS) | Sleep stuck at floor |
+| 120 | 8ms | ⚠️ 11ms (~91 FPS) | ⚠️ 11ms (~91 FPS) | Both hit I/O ceiling |
+| 144 | 7ms | ⚠️ 11ms (~91 FPS) | ⚠️ 11ms (~91 FPS) | Same ceiling |
+
+**Key Findings:**
+- **SystemTimer accuracy:** Kernel timers hit target intervals precisely up to ~90 FPS
+- **Sleep timer quirks:** Has a ~21ms floor at mid-range targets, overshoots at low FPS
+- **Terminal I/O ceiling:** Both timers cap at ~91 FPS (~11ms) due to render/flush overhead
+- **Missed ticks:** SystemTimer detects and reports frame drops via `missed_ticks` field
+
+**Open Questions:**
+- Why does sleep timer overshoot at 30 FPS (41ms vs 33ms target)?
+- Can terminal I/O be batched more aggressively to push the ~91 FPS ceiling higher?
+- Would async rendering with double-buffered I/O help reduce the ~11ms floor?
 
 ### Terminal Modes
 
@@ -450,7 +489,7 @@ mods.meta?
 - **Event System** - Unified Key/Mouse events, Kitty protocol, modifyOtherKeys
 - **Async Event Loop** - Crystal fiber/channel-based multiplexer
 - **Resize Events** - SIGWINCH-based with debouncing
-- **Timer Events** - Configurable tick interval for animations
+- **Timer Events** - Sleep-based and kernel-level (timerfd/kqueue) timers
 - **Terminal Modes** - Cooked, cbreak, password modes with seamless TUI restoration
 - **Performance** - RenderState optimization, escape sequence batching
 - **Terminfo tparm** - Full processor with conditionals, stack, variables
