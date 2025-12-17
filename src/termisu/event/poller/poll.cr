@@ -34,9 +34,12 @@ lib LibC
 
   fun poll(fds : Pollfd*, nfds : UInt64, timeout : Int32) : Int32
 
-  POLLIN  = 0x0001_i16
-  POLLOUT = 0x0004_i16
-  POLLERR = 0x0008_i16
+  POLLIN   = 0x0001_i16
+  POLLPRI  = 0x0002_i16
+  POLLOUT  = 0x0004_i16
+  POLLERR  = 0x0008_i16
+  POLLHUP  = 0x0010_i16
+  POLLNVAL = 0x0020_i16
 end
 
 class Termisu::Event::Poller::Poll < Termisu::Event::Poller
@@ -278,12 +281,18 @@ class Termisu::Event::Poller::Poll < Termisu::Event::Poller
 
   # Converts poll revents to PollResult::Type
   private def poll_to_result_type(revents : Int16) : PollResult::Type
-    if (revents & LibC::POLLERR) != 0
+    if (revents & (LibC::POLLERR | LibC::POLLNVAL)) != 0
+      PollResult::Type::FDError
+    elsif (revents & LibC::POLLHUP) != 0
+      # Hangup - treat as error for consistency
       PollResult::Type::FDError
     elsif (revents & LibC::POLLOUT) != 0
       PollResult::Type::FDWritable
-    else
+    elsif (revents & LibC::POLLIN) != 0
       PollResult::Type::FDReadable
+    else
+      # Unknown event - treat as error
+      PollResult::Type::FDError
     end
   end
 end
