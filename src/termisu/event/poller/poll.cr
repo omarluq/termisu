@@ -197,14 +197,15 @@ class Termisu::Event::Poller::Poll < Termisu::Event::Poller
     timer_timeout = timer_timeout_ms
     user_ms = user_timeout.try(&.total_milliseconds.to_i.clamp(0, Int32::MAX))
 
-    if timer_timeout.nil? && user_ms.nil?
+    case {timer_timeout, user_ms}
+    when {nil, nil}
       -1 # Infinite wait
-    elsif timer_timeout.nil?
-      user_ms.as(Int32)
-    elsif user_ms.nil?
+    when {nil, Int32}
+      user_ms
+    when {Int32, nil}
       timer_timeout
     else
-      Math.min(timer_timeout, user_ms.as(Int32))
+      Math.min(timer_timeout.as(Int32), user_ms.as(Int32))
     end
   end
 

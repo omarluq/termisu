@@ -14,6 +14,11 @@
 #       # Use delta for frame-rate independent animations
 #       position += velocity * event.delta.total_seconds
 #       puts "Frame #{event.frame}, elapsed: #{event.elapsed}"
+#
+#       # Check for missed frames (SystemTimer only)
+#       if event.missed_ticks > 0
+#         puts "Warning: #{event.missed_ticks} frame(s) dropped"
+#       end
 #     when Termisu::Event::Key
 #       break if event.key.escape?
 #     end
@@ -32,10 +37,16 @@ struct Termisu::Event::Tick
   # Frame counter (starts at 0, increments each tick).
   getter frame : UInt64
 
+  # Number of missed timer ticks since last event.
+  # Non-zero indicates frame drops. Only available with SystemTimer;
+  # sleep-based Timer always reports 0.
+  getter missed_ticks : UInt64
+
   def initialize(
     @elapsed : Time::Span,
     @delta : Time::Span,
     @frame : UInt64,
+    @missed_ticks : UInt64 = 0_u64,
   )
   end
 end
