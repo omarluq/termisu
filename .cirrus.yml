@@ -7,4 +7,5 @@ spec_task:
     fingerprint_script: cat shard.yml
     populate_script: shards install
     folder: lib
-  spec_script: crystal spec -v
+  install_expect_script: apt-get update && apt-get install -y expect
+  spec_script: unbuffer crystal spec -v
