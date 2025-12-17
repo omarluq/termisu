@@ -1,7 +1,7 @@
 # LibC bindings for kqueue on BSD systems (FreeBSD, OpenBSD).
 #
-# Crystal's stdlib only provides kqueue bindings for Darwin.
-# This file provides cross-BSD kqueue support.
+# Crystal's stdlib provides kqueue constants (EVFILT_*, EV_*) but not
+# the kqueue/kevent functions or Kevent struct for FreeBSD/OpenBSD.
 #
 # FreeBSD kevent struct (from sys/event.h):
 #   uintptr_t ident     - identifier for this event
@@ -13,22 +13,6 @@
 
 {% if flag?(:freebsd) || flag?(:openbsd) %}
   lib LibC
-    # kqueue event filters
-    EVFILT_READ   = -1_i16
-    EVFILT_WRITE  = -2_i16
-    EVFILT_TIMER  = -7_i16
-    EVFILT_SIGNAL = -6_i16
-
-    # kqueue event flags
-    EV_ADD     = 0x0001_u16
-    EV_DELETE  = 0x0002_u16
-    EV_ENABLE  = 0x0004_u16
-    EV_DISABLE = 0x0008_u16
-    EV_ONESHOT = 0x0010_u16
-    EV_CLEAR   = 0x0020_u16
-    EV_EOF     = 0x8000_u16
-    EV_ERROR   = 0x4000_u16
-
     # kevent structure - matches FreeBSD sys/event.h
     struct Kevent
       ident : SizeT   # uintptr_t - identifier for this event
