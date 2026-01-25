@@ -1,0 +1,202 @@
+# Termisu LLM Context
+
+**Project:** Terminal UI library for Crystal
+**Version:** 0.3.0
+**Language:** Crystal >= 1.18.2
+
+## Summary
+
+Termisu is a pure Crystal terminal UI library with cell-based double-buffered rendering, async event multiplexing, and zero runtime dependencies. Inspired by termbox.
+
+## Architecture
+
+```
+Termisu (facade)
+    |
+    +-- Terminal (I/O + rendering)
+    |       |-- Backend (TTY + Termios)
+    |       |-- Terminfo (capability database)
+    |       +-- Buffer (double-buffered cells)
+    |               |-- Cell (char + fg + bg + attr)
+    |               |-- Cursor (position + visibility)
+    |               +-- RenderState (escape sequence optimization)
+    |
+    +-- Event::Loop (async multiplexer)
+            |-- Event::Source::Input (keyboard/mouse)
+            |-- Event::Source::Resize (SIGWINCH)
+            +-- Event::Source::Timer (animation ticks)
+```
+
+## Public API
+
+### Initialization
+```crystal
+termisu = Termisu.new  # Raw mode + alternate screen
+termisu.close          # Always call in ensure block
+```
+
+### Rendering
+```crystal
+termisu.set_cell(x, y, 'A', fg: Color.red, bg: Color.black, attr: Attribute::Bold)
+termisu.clear                 # Clear buffer
+termisu.render                # Diff-based render
+termisu.sync                  # Full redraw
+```
+
+### Cursor
+```crystal
+termisu.set_cursor(x, y)
+termisu.hide_cursor
+termisu.show_cursor
+```
+
+### Events
+```crystal
+# Blocking
+event = termisu.poll_event
+
+# With timeout (ms or Time::Span)
+event = termisu.poll_event(100)
+event = termisu.poll_event(100.milliseconds)
+
+# Non-blocking
+event = termisu.try_poll_event
+
+# Iterator
+termisu.each_event do |event|
+  case event
+  when Termisu::Event::Key
+    break if event.key.escape?
+  when Termisu::Event::Mouse
+    termisu.set_cell(event.x, event.y, '*')
+  when Termisu::Event::Resize
+    termisu.sync
+  when Termisu::Event::Tick
+    # Animation frame
+  end
+  termisu.render
+end
+```
+
+### Event Types
+- `Event::Key` - `event.key`, `event.char`, `event.modifiers`, `event.ctrl?`, `event.alt?`
+- `Event::Mouse` - `event.x`, `event.y`, `event.button`, `event.press?`, `event.wheel?`
+- `Event::Resize` - `event.width`, `event.height`, `event.changed?`
+- `Event::Tick` - `event.frame`, `event.elapsed`, `event.delta`, `event.missed_ticks`
+- `Event::ModeChange` - `event.mode`, `event.previous_mode`, `event.to_raw?`
+
+### Timer (Animation)
+```crystal
+# Sleep-based (portable, ~60 FPS)
+termisu.enable_timer(16.milliseconds)
+
+# Kernel-level (Linux timerfd/macOS kqueue, sub-millisecond precision)
+termisu.enable_system_timer(16.milliseconds)
+
+termisu.timer_interval = 8.milliseconds  # Runtime change
+termisu.disable_timer
+```
+
+### Terminal Modes
+```crystal
+# Shell-out (exits alternate screen)
+termisu.suspend do
+  system("vim file.txt")
+end
+
+# Password input (no echo)
+password = termisu.with_password_mode do
+  print "Password: "
+  gets
+end
+
+# Cbreak (char-by-char with echo)
+termisu.with_cbreak_mode do
+  STDIN.read_char
+end
+
+# Custom mode
+custom = Terminal::Mode::Echo | Terminal::Mode::Signals
+termisu.with_mode(custom) do
+  # Custom handling
+end
+```
+
+### Mouse & Keyboard
+```crystal
+termisu.enable_mouse
+termisu.enable_enhanced_keyboard  # Kitty protocol for Tab vs Ctrl+I
+```
+
+## Colors
+```crystal
+Color.red, Color.green, Color.blue       # ANSI-8
+Color.bright_red, Color.bright_green     # Bright variants
+Color.ansi256(208)                       # 256-color
+Color.rgb(255, 128, 64)                  # TrueColor
+Color.from_hex("#FF8040")                # Hex string
+color.to_rgb, color.to_ansi256, color.to_ansi8
+```
+
+## Attributes
+```crystal
+Attribute::Bold, Attribute::Dim, Attribute::Italic, Attribute::Underline
+Attribute::Blink, Attribute::Reverse, Attribute::Hidden, Attribute::Strikethrough
+attr = Attribute::Bold | Attribute::Underline
+```
+
+## Key Matching
+```crystal
+# Special keys
+event.key.escape?, event.key.enter?, event.key.tab?, event.key.backspace?
+event.key.up?, event.key.down?, event.key.left?, event.key.right?
+event.key.home?, event.key.end?, event.key.page_up?, event.key.page_down?
+event.key.f1? - event.key.f24?
+
+# Letters (case-insensitive)
+event.key.q?, event.key.lower_q?, event.key.upper_q?
+
+# Modifiers
+event.ctrl?, event.alt?, event.shift?, event.meta?
+event.ctrl_c?, event.ctrl_d?, event.ctrl_q?
+```
+
+## File Structure
+- `src/termisu.cr` - Main facade
+- `src/termisu/terminal.cr` - Terminal I/O
+- `src/termisu/buffer.cr` - Double buffering
+- `src/termisu/event/loop.cr` - Event multiplexer
+- `src/termisu/input/parser.cr` - Escape sequence parser
+- `src/termisu/terminfo/` - Terminal capabilities
+- `spec/` - Test suite (mirrors src/)
+- `examples/` - Demo programs
+
+## Development Commands
+```bash
+bin/hace spec      # Run tests
+bin/hace format    # Format code
+bin/hace ameba     # Run linter
+bin/hace all       # Format + lint + test
+bin/hace demo      # Run main demo
+bin/hace bench     # Benchmarks (release mode)
+```
+
+## Logging
+```bash
+TERMISU_LOG_LEVEL=debug    # trace/debug/info/warn/error/fatal/none
+TERMISU_LOG_FILE=/tmp/termisu.log
+TERMISU_LOG_SYNC=true      # sync for real-time debugging
+```
+
+## Testing Patterns
+- Mock renderers in `spec/support/mock_renderers.cr`
+- Pipe helpers in `spec/support/pipe_helpers.cr`
+- Event source mocks in `spec/support/mock_sources.cr`
+- Tests mirror src/ structure in spec/termisu/
+
+## Key Design Decisions
+- Pure Crystal - No C bindings
+- Double buffering - Flicker-free rendering
+- Cell-based - Fine-grained control
+- Union types for events - Type-safe `Event::Any`
+- Fiber-based async - Crystal native concurrency
