@@ -26,3 +26,6 @@
 /e2e/node_modules/
 /e2e/tui-traces/
 /e2e/test-results/
+
+
+.claude/tsc-cache/
