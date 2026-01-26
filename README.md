@@ -6,7 +6,7 @@
 [![Tests](https://img.shields.io/github/actions/workflow/status/omarluq/termisu/test.yml?style=flat&labelColor=24292e&label=Tests&logo=github&logoColor=white)](https://github.com/omarluq/termisu/actions/workflows/test.yml)
 [![Version](https://img.shields.io/github/release/omarluq/termisu?style=flat&labelColor=24292e&color=28a745&label=Version&logo=semver&logoColor=white)](https://github.com/omarluq/termisu/releases)\
 [![codecov](https://img.shields.io/codecov/c/github/omarluq/termisu?style=flat&labelColor=24292e&logo=codecov&logoColor=white&token=YW23EDL5T5)](https://codecov.io/gh/omarluq/termisu)
-[![Docs](https://img.shields.io/badge/Docs-API%20Reference-5e5086?style=flat&labelColor=24292e&logo=gitbook&logoColor=white)](https://omarluq.github.io/termisu/)
+[![Docs](https://img.shields.io/badge/Docs-API%20Reference-5e5086?style=flat&labelColor=24292e&logo=gitbook&logoColor=white)](https://crystaldoc.info/github/omarluq/termisu)
 [![Maintained](https://img.shields.io/badge/Maintained%3F-yes-28a745?style=flat&labelColor=24292e&logo=checkmarx&logoColor=white)](https://github.com/omarluq/termisu)
 [![Made with Love](https://img.shields.io/badge/Made%20with-Love-ff69b4?style=flat&labelColor=24292e&logo=githubsponsors&logoColor=white)](https://github.com/omarluq/termisu)
 <!--  [![All Contributors](https://img.shields.io/github/all-contributors/omarluq/termisu?style=flat&labelColor=24292e&color=7f8c8d)](https://github.com/omarluq/termisu/graphs/contributors)-->
