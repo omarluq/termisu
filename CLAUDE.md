@@ -176,13 +176,14 @@ src/termisu/
         ├── processor.cr    # Stack-based interpreter
         ├── operations.cr   # O(1) operation dispatch
         ├── conditional.cr  # If-then-else handling
-        ├── variables.rs    # Variable storage
+        ├── variables.cr    # Variable storage
         └── output.cr       # Output formatting
 ```
 
 ## Key Patterns
 
 ### Event Loop Pattern
+
 ```crystal
 termisu = Termisu.new
 termisu.enable_timer(16.milliseconds)  # Optional: for animation
@@ -203,6 +204,7 @@ termisu.close
 ```
 
 ### Custom Event Source
+
 ```crystal
 class MySource < Termisu::Event::Source
   def start(output : Channel(Event::Any)) : Nil
@@ -222,16 +224,18 @@ Termisu supports switching between terminal modes for shell-out operations,
 password input, and other scenarios requiring different terminal behavior.
 
 **Available Modes:**
-| Mode       | Behavior                                      | Use Case                    |
-|------------|-----------------------------------------------|-----------------------------|
-| raw        | No processing, char-by-char                   | Full TUI control (default)  |
-| cooked     | Line buffering, echo, signals                 | Shell-out, external programs|
-| cbreak     | Char-by-char with echo and signals            | Interactive prompts         |
-| password   | Line buffering, no echo                       | Secure password entry       |
-| semi_raw   | Char-by-char with signals (Ctrl+C works)      | TUI with graceful exit      |
-| full_cooked| Full terminal driver processing               | Complete shell emulation    |
+
+| Mode        | Behavior                                 | Use Case                     |
+| ----------- | ---------------------------------------- | ---------------------------- |
+| raw         | No processing, char-by-char              | Full TUI control (default)   |
+| cooked      | Line buffering, echo, signals            | Shell-out, external programs |
+| cbreak      | Char-by-char with echo and signals       | Interactive prompts          |
+| password    | Line buffering, no echo                  | Secure password entry        |
+| semi_raw    | Char-by-char with signals (Ctrl+C works) | TUI with graceful exit       |
+| full_cooked | Full terminal driver processing          | Complete shell emulation     |
 
 **Shell-out Pattern (recommended):**
+
 ```crystal
 termisu.suspend do
   # Exits alternate screen, enables cooked mode
@@ -241,6 +245,7 @@ end
 ```
 
 **Password Input:**
+
 ```crystal
 password = termisu.with_password_mode do
   print "Password: "
@@ -249,6 +254,7 @@ end
 ```
 
 **Custom Mode Combinations:**
+
 ```crystal
 # Char-by-char with echo but no signals
 custom = Termisu::Terminal::Mode::Echo
@@ -258,6 +264,7 @@ end
 ```
 
 **Mode Change Events:**
+
 ```crystal
 termisu.each_event do |event|
   case event
@@ -272,37 +279,47 @@ end
 The `.claude/` directory contains specialized resources for AI-assisted development:
 
 ### Skills (8 total)
+
 **TUI Development:**
+
 - `termisu-tui.md` - TUI patterns and idioms
 - `termisu-input.md` - Keyboard, mouse, and input mode patterns
 - `termisu-async.md` - Fiber-based async patterns
 
 **Development Workflow:**
+
 - `crystal-testing.md` - Crystal spec testing patterns
 - `termisu-workflow.md` - Development commands and build system
 - `termisu-performance.md` - Profiling, benchmarking, optimization
 - `termisu-debugging.md` - Debugging techniques and troubleshooting
 
 ### Rules (8 total)
+
 **Crystal Conventions:**
+
 - `crystal-conventions.md` - Naming, formatting, code structure
 - `crystal-patterns.md` - Advanced idioms (struct vs class, generics, macros)
 - `crystal-ffi.md` - LibC bindings and platform-specific code
 - `crystal-concurrency.md` - Fiber coordination and thread safety
 
 **TUI Patterns:**
+
 - `terminal-patterns.md` - Mode switching and cleanup
 - `event-loop-patterns.md` - Async event handling
 - `rendering-patterns.md` - Double-buffering and optimization
 
 **Quality:**
+
 - `commit-workflow.md` - Git standards, linting, formatting
 
 ### Agents (10 total)
+
 **For TUI Application Development:**
+
 - `tui-developer.md` - Build TUI applications using Termisu
 
 **For Library Development (Termisu Core):**
+
 - `termisu-core-dev.md` - Implement Termisu core components
 - `event-system-agent.md` - Event loop and custom event sources
 - `terminologist.md` - Terminfo database and capabilities
@@ -313,32 +330,33 @@ The `.claude/` directory contains specialized resources for AI-assisted developm
 - `documentation-writer.md` - Technical documentation specialist
 
 **For Testing:**
+
 - `crystal-tester.md` - Crystal spec testing patterns
 
 ### Quick Reference by Task
 
-| Task | Use |
-|------|-----|
-| **Build TUI app** | `termisu-tui.md`, `tui-developer.md` |
-| **Handle input** | `termisu-input.md` |
-| **Async patterns** | `termisu-async.md`, `crystal-concurrency.md` |
-| **Write tests** | `crystal-testing.md`, `crystal-tester.md` |
-| **Profile/optimize** | `termisu-performance.md`, `rendering-optimization-agent.md` |
-| **Debug issues** | `termisu-debugging.md` |
-| **Add feature** | `termisu-core-dev.md` + domain agent |
-| **Platform code** | `crystal-ffi.md`, `crystal-patterns.md` |
-| **Before committing** | `commit-workflow.md` |
-| **Write docs** | `documentation-writer.md` |
+| Task                  | Use                                                         |
+| --------------------- | ----------------------------------------------------------- |
+| **Build TUI app**     | `termisu-tui.md`, `tui-developer.md`                        |
+| **Handle input**      | `termisu-input.md`                                          |
+| **Async patterns**    | `termisu-async.md`, `crystal-concurrency.md`                |
+| **Write tests**       | `crystal-testing.md`, `crystal-tester.md`                   |
+| **Profile/optimize**  | `termisu-performance.md`, `rendering-optimization-agent.md` |
+| **Debug issues**      | `termisu-debugging.md`                                      |
+| **Add feature**       | `termisu-core-dev.md` + domain agent                        |
+| **Platform code**     | `crystal-ffi.md`, `crystal-patterns.md`                     |
+| **Before committing** | `commit-workflow.md`                                        |
+| **Write docs**        | `documentation-writer.md`                                   |
 
 ## File Index
 
-| Path | Purpose |
-|------|---------|
-| `.claude/INDEX.md` | Meta-framework overview |
-| `.claude/AGENTS.md` | Agent directory |
-| `.claude/skills/*.md` | Reusable workflows |
-| `.claude/rules/*.md` | Code conventions |
-| `.claude/agents/*.md` | Specialist agents |
-| `PROJECT_INDEX.md` | Project overview (LLM-optimized) |
-| `README.md` | User-facing documentation |
-| `CONTRIBUTING.md` | Contribution guidelines |
+| Path                  | Purpose                          |
+| --------------------- | -------------------------------- |
+| `.claude/INDEX.md`    | Meta-framework overview          |
+| `.claude/AGENTS.md`   | Agent directory                  |
+| `.claude/skills/*.md` | Reusable workflows               |
+| `.claude/rules/*.md`  | Code conventions                 |
+| `.claude/agents/*.md` | Specialist agents                |
+| `PROJECT_INDEX.md`    | Project overview (LLM-optimized) |
+| `README.md`           | User-facing documentation        |
+| `CONTRIBUTING.md`     | Contribution guidelines          |
