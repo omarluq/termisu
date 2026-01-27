@@ -17,7 +17,7 @@ A pure Crystal library for writing text-based user interfaces. Zero runtime depe
 *(See .planning/codebase/ARCHITECTURE.md for complete system overview)*
 *(See TODO.md for detailed priority tracking)*
 
-**Terminal Control** — Raw mode, alternate screen, state caching, EINTR handling, DEC 2026
+**Terminal Control** — Raw mode, alternate screen, state caching, EINTR handling, DEC private mode 2026 (synchronized updates)
 **Rendering** — Double-buffered cell grid, diff rendering, RenderState optimization
 **Input** — 170+ keys, modifiers, CSI/SS3/Kitty protocols, mouse (SGR + normal)
 **Events** — Event::Loop multiplexer, Input/Resize/Timer sources, custom source API
