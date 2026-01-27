@@ -163,7 +163,46 @@
       Log.debug { "Kqueue poller closed" }
     end
 
-    # Internal wait with optional timeout
+    # Internal wait with optional timeout (blocking when nil)
+    private def wait_internal(timeout : Nil) : PollResult?
+      return nil if @closed
+
+      events = uninitialized LibC::Kevent[MAX_EVENTS]
+
+      loop do
+        n = LibC.kevent(@kq, nil, 0, events.to_unsafe, MAX_EVENTS, nil)
+
+        if n < 0
+          if Errno.value == Errno::EINTR
+            next
+          end
+          raise IO::Error.from_errno("kevent wait")
+        end
+
+        return nil if n == 0 # Timeout
+
+        event = events[0]
+
+        case event.filter
+        when LibC::EVFILT_TIMER
+          expirations = event.data.to_u64
+          expirations = 1_u64 if expirations == 0
+          return PollResult.new(
+            type: PollResult::Type::Timer,
+            timer_handle: TimerHandle.new(event.ident.to_u64),
+            timer_expirations: expirations
+          )
+        when LibC::EVFILT_READ
+          return PollResult.new(type: PollResult::Type::FDReadable, fd: event.ident.to_i32)
+        when LibC::EVFILT_WRITE
+          return PollResult.new(type: PollResult::Type::FDWritable, fd: event.ident.to_i32)
+        else
+          # Includes EVFILT_SIGNAL and error conditions
+          return PollResult.new(type: PollResult::Type::FDError, fd: event.ident.to_i32)
+        end
+      end
+    end
+
     private def wait_internal(timeout : LibC::Timespec*) : PollResult?
       return nil if @closed
 
