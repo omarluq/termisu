@@ -109,7 +109,7 @@ end
 | Zero deps | ✅ | ✅ | ✅ | ❌ | ❌ |
 | Windows support | ❌ | ✅* | ✅ | ✅ | ✅ |
 
-*Termbox C has Windows fork, main repo nix-only
+*Termbox C has Windows fork, main repo nix-only*
 
 ## Feature Gaps (Prioritized)
 
