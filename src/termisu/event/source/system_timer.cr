@@ -129,10 +129,15 @@ class Termisu::Event::Source::SystemTimer < Termisu::Event::Source
     current_last_tick = last_tick
 
     while @running.get
-      # Wait for timer event - no timeout needed since timerfd handles timing
-      # The Fiber.yield allows Input fiber to process key events
+      # Yield to allow other fibers (like Input) to run before blocking on poller.
+      # This is important for fiber scheduler cooperation - without it, the timer
+      # fiber could monopolize CPU time on systems with high timer frequency.
       Fiber.yield
-      result = poller.wait(@interval)
+
+      # Wait for timer event with no timeout - timer already registered via add_timer.
+      # Passing @interval here would create a "double timeout" situation where both
+      # the kernel timer (timerfd/kqueue) and poller timeout trigger at ~same time.
+      result = poller.wait
 
       # Check running state after wait (may have been stopped)
       break unless @running.get
