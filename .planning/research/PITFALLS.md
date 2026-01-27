@@ -95,20 +95,25 @@ if event := termbox.PollEvent(); event.Type == termbox.EventKey {
 
 ```crystal
 # GOOD - non-blocking
+response_channel = Channel(HTTP::Client::Response).new
+
+# Kick off async work in a separate fiber
 spawn do
   result = HTTP::Client.get("http://api.example.com")
   response_channel.send(result)
 end
 
 # Event loop continues, multiplexing input and async response
-select
-when event = Termisu.next_event
-  case event
-  when Termisu::Event::Key
-    # handle input
+loop do
+  select
+  when event = Termisu.next_event
+    case event
+    when Termisu::Event::Key
+      # handle input
+    end
+  when result = response_channel.receive
+    # handle async result
   end
-when result = response_channel.receive
-  # handle async result
 end
 ```
 
