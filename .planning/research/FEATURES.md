@@ -12,7 +12,7 @@ These are features users expect when choosing a TUI library. Termisu has most of
 | **Terminal resize handling** | ✅ | Event::Resize with sync |
 | **ANSI colors** | ✅ | 8, 256, RGB modes |
 | **Text attributes** | ✅ | Bold, dim, italic, underline, blink, reverse, hidden, strikethrough |
-| **Alternate screen** | ✅ | DEC(STR) with restore |
+| **Alternate screen** | ✅ | terminfo enter_ca_seq/exit_ca_seq (smcup/rmcup, DECSET 1049) with restore |
 | **Raw mode** | ✅ | Multiple modes (raw, cooked, cbreak, password, semi_raw) |
 | **Event polling** | ✅ | Blocking, timeout, non-blocking, iterator |
 | **Zero dependencies** | ✅ | Pure Crystal, no external deps |
