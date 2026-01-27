@@ -179,7 +179,7 @@
           raise IO::Error.from_errno("kevent wait")
         end
 
-        return nil if n == 0 # Timeout
+        return nil if n == 0 # Unexpected: kevent should not return 0 with NULL timeout
 
         event = events[0]
 
