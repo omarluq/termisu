@@ -100,11 +100,14 @@ spawn do
   response_channel.send(result)
 end
 
-# Event loop continues
-case event
-when Termisu::Event::Key
-  # handle input
-when response_channel.receive
+# Event loop continues, multiplexing input and async response
+select
+when event = Termisu.next_event
+  case event
+  when Termisu::Event::Key
+    # handle input
+  end
+when result = response_channel.receive
   # handle async result
 end
 ```
