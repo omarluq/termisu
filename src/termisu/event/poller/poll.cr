@@ -197,16 +197,30 @@ class Termisu::Event::Poller::Poll < Termisu::Event::Poller
     timer_timeout = timer_timeout_ms
     user_ms = user_timeout.try(&.total_milliseconds.to_i.clamp(0, Int32::MAX))
 
-    case {timer_timeout, user_ms}
-    when {nil, nil}
-      -1 # Infinite wait
-    when {nil, Int32}
-      user_ms
-    when {Int32, nil}
-      timer_timeout
-    else
-      Math.min(timer_timeout.as(Int32), user_ms.as(Int32))
+    # Determine appropriate timeout based on timer and user timeout states
+    if timer_timeout.nil? && user_ms.nil?
+      # Both nil - infinite wait
+      return -1
     end
+
+    # At this point, at least one of timer_timeout or user_ms is non-nil
+    if timer_timeout.nil?
+      # Timer timeout is nil, so user_ms must be non-nil here
+      u = user_ms
+      return u ? u : -1
+    end
+
+    if user_ms.nil?
+      # User ms is nil, so timer_timeout must be non-nil here
+      t = timer_timeout
+      return t ? t : -1
+    end
+
+    # Both present - use minimum
+    t = timer_timeout
+    u = user_ms
+    return Math.min(t, u) if t && u
+    -1
   end
 
   # Returns timeout until next timer in milliseconds, or nil if no timers
