@@ -48,7 +48,7 @@ A pure Crystal library for writing text-based user interfaces. Zero runtime depe
 ## Context
 
 **Author:** omarluq
-**Version:** 0.0.2 (Alpha) → heading toward 0.1.0/1.0
+**Version:** 0.3.0 (Alpha) → heading toward 0.1.0/1.0
 **Status:** Production-ready core, gaps in Unicode and advanced features
 
 **Design Philosophy:**
