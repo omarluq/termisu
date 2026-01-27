@@ -1,4 +1,4 @@
-# RESEARCH_SUMMARY.md - TUI Library Research Synthesis
+# SUMMARY.md - TUI Library Research Synthesis
 
 ## Research Context
 
