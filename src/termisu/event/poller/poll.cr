@@ -269,7 +269,7 @@ class Termisu::Event::Poller::Poll < Termisu::Event::Poller
   end
 
   # Calculates number of timer expirations (for missed ticks)
-  private def calculate_expirations(state : TimerState, now : Time::Instant) : UInt64
+  private def calculate_expirations(state : TimerState, now : MonotonicTime) : UInt64
     return 1_u64 unless state.repeating?
 
     # How many intervals have passed since original deadline
