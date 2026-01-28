@@ -13,7 +13,7 @@ module Termisu::Bench
   record BenchResult,
     name : String,
     iterations_per_second : Float64,
-    mean_time : Time::Instant,
+    mean_time : Time::Span,
     std_dev_percent : Float64,
     bytes_per_op : Int64
 
