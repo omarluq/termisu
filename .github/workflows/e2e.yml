@@ -11,41 +11,34 @@ on:
     branches: [main]
   workflow_dispatch:
 jobs:
-  # Build binaries once per OS, share across shell matrix
+  # Build binaries once per OS and Crystal version
   build:
-    name: Build (${{ matrix.os }})
+    name: Build (${{ matrix.os }}, Crystal ${{ matrix.crystal }})
     strategy:
       matrix:
-        include:
-          - os: ubuntu-latest
-            artifact: e2e-binaries-linux
-          - os: macos-latest
-            artifact: e2e-binaries-macos
+        os: [ubuntu-latest, macos-latest]
+        crystal: ["1.18.2", "1.19.1"]
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
       - name: Setup Crystal
         uses: ./.github/actions/setup-crystal
+        with:
+          crystal-version: ${{ matrix.crystal }}
       - name: Build and upload binaries
         uses: ./.github/actions/build-e2e-binaries
         with:
-          artifact-name: ${{ matrix.artifact }}
+          artifact-name: e2e-binaries-${{ matrix.os == 'ubuntu-latest' && 'linux' || 'macos' }}-${{ matrix.crystal }}
   e2e:
-    name: E2E (${{ matrix.os }}, ${{ matrix.shell }})
+    name: E2E (${{ matrix.os }}, ${{ matrix.shell }}, Crystal ${{ matrix.crystal }})
     needs: build
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
         shell: [bash, zsh, fish]
-        # TODO: Add Windows matrix when WinAPI console support is added
-        # os: [ubuntu-latest, macos-latest, windows-latest]
-        # shell: [bash, zsh, fish, cmd, powershell, pwsh]
-        # exclude:
-        #   - os: ubuntu-latest
-        #     shell: cmd
-        #   ...
+        crystal: ["1.18.2", "1.19.1"]
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout
@@ -53,7 +46,7 @@ jobs:
       - name: Download binaries
         uses: actions/download-artifact@v7
         with:
-          name: e2e-binaries-${{ matrix.os == 'ubuntu-latest' && 'linux' || 'macos' }}
+          name: e2e-binaries-${{ matrix.os == 'ubuntu-latest' && 'linux' || 'macos' }}-${{ matrix.crystal }}
           path: bin/
       - name: Make binaries executable
         run: chmod +x bin/*
