@@ -229,9 +229,9 @@ end
         poller = Termisu::Event::Poller::Linux.new
         poller.add_timer(20.milliseconds)
 
-        start = Time.instant
+        start = monotonic_now
         result = poller.wait(100.milliseconds)
-        elapsed = Time.instant - start
+        elapsed = monotonic_now - start
 
         result.should_not be_nil
         if r = result
