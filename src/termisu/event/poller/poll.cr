@@ -6,7 +6,7 @@
 # ## Features
 #
 # - Works on all POSIX-compliant systems
-# - Software-based timers using Time.monotonic
+# - Software-based timers using Time.instant
 # - Automatic timeout calculation for timer precision
 #
 # ## Timer Implementation
@@ -48,11 +48,11 @@ class Termisu::Event::Poller::Poll < Termisu::Event::Poller
   # Internal timer state using monotonic clock
   private struct TimerState
     getter interval : Time::Span
-    getter next_deadline : Time::Span
+    getter next_deadline : Time::Instant
     getter? repeating : Bool
 
     def initialize(@interval : Time::Span, @repeating : Bool)
-      @next_deadline = Time.monotonic + @interval
+      @next_deadline = Time.instant + @interval
     end
 
     # Creates a new state with updated deadline
@@ -227,7 +227,7 @@ class Termisu::Event::Poller::Poll < Termisu::Event::Poller
   private def timer_timeout_ms : Int32?
     return nil if @timers.empty?
 
-    now = Time.monotonic
+    now = Time.instant
     min_timeout = Int32::MAX
 
     @timers.each_value do |state|
@@ -243,7 +243,7 @@ class Termisu::Event::Poller::Poll < Termisu::Event::Poller
   private def check_expired_timers : PollResult?
     return nil if @timers.empty?
 
-    now = Time.monotonic
+    now = Time.instant
 
     @timers.each do |id, state|
       next unless now >= state.next_deadline
@@ -267,7 +267,7 @@ class Termisu::Event::Poller::Poll < Termisu::Event::Poller
   end
 
   # Calculates number of timer expirations (for missed ticks)
-  private def calculate_expirations(state : TimerState, now : Time::Span) : UInt64
+  private def calculate_expirations(state : TimerState, now : Time::Instant) : UInt64
     return 1_u64 unless state.repeating?
 
     # How many intervals have passed since original deadline

@@ -41,8 +41,8 @@ class Termisu::Event::Source::SystemTimer < Termisu::Event::Source
   @fiber : Fiber?
   @poller : Event::Poller?
   @timer_handle : Event::Poller::TimerHandle?
-  @start_time : Time::Span?
-  @last_tick : Time::Span?
+  @start_time : Time::Instant?
+  @last_tick : Time::Instant?
   @frame : UInt64
 
   # Creates a new system timer with the specified interval.
@@ -78,7 +78,7 @@ class Termisu::Event::Source::SystemTimer < Termisu::Event::Source
 
     @output = output
     @frame = 0_u64
-    @start_time = Time.monotonic
+    @start_time = Time.instant
     @last_tick = @start_time
 
     # Create platform-specific poller and timer
@@ -147,7 +147,7 @@ class Termisu::Event::Source::SystemTimer < Termisu::Event::Source
 
       case result.type
       when .timer?
-        now = Time.monotonic
+        now = Time.instant
         elapsed = now - start_time
         delta = now - current_last_tick
         frame = @frame

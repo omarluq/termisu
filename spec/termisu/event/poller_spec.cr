@@ -104,9 +104,9 @@ describe Termisu::Event::Poller::Poll do
       poller = Termisu::Event::Poller::Poll.new
       poller.add_timer(20.milliseconds)
 
-      start = Time.monotonic
+      start = Time.instant
       result = poller.wait(100.milliseconds)
-      elapsed = Time.monotonic - start
+      elapsed = Time.instant - start
 
       result.should_not be_nil
       if r = result
@@ -228,9 +228,9 @@ end
         poller = Termisu::Event::Poller::Linux.new
         poller.add_timer(20.milliseconds)
 
-        start = Time.monotonic
+        start = Time.instant
         result = poller.wait(100.milliseconds)
-        elapsed = Time.monotonic - start
+        elapsed = Time.instant - start
 
         result.should_not be_nil
         if r = result
