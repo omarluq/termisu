@@ -11,12 +11,13 @@ on:
   workflow_dispatch:
 jobs:
   test:
-    name: Run Tests (${{ matrix.os }})
+    name: Run Tests (Crystal ${{ matrix.crystal }}, ${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
+        crystal: ["1.18.2", "1.19.1"]
     permissions:
       checks: write
       contents: read
@@ -25,6 +26,8 @@ jobs:
         uses: actions/checkout@v6
       - name: Setup Crystal
         uses: ./.github/actions/setup-crystal
+        with:
+          crystal-version: ${{ matrix.crystal }}
       - name: Install expect (Linux)
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y expect

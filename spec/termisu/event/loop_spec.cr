@@ -1,4 +1,5 @@
 require "../../spec_helper"
+require "../../../src/termisu/time_compat"
 
 describe Termisu::Event::Loop do
   describe "#initialize" do
@@ -214,9 +215,9 @@ describe Termisu::Event::Loop do
       loop.start
 
       # Stop should complete within reasonable time even with slow source
-      start_time = Time.instant
+      start_time = monotonic_now
       loop.stop
-      elapsed = Time.instant - start_time
+      elapsed = monotonic_now - start_time
 
       # Should complete within shutdown timeout + buffer
       elapsed.should be < 200.milliseconds

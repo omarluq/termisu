@@ -1,4 +1,5 @@
 require "../../spec_helper"
+require "../../../src/termisu/time_compat"
 
 describe Termisu::Event::Poller do
   describe ".create" do
@@ -104,9 +105,9 @@ describe Termisu::Event::Poller::Poll do
       poller = Termisu::Event::Poller::Poll.new
       poller.add_timer(20.milliseconds)
 
-      start = Time.instant
+      start = monotonic_now
       result = poller.wait(100.milliseconds)
-      elapsed = Time.instant - start
+      elapsed = monotonic_now - start
 
       result.should_not be_nil
       if r = result
