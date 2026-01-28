@@ -13,7 +13,7 @@ module Termisu::Bench
   record BenchResult,
     name : String,
     iterations_per_second : Float64,
-    mean_time : Time::Span,
+    mean_time : Time::Instant,
     std_dev_percent : Float64,
     bytes_per_op : Int64
 
@@ -37,12 +37,12 @@ module Termisu::Bench
 
       # Measure
       iterations = 0
-      measure_start = Time.monotonic
-      while (Time.monotonic - measure_start) < 100.milliseconds
+      measure_start = Time.instant
+      while (Time.instant - measure_start) < 100.milliseconds
         block.call
         iterations += 1
       end
-      elapsed = Time.monotonic - measure_start
+      elapsed = Time.instant - measure_start
 
       ips = iterations.to_f64 / elapsed.total_seconds
       mean = elapsed / iterations

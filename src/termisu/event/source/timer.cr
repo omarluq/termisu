@@ -22,7 +22,7 @@
 #
 # ## Timing Behavior
 #
-# - Uses `Time.monotonic` for accurate, non-jumping timing
+# - Uses `Time.instant` for accurate, non-jumping timing
 # - `elapsed` - Total time since timer started
 # - `delta` - Time since previous tick (for frame-rate independent updates)
 # - `frame` - Counter starting at 0, increments each tick
@@ -41,8 +41,8 @@ class Termisu::Event::Source::Timer < Termisu::Event::Source
   @interval : Time::Span
   @output : Channel(Event::Any)?
   @fiber : Fiber?
-  @start_time : Time::Span?
-  @last_tick : Time::Span?
+  @start_time : Time::Instant?
+  @last_tick : Time::Instant?
   @frame : UInt64
 
   # Creates a new timer with the specified interval.
@@ -78,7 +78,7 @@ class Termisu::Event::Source::Timer < Termisu::Event::Source
 
     @output = output
     @frame = 0_u64
-    @start_time = Time.monotonic
+    @start_time = Time.instant
     @last_tick = @start_time
 
     @fiber = spawn(name: "termisu-timer") do
@@ -128,7 +128,7 @@ class Termisu::Event::Source::Timer < Termisu::Event::Source
       # Check again after sleep in case we were stopped
       break unless @running.get
 
-      now = Time.monotonic
+      now = Time.instant
       elapsed = now - start_time
       delta = now - current_last_tick
       frame = @frame
