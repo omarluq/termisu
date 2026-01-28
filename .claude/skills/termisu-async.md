@@ -489,13 +489,13 @@ class Debouncer
 
     loop do
       value = @channel.receive
-      start = Time.monotonic
+      start = Time.instant
 
       # Collect more values during delay
-      while (Time.monotonic - start) < @delay
+      while (Time.instant - start) < @delay
         if new_value = @channel.receive_timeout?
           value = new_value
-          start = Time.monotonic  # Reset timer
+          start = Time.instant  # Reset timer
         end
       end
 
@@ -510,13 +510,13 @@ end
 ```crystal
 class Throttler
   @min_interval : Time::Span
-  @last_run = Time.monotonic
+  @last_run = Time.instant
 
   def initialize(@min_interval)
   end
 
   def run
-    now = Time.monotonic
+    now = Time.instant
     elapsed = now - @last_run
 
     if elapsed >= @min_interval
@@ -559,7 +559,7 @@ class BatchProcessor(T)
 
   private def do_process
     batch = [] of T
-    deadline = Time.monotonic
+    deadline = Time.instant
 
     loop do
       item = @input.receive
@@ -569,11 +569,11 @@ class BatchProcessor(T)
       if batch.size >= @batch_size
         @output.send(batch)
         batch = []
-        deadline = Time.monotonic + @timeout
-      elsif (Time.monotonic - deadline) >= @timeout
+        deadline = Time.instant + @timeout
+      elsif (Time.instant - deadline) >= @timeout
         @output.send(batch) unless batch.empty?
         batch = []
-        deadline = Time.monotonic + @timeout
+        deadline = Time.instant + @timeout
       end
     end
   end

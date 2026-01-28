@@ -352,14 +352,14 @@ With enhanced keyboard:
 class Reader
   def read_byte(timeout : Time::Span? = nil) : UInt8?
     if timeout
-      start = Time.monotonic
+      start = Time.instant
       remaining = timeout
 
       loop do
         byte = try_read_byte
         return byte if byte
 
-        elapsed = Time.monotonic - start
+        elapsed = Time.instant - start
         return nil if elapsed > timeout
 
         # Sleep remaining time

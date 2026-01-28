@@ -214,9 +214,9 @@ describe Termisu::Event::Loop do
       loop.start
 
       # Stop should complete within reasonable time even with slow source
-      start_time = Time.monotonic
+      start_time = Time.instant
       loop.stop
-      elapsed = Time.monotonic - start_time
+      elapsed = Time.instant - start_time
 
       # Should complete within shutdown timeout + buffer
       elapsed.should be < 200.milliseconds

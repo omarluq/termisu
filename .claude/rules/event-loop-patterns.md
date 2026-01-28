@@ -470,10 +470,10 @@ termisu.render if @dirty
 ```crystal
 @target_fps = 60
 @actual_fps = 0.0
-@last_frame = Time.monotonic
+@last_frame = Time.instant
 
 when Termisu::Event::Tick
-  now = Time.monotonic
+  now = Time.instant
   delta = now - @last_frame
   @last_frame = now
 
@@ -493,14 +493,14 @@ end
 
 ```crystal
 @idle_seconds = 0
-@last_activity = Time.monotonic
+@last_activity = Time.instant
 
 when Termisu::Event::Key, Termisu::Event::Mouse
-  @last_activity = Time.monotonic
+  @last_activity = Time.instant
   @idle_seconds = 0
 
 when Termisu::Event::Tick
-  @idle_seconds = (Time.monotonic - @last_activity).total_seconds
+  @idle_seconds = (Time.instant - @last_activity).total_seconds
 
   if @idle_seconds > 5
     # Reduce FPS when idle

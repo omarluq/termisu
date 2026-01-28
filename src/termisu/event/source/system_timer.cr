@@ -78,7 +78,7 @@ class Termisu::Event::Source::SystemTimer < Termisu::Event::Source
 
     @output = output
     @frame = 0_u64
-    @start_time = Time.monotonic
+    @start_time = Time.instant
     @last_tick = @start_time
 
     # Create platform-specific poller and timer
@@ -147,7 +147,7 @@ class Termisu::Event::Source::SystemTimer < Termisu::Event::Source
 
       case result.type
       when .timer?
-        now = Time.monotonic
+        now = Time.instant
         elapsed = now - start_time
         delta = now - current_last_tick
         frame = @frame

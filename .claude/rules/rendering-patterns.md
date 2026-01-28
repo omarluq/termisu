@@ -458,9 +458,9 @@ termisu.render
 ```crystal
 require "benchmark"
 
-start = Time.monotonic
+start = Time.instant
 termisu.render
-elapsed = Time.monotonic - start
+elapsed = Time.instant - start
 
 puts "Render time: #{elapsed.total_milliseconds}ms"
 

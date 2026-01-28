@@ -439,12 +439,12 @@ class Debouncer(T)
   private def do_loop
     while true
       value = @input.receive
-      deadline = Time.monotonic + @delay
+      deadline = Time.instant + @delay
 
       # Collect more values during delay
-      while (Time.monotonic < deadline) && (new_val = @input.receive_timeout?)
+      while (Time.instant < deadline) && (new_val = @input.receive_timeout?)
         value = new_val
-        deadline = Time.monotonic + @delay
+        deadline = Time.instant + @delay
       end
 
       @output.send(value)
@@ -458,11 +458,11 @@ end
 ```crystal
 class Throttler
   def initialize(@interval : Time::Span)
-    @last_run = Time.monotonic - @interval
+    @last_run = Time.instant - @interval
   end
 
   def run(&block)
-    now = Time.monotonic
+    now = Time.instant
     return if (now - @last_run) < @interval
 
     @last_run = now

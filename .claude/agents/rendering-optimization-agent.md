@@ -47,12 +47,12 @@ require "benchmark"
 frame_times = [] of Time::Span
 
 loop do
-  start = Time.monotonic
+  start = Time.instant
 
   # Your render code
   termisu.render
 
-  elapsed = Time.monotonic - start
+  elapsed = Time.instant - start
   frame_times << elapsed
 
   break if frame_times.size >= 60

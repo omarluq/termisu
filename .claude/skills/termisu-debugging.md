@@ -238,7 +238,7 @@ tput reset
 # Check if fiber is stuck
 spawn do
   loop do
-    puts "Fiber alive: #{Time.monotonic}"
+    puts "Fiber alive: #{Time.instant}"
     sleep 1.second
   end
 end
@@ -367,9 +367,9 @@ end
 **Diagnosis:**
 ```crystal
 # Profile render time
-start = Time.monotonic
+start = Time.instant
 termisu.render
-puts "Render: #{(Time.monotonic - start).total_milliseconds}ms"
+puts "Render: #{(Time.instant - start).total_milliseconds}ms"
 ```
 
 **Solution:** Batch cell changes, minimize color changes.
