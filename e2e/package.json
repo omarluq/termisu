@@ -7,7 +7,7 @@
   "scripts": {
     "test": "tui-test",
     "test:trace": "tui-test --trace",
-    "test:update": "tui-test --update-snapshots",
+    "test:update": "tui-test --updateSnapshot",
     "lint": "biome lint .",
     "lint:fix": "biome lint --write .",
     "format": "biome format --write .",
