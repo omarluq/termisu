@@ -55,7 +55,7 @@ termisu.show_cursor
 # Blocking
 event = termisu.poll_event
 
-# With timeout (ms or Time::Span)
+# With timeout (ms or Time::Instant)
 event = termisu.poll_event(100)
 event = termisu.poll_event(100.milliseconds)
 
