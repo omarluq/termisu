@@ -4,6 +4,8 @@
 # - Linux: timerfd with epoll
 # - macOS/BSD: kqueue EVFILT_TIMER
 # - Fallback: monotonic clock with poll
+require "../../time_compat"
+
 #
 # ## Advantages over sleep-based Timer
 #
@@ -41,8 +43,8 @@ class Termisu::Event::Source::SystemTimer < Termisu::Event::Source
   @fiber : Fiber?
   @poller : Event::Poller?
   @timer_handle : Event::Poller::TimerHandle?
-  @start_time : Time::Instant?
-  @last_tick : Time::Instant?
+  @start_time : MonotonicTime?
+  @last_tick : MonotonicTime?
   @frame : UInt64
 
   # Creates a new system timer with the specified interval.
@@ -78,7 +80,7 @@ class Termisu::Event::Source::SystemTimer < Termisu::Event::Source
 
     @output = output
     @frame = 0_u64
-    @start_time = Time.instant
+    @start_time = monotonic_now
     @last_tick = @start_time
 
     # Create platform-specific poller and timer
@@ -147,7 +149,7 @@ class Termisu::Event::Source::SystemTimer < Termisu::Event::Source
 
       case result.type
       when .timer?
-        now = Time.instant
+        now = monotonic_now
         elapsed = now - start_time
         delta = now - current_last_tick
         frame = @frame

@@ -2,6 +2,8 @@
 #
 # Generates `Event::Tick` events at a configurable interval for
 # animations, game loops, and other time-based operations.
+require "../../time_compat"
+
 #
 # ## Usage
 #
@@ -41,8 +43,8 @@ class Termisu::Event::Source::Timer < Termisu::Event::Source
   @interval : Time::Span
   @output : Channel(Event::Any)?
   @fiber : Fiber?
-  @start_time : Time::Instant?
-  @last_tick : Time::Instant?
+  @start_time : MonotonicTime?
+  @last_tick : MonotonicTime?
   @frame : UInt64
 
   # Creates a new timer with the specified interval.
@@ -78,7 +80,7 @@ class Termisu::Event::Source::Timer < Termisu::Event::Source
 
     @output = output
     @frame = 0_u64
-    @start_time = Time.instant
+    @start_time = monotonic_now
     @last_tick = @start_time
 
     @fiber = spawn(name: "termisu-timer") do
@@ -128,7 +130,7 @@ class Termisu::Event::Source::Timer < Termisu::Event::Source
       # Check again after sleep in case we were stopped
       break unless @running.get
 
-      now = Time.instant
+      now = monotonic_now
       elapsed = now - start_time
       delta = now - current_last_tick
       frame = @frame

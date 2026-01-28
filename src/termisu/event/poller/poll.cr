@@ -2,6 +2,8 @@
 #
 # Provides portable event handling using the POSIX poll() syscall
 # with software-based timer implementation using monotonic clock.
+require "../../time_compat"
+
 #
 # ## Features
 #
@@ -48,11 +50,11 @@ class Termisu::Event::Poller::Poll < Termisu::Event::Poller
   # Internal timer state using monotonic clock
   private struct TimerState
     getter interval : Time::Span
-    getter next_deadline : Time::Instant
+    getter next_deadline : MonotonicTime
     getter? repeating : Bool
 
     def initialize(@interval : Time::Span, @repeating : Bool)
-      @next_deadline = Time.instant + @interval
+      @next_deadline = monotonic_now + @interval
     end
 
     # Creates a new state with updated deadline
@@ -227,7 +229,7 @@ class Termisu::Event::Poller::Poll < Termisu::Event::Poller
   private def timer_timeout_ms : Int32?
     return nil if @timers.empty?
 
-    now = Time.instant
+    now = monotonic_now
     min_timeout = Int32::MAX
 
     @timers.each_value do |state|
@@ -243,7 +245,7 @@ class Termisu::Event::Poller::Poll < Termisu::Event::Poller
   private def check_expired_timers : PollResult?
     return nil if @timers.empty?
 
-    now = Time.instant
+    now = monotonic_now
 
     @timers.each do |id, state|
       next unless now >= state.next_deadline
