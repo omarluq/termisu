@@ -128,7 +128,7 @@ module Termisu::Bench
       end
     end
 
-    private def format_time(span : Time::Instant) : String
+    private def format_time(span : Time::Span) : String
       nanos = span.total_nanoseconds
       case nanos
       when .>= 1_000_000_000
