@@ -55,8 +55,10 @@ class Termisu::Buffer
   # - bg: Background color (default: default terminal color)
   # - attr: Text attributes (default: None)
   #
-  # Returns false if coordinates are out of bounds or the character
-  # is a non-printable control character (C0/C1 controls except space).
+  # Returns false if coordinates are out of bounds, the character is a
+  # non-printable control character (C0/C1 controls except space), the
+  # character is wide and cannot fit (width 2 at last column), or the
+  # character has display width 0 (standalone combining marks).
   def set_cell(
     x : Int32,
     y : Int32,
@@ -68,9 +70,91 @@ class Termisu::Buffer
     return false if out_of_bounds?(x, y)
     return false if control_char?(ch)
 
-    idx = y * @width + x
-    @back[idx] = Cell.new(ch, fg, bg, attr)
+    # Create cell to determine width
+    cell = Cell.new(ch, fg, bg, attr)
+    width = cell.width
+
+    # Reject wide writes that cannot fit
+    return false if width == 2 && x >= @width - 1
+
+    # Enforce width-0 policy: standalone width-0 characters (combining marks)
+    # are rejected so the Char API never consumes a logical grid cell without
+    # consuming columns. This prevents rendering anomalies where invisible
+    # characters would occupy buffer cells without visible content.
+    return false if width == 0
+
+    set_cell_internal(x, y, cell, width)
     true
+  end
+
+  # Internal cell writer that handles occupancy invariants and overlap clearing.
+  #
+  # This is the core write primitive that handles:
+  # - Wide character writes (creates leading + continuation cells)
+  # - Overlap clearing when overwriting wide cells or their continuations
+  # - Pre-clearing target cells before writing
+  #
+  # Assumes caller has validated bounds and fit constraints.
+  private def set_cell_internal(x : Int32, y : Int32, cell : Cell, width : UInt8) : Nil
+    row_start = y * @width
+
+    # Clear overlap: if writing into a continuation cell, clear its owner first
+    if @back[row_start + x].continuation?
+      clear_continuation_owner(x, y)
+    end
+
+    # Clear overlap: if overwriting a wide cell, clear its continuation
+    if width == 2
+      # If x+1 is a wide leading cell, clear its continuation at x+2 first
+      # to prevent orphan continuation cells (BUG-008)
+      if x + 2 < @width && @back[row_start + x + 1].width == 2
+        @back[row_start + x + 2] = Cell.default
+      end
+
+      # Pre-clear both target positions
+      @back[row_start + x] = Cell.default
+      @back[row_start + x + 1] = Cell.default
+
+      # Write leading cell
+      @back[row_start + x] = cell
+      # Write continuation cell
+      @back[row_start + x + 1] = Cell.continuation
+    else
+      # Narrow write: clear any wide cell that overlaps next position
+      if x + 1 < @width && @back[row_start + x].width == 2
+        @back[row_start + x + 1] = Cell.default
+      end
+      @back[row_start + x] = cell
+    end
+  end
+
+  # Clears the wide cell (leading + continuation) at position (x, y).
+  #
+  # If the cell at (x, y) is a wide cell (width 2), both it and its
+  # continuation at (x+1, y) are cleared to default cells.
+  private def clear_wide_cell(x : Int32, y : Int32) : Nil
+    return if out_of_bounds?(x, y)
+
+    row_start = y * @width
+    return if @back[row_start + x].width != 2
+
+    @back[row_start + x] = Cell.default
+    if x + 1 < @width
+      @back[row_start + x + 1] = Cell.default
+    end
+  end
+
+  # Clears the owner of a continuation cell.
+  #
+  # If the cell at (x, y) is a continuation cell, clears its leading cell
+  # at (x-1, y) to prevent orphan continuation.
+  private def clear_continuation_owner(x : Int32, y : Int32) : Nil
+    return if x == 0
+
+    row_start = y * @width
+    return unless @back[row_start + x].continuation?
+
+    @back[row_start + x - 1] = Cell.default
   end
 
   # Gets a cell at the specified position from the back buffer.
@@ -183,7 +267,7 @@ class Termisu::Buffer
   # Resizes the buffer to new dimensions.
   #
   # Preserves existing content where possible. New cells are default.
-  # Clears both front and back buffers after resize.
+  # Ensures occupancy invariants are preserved (no orphan continuation cells).
   def resize(new_width : Int32, new_height : Int32)
     return if new_width == @width && new_height == @height
 
@@ -201,6 +285,29 @@ class Termisu::Buffer
         new_idx = row * new_width + col
         new_back[new_idx] = @back[old_idx]
         new_front[new_idx] = @front[old_idx]
+      end
+
+      # Fix occupancy invariants in new buffer:
+      # - Wide cells at last column cannot have continuation -> replace with default
+      # - Orphan continuation cells -> replace with default
+      row_start = row * new_width
+      new_width.times do |col|
+        idx = row_start + col
+
+        # Wide cell at last column is invalid
+        if col == new_width - 1 && new_back[idx].width == 2
+          new_back[idx] = Cell.default
+          new_front[idx] = Cell.default
+          next
+        end
+
+        # Orphan continuation (no leading cell) -> replace with default
+        if new_back[idx].continuation?
+          if col == 0 || new_back[idx - 1].width != 2
+            new_back[idx] = Cell.default
+            new_front[idx] = Cell.default
+          end
+        end
       end
     end
 
@@ -344,8 +451,11 @@ class Termisu::Buffer
     # Write all characters in the batch
     renderer.write(chars)
 
-    # Update cursor position in render state
-    # Each character advances cursor by its display width
+    # Update cursor position in render state.
+    # Cursor advancement is based on rendered cell widths (via UnicodeWidth),
+    # not codepoint count. Wide characters (CJK, emoji) advance by 2 columns,
+    # combining marks advance by 0. This keeps render-state cursor tracking
+    # in sync with the terminal's actual cursor position.
     chars.each_char do |char|
       @render_state.advance_cursor(UnicodeWidth.codepoint_width(char.ord))
     end

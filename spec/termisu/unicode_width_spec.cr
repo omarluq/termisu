@@ -19,13 +19,65 @@ describe Termisu::UnicodeWidth do
       Termisu::UnicodeWidth.codepoint_width(0x9F).should eq(0) # APC
     end
 
-    it "returns 0 for combining marks" do
+    it "returns 0 for combining marks (baseline Latin diacriticals)" do
       # Combining acute accent
       Termisu::UnicodeWidth.codepoint_width(0x0301).should eq(0)
       # Combining grave accent
       Termisu::UnicodeWidth.codepoint_width(0x0300).should eq(0)
       # Combining tilde
       Termisu::UnicodeWidth.codepoint_width(0x0303).should eq(0)
+      # End of block
+      Termisu::UnicodeWidth.codepoint_width(0x036F).should eq(0)
+    end
+
+    it "returns 0 for Arabic combining marks" do
+      Termisu::UnicodeWidth.codepoint_width(0x064B).should eq(0) # Arabic fathatan
+      Termisu::UnicodeWidth.codepoint_width(0x0650).should eq(0) # Arabic kasra
+      Termisu::UnicodeWidth.codepoint_width(0x0670).should eq(0) # Arabic superscript alef
+    end
+
+    it "returns 0 for Devanagari combining marks" do
+      Termisu::UnicodeWidth.codepoint_width(0x093C).should eq(0) # Devanagari sign nukta
+      Termisu::UnicodeWidth.codepoint_width(0x094D).should eq(0) # Devanagari sign virama
+      Termisu::UnicodeWidth.codepoint_width(0x0951).should eq(0) # Devanagari stress sign udatta
+    end
+
+    it "returns 0 for Thai combining marks" do
+      Termisu::UnicodeWidth.codepoint_width(0x0E31).should eq(0) # Thai mai han akat
+      Termisu::UnicodeWidth.codepoint_width(0x0E34).should eq(0) # Thai sara i
+      Termisu::UnicodeWidth.codepoint_width(0x0E47).should eq(0) # Thai maitaikhu
+    end
+
+    it "returns 0 for Tibetan combining marks" do
+      Termisu::UnicodeWidth.codepoint_width(0x0F71).should eq(0) # Tibetan vowel sign aa
+      Termisu::UnicodeWidth.codepoint_width(0x0F35).should eq(0) # Tibetan mark ngas bzung nyi zla
+    end
+
+    it "returns 0 for CJK ideographic tone marks" do
+      Termisu::UnicodeWidth.codepoint_width(0x302A).should eq(0) # CJK tone mark
+      Termisu::UnicodeWidth.codepoint_width(0x302D).should eq(0) # CJK tone mark
+    end
+
+    it "returns 0 for Japanese combining dakuten/handakuten" do
+      Termisu::UnicodeWidth.codepoint_width(0x3099).should eq(0) # Combining dakuten
+      Termisu::UnicodeWidth.codepoint_width(0x309A).should eq(0) # Combining handakuten
+    end
+
+    it "returns 0 for SMP combining marks (Brahmi, Musical, etc.)" do
+      Termisu::UnicodeWidth.codepoint_width(0x11038).should eq(0) # Brahmi vowel sign
+      Termisu::UnicodeWidth.codepoint_width(0x1D167).should eq(0) # Musical combining stem
+      Termisu::UnicodeWidth.codepoint_width(0x1E944).should eq(0) # Adlam alif lengthener
+    end
+
+    it "returns 0 for Cyrillic combining marks" do
+      Termisu::UnicodeWidth.codepoint_width(0x0483).should eq(0) # Cyrillic titlo
+      Termisu::UnicodeWidth.codepoint_width(0x0489).should eq(0) # Combining cyrillic millions sign
+    end
+
+    it "returns 0 for Bengali/Gurmukhi/Gujarati nukta" do
+      Termisu::UnicodeWidth.codepoint_width(0x09BC).should eq(0) # Bengali sign nukta
+      Termisu::UnicodeWidth.codepoint_width(0x0A3C).should eq(0) # Gurmukhi sign nukta
+      Termisu::UnicodeWidth.codepoint_width(0x0ABC).should eq(0) # Gujarati sign nukta
     end
 
     it "returns 0 for variation selectors" do
@@ -163,14 +215,10 @@ describe Termisu::UnicodeWidth do
       Termisu::UnicodeWidth.grapheme_width("").should eq(0)
     end
 
-    it "handles ZWJ sequences correctly" do
-      # Heart + ZWJ + sparkle (less common but valid)
-      grapheme = "❤️‍🔥" # Some terminals may not support, but should handle
-      # This is a ZWJ sequence, should be width 2
-      result = Termisu::UnicodeWidth.grapheme_width(grapheme)
-      # Due to terminal differences, just ensure it's not 0 and reasonable
-      result.should be > 0
-      result.should be <= 2
+    it "returns 2 for ZWJ heart-fire sequence" do
+      # Heart on fire: ❤️ + ZWJ + 🔥
+      grapheme = "❤️‍🔥"
+      Termisu::UnicodeWidth.grapheme_width(grapheme).should eq(2u8)
     end
   end
 
