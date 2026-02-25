@@ -100,9 +100,10 @@ struct Termisu::RenderState
 
   # Advances cursor X position without emitting escape sequence.
   # Used when writing characters (cursor moves automatically).
-  def advance_cursor
+  # For wide characters, pass columns = 2.
+  def advance_cursor(columns : Int32 = 1)
     if current_x = @cursor_x
-      @cursor_x = current_x + 1
+      @cursor_x = current_x + columns
     end
   end
 

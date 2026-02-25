@@ -55,7 +55,8 @@ class Termisu::Buffer
   # - bg: Background color (default: default terminal color)
   # - attr: Text attributes (default: None)
   #
-  # Returns false if coordinates are out of bounds.
+  # Returns false if coordinates are out of bounds or the character
+  # is a non-printable control character (C0/C1 controls except space).
   def set_cell(
     x : Int32,
     y : Int32,
@@ -65,6 +66,7 @@ class Termisu::Buffer
     attr : Attribute = Attribute::None,
   ) : Bool
     return false if out_of_bounds?(x, y)
+    return false if control_char?(ch)
 
     idx = y * @width + x
     @back[idx] = Cell.new(ch, fg, bg, attr)
@@ -210,6 +212,14 @@ class Termisu::Buffer
     x < 0 || x >= @width || y < 0 || y >= @height
   end
 
+  # Rejects C0 controls (0x00-0x1F except space) and C1 controls (0x7F-0x9F).
+  # These characters would desync render-state cursor tracking because
+  # the terminal interprets them as movement commands, not display characters.
+  private def control_char?(char : Char) : Bool
+    cp = char.ord
+    cp < 0x20 || (cp >= 0x7F && cp <= 0x9F)
+  end
+
   # Renders cursor position and visibility to the renderer.
   private def render_cursor(renderer : Renderer)
     if @cursor.visible?
@@ -328,9 +338,10 @@ class Termisu::Buffer
     # Write all characters in the batch
     renderer.write(chars)
 
-    # Update cursor position in render state (cursor advances with each char)
-    chars.each_char do
-      @render_state.advance_cursor
+    # Update cursor position in render state
+    # Each character advances cursor by its display width
+    chars.each_char do |char|
+      @render_state.advance_cursor(UnicodeWidth.codepoint_width(char.ord))
     end
   end
 end

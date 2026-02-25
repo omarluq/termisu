@@ -43,6 +43,37 @@ describe Termisu::Buffer do
       buffer.set_cell(5, 5, 'A').should be_false
     end
 
+    it "returns false for C0 control characters (except space)" do
+      buffer = Termisu::Buffer.new(10, 5)
+      buffer.set_cell(0, 0, '\u{0}').should be_false  # NUL
+      buffer.set_cell(0, 0, '\u{1}').should be_false  # SOH
+      buffer.set_cell(0, 0, '\t').should be_false     # Tab
+      buffer.set_cell(0, 0, '\n').should be_false     # Newline
+      buffer.set_cell(0, 0, '\r').should be_false     # Carriage return
+      buffer.set_cell(0, 0, '\u{1F}').should be_false # US
+    end
+
+    it "returns false for C1 control characters" do
+      buffer = Termisu::Buffer.new(10, 5)
+      buffer.set_cell(0, 0, '\u{7F}').should be_false # DEL
+      buffer.set_cell(0, 0, '\u{80}').should be_false # PAD
+      buffer.set_cell(0, 0, '\u{9F}').should be_false # APC
+    end
+
+    it "returns true for space (0x20)" do
+      buffer = Termisu::Buffer.new(10, 5)
+      buffer.set_cell(0, 0, ' ').should be_true
+      cell = buffer.get_cell(0, 0)
+      cell.as(Termisu::Cell).ch.should eq(' ')
+    end
+
+    it "returns true for printable characters above 0x20" do
+      buffer = Termisu::Buffer.new(10, 5)
+      buffer.set_cell(0, 0, '!').should be_true # 0x21
+      buffer.set_cell(0, 0, 'A').should be_true # 0x41
+      buffer.set_cell(0, 0, '~').should be_true # 0x7E
+    end
+
     it "sets cell with attributes" do
       buffer = Termisu::Buffer.new(10, 5)
       buffer.set_cell(3, 3, 'B', attr: Termisu::Attribute::Bold)
