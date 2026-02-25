@@ -96,9 +96,15 @@ class Termisu::Buffer
   # (e.g., re-entering alternate screen after a mode switch).
   # The next render_to will redraw all cells since none will match
   # the invalidated front buffer.
+  #
+  # Internal invariant exception: This method creates cells with NUL ('\u0000')
+  # which have width 0 but continuation=false. This is intentional—the NUL sentinel
+  # must never match any normal content, and normal content never passes through
+  # set_cell's control_char? guard which would reject it.
   def invalidate
     # Fill front buffer with invalid marker cells that won't match any real content.
     # Using NUL character as the marker since it's never used in normal rendering.
+    # Note: This intentionally creates width 0 non-continuation cells as sentinels.
     invalid_cell = Cell.new('\u0000', Color.default, Color.default, Attribute::None)
     @front.size.times do |index|
       @front[index] = invalid_cell

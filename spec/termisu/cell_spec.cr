@@ -31,6 +31,18 @@ describe Termisu::Cell do
       cell.attr.bold?.should be_true
       cell.attr.underline?.should be_true
     end
+
+    it "auto-calculates width 2 for CJK character" do
+      cell = Termisu::Cell.new('中')
+      cell.width.should eq(2u8)
+      cell.grapheme.should eq("中")
+    end
+
+    it "auto-calculates width 1 for ASCII character" do
+      cell = Termisu::Cell.new('A')
+      cell.width.should eq(1u8)
+      cell.grapheme.should eq("A")
+    end
   end
 
   describe ".default" do
@@ -40,6 +52,8 @@ describe Termisu::Cell do
       cell.fg.should eq(Termisu::Color.white)
       cell.bg.should eq(Termisu::Color.default)
       cell.attr.should eq(Termisu::Attribute::None)
+      cell.width.should eq(1u8)
+      cell.continuation?.should be_false
     end
   end
 
@@ -88,6 +102,8 @@ describe Termisu::Cell do
       cell.fg.should eq(Termisu::Color.white)
       cell.bg.should eq(Termisu::Color.default)
       cell.attr.should eq(Termisu::Attribute::None)
+      cell.width.should eq(1u8)
+      cell.continuation?.should be_false
     end
   end
 
@@ -114,6 +130,139 @@ describe Termisu::Cell do
       cell = Termisu::Cell.new
       cell.attr = Termisu::Attribute::Reverse
       cell.attr.should eq(Termisu::Attribute::Reverse)
+    end
+  end
+
+  describe "grapheme and width properties" do
+    it "stores grapheme as String" do
+      cell = Termisu::Cell.new("A")
+      cell.grapheme.should eq("A")
+    end
+
+    it "auto-calculates width for narrow characters" do
+      cell = Termisu::Cell.new("A")
+      cell.width.should eq(1u8)
+    end
+
+    it "auto-calculates width for wide characters" do
+      cell = Termisu::Cell.new("中")
+      cell.width.should eq(2u8)
+    end
+
+    it "auto-calculates width for emoji" do
+      cell = Termisu::Cell.new("😀")
+      cell.width.should eq(2u8)
+    end
+
+    it "stores continuation flag" do
+      cell = Termisu::Cell.new("A")
+      cell.continuation?.should be_false
+    end
+  end
+
+  describe ".continuation" do
+    it "creates a continuation cell" do
+      cell = Termisu::Cell.continuation
+      cell.continuation?.should be_true
+      cell.width.should eq(0u8)
+      cell.grapheme.should eq("")
+    end
+
+    it "returns space for ch on continuation cell" do
+      cell = Termisu::Cell.continuation
+      cell.ch.should eq(' ')
+    end
+
+    it "normalizes non-empty grapheme to empty for continuation" do
+      # Even if grapheme text is passed, continuation cells are always empty
+      cell = Termisu::Cell.new("X", continuation: true)
+      cell.grapheme.should eq("")
+      cell.width.should eq(0u8)
+      cell.continuation?.should be_true
+    end
+  end
+
+  describe "compatibility ch property" do
+    it "returns first character for normal cells" do
+      cell = Termisu::Cell.new("ABC")
+      cell.ch.should eq('A')
+    end
+
+    it "returns space for empty grapheme" do
+      cell = Termisu::Cell.new("")
+      cell.ch.should eq(' ')
+    end
+
+    it "returns space for continuation cells" do
+      cell = Termisu::Cell.continuation
+      cell.ch.should eq(' ')
+    end
+
+    it "ch= sets narrow grapheme mode" do
+      cell = Termisu::Cell.new("中")
+      cell.width.should eq(2u8) # starts wide
+      cell.ch = 'Y'
+      cell.grapheme.should eq("Y")
+      cell.width.should eq(1u8)
+      cell.continuation?.should be_false
+    end
+
+    it "ch= sets wide grapheme mode for CJK character" do
+      cell = Termisu::Cell.new('A')
+      cell.width.should eq(1u8) # starts narrow
+      cell.ch = '中'
+      cell.grapheme.should eq("中")
+      cell.width.should eq(2u8)
+      cell.continuation?.should be_false
+    end
+  end
+
+  describe "multi-grapheme truncation" do
+    it "stores only first grapheme from multi-grapheme string" do
+      cell = Termisu::Cell.new("AB")
+      cell.grapheme.should eq("A")
+      cell.width.should eq(1u8)
+    end
+
+    it "stores first wide grapheme from mixed string" do
+      cell = Termisu::Cell.new("中A")
+      cell.grapheme.should eq("中")
+      cell.width.should eq(2u8)
+    end
+
+    it "preserves combining sequence as single grapheme" do
+      # e + combining acute is one grapheme cluster
+      cell = Termisu::Cell.new("e\u{0301}X")
+      cell.grapheme.should eq("e\u{0301}")
+      cell.width.should eq(1u8)
+    end
+  end
+
+  describe "#== with new fields" do
+    it "returns false for different grapheme" do
+      cell1 = Termisu::Cell.new("A")
+      cell2 = Termisu::Cell.new("B")
+      cell1.should_not eq(cell2)
+    end
+
+    it "returns false for narrow vs wide grapheme" do
+      cell1 = Termisu::Cell.new("A")
+      cell2 = Termisu::Cell.new("中")
+      cell1.should_not eq(cell2)
+      cell1.width.should_not eq(cell2.width)
+    end
+
+    it "returns false when one is continuation" do
+      cell1 = Termisu::Cell.new("A")
+      cell2 = Termisu::Cell.continuation
+      cell1.should_not eq(cell2)
+    end
+
+    it "returns true for identical wide cells" do
+      cell1 = Termisu::Cell.new("中")
+      cell2 = Termisu::Cell.new("中")
+      cell1.should eq(cell2)
+      cell1.width.should eq(2u8)
     end
   end
 end
