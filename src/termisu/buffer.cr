@@ -346,7 +346,9 @@ class Termisu::Buffer
   # Renders a row using diff-based rendering (only changed cells).
   #
   # Batches consecutive changed cells with same styling for efficiency.
-  # Updates front buffer to match back buffer after rendering.
+  # Continuation cells (trailing cells of wide graphemes) are skipped during
+  # rendering since they're never drawn directly. Updates front buffer to
+  # match back buffer after rendering.
   private def render_row_diff(renderer : Renderer, row : Int32)
     row_start = row * @width
     col = 0
@@ -362,37 +364,61 @@ class Termisu::Buffer
         next
       end
 
-      # Found a changed cell - start a batch
+      # Skip continuation cells before starting a batch. Continuation cells
+      # are never rendered directly; sync front buffer and move on. This must
+      # happen before batch_start is set so we never position the cursor at a
+      # continuation column.
+      if back_cell.continuation?
+        @front[idx] = back_cell
+        col += 1
+        next
+      end
+
+      # Found a changed leading cell - start a batch
       batch_start = col
       batch_fg = back_cell.fg
       batch_bg = back_cell.bg
       batch_attr = back_cell.attr
 
-      # Collect consecutive changed cells with same styling (reuse buffer)
+      # Collect consecutive changed cells with same styling (reuse buffer).
+      # Continuation cells within the batch are synced but not rendered.
       @batch_buffer.clear
+      columns_advanced = 0
       while col < @width
         idx = row_start + col
         back_cell = @back[idx]
         front_cell = @front[idx]
 
-        # Stop if unchanged or different styling
+        # Stop if unchanged
         break if back_cell == front_cell
+
+        # Skip continuation cells within the batch
+        if back_cell.continuation?
+          @front[idx] = back_cell
+          col += 1
+          next
+        end
+
+        # Stop if different styling
         break if back_cell.fg != batch_fg || back_cell.bg != batch_bg || back_cell.attr != batch_attr
 
-        @batch_buffer << back_cell.ch
+        @batch_buffer << back_cell.grapheme
+        columns_advanced += back_cell.width
         @front[idx] = back_cell # Update front buffer
         col += 1
       end
 
-      # Render the batch
-      render_batch(renderer, batch_start, row, @batch_buffer.to_s, batch_fg, batch_bg, batch_attr)
+      # Render the batch (columns_advanced tracks rendered column width)
+      render_batch(renderer, batch_start, row, @batch_buffer.to_s, batch_fg, batch_bg, batch_attr, columns_advanced)
     end
   end
 
   # Renders an entire row (for sync/full redraw).
   #
   # Batches consecutive cells with same styling for efficiency.
-  # Updates front buffer to match back buffer after rendering.
+  # Continuation cells (trailing cells of wide graphemes) are skipped during
+  # rendering since they're never drawn directly. Updates front buffer to
+  # match back buffer after rendering.
   private def render_row_full(renderer : Renderer, row : Int32)
     row_start = row * @width
     col = 0
@@ -401,28 +427,45 @@ class Termisu::Buffer
       idx = row_start + col
       cell = @back[idx]
 
+      # Skip continuation cells (they're never rendered directly).
+      # Still sync front buffer.
+      if cell.continuation?
+        @front[idx] = cell
+        col += 1
+        next
+      end
+
       # Start a batch with current cell's styling
       batch_start = col
       batch_fg = cell.fg
       batch_bg = cell.bg
       batch_attr = cell.attr
 
-      # Collect consecutive cells with same styling (reuse buffer)
+      # Collect consecutive leading cells with same styling (reuse buffer)
       @batch_buffer.clear
+      columns_advanced = 0
       while col < @width
         idx = row_start + col
         cell = @back[idx]
 
+        # Skip continuation cells within the batch
+        if cell.continuation?
+          @front[idx] = cell
+          col += 1
+          next
+        end
+
         # Stop if different styling
         break if cell.fg != batch_fg || cell.bg != batch_bg || cell.attr != batch_attr
 
-        @batch_buffer << cell.ch
+        @batch_buffer << cell.grapheme
+        columns_advanced += cell.width
         @front[idx] = cell # Update front buffer
         col += 1
       end
 
-      # Render the batch
-      render_batch(renderer, batch_start, row, @batch_buffer.to_s, batch_fg, batch_bg, batch_attr)
+      # Render the batch (columns_advanced tracks rendered column width)
+      render_batch(renderer, batch_start, row, @batch_buffer.to_s, batch_fg, batch_bg, batch_attr, columns_advanced)
     end
   end
 
@@ -431,6 +474,10 @@ class Termisu::Buffer
   # Uses RenderState to minimize escape sequence emission:
   # - Only moves cursor if not at expected position
   # - Only emits color/attribute sequences when they change
+  #
+  # Cursor advancement is based on cell widths (columns_advanced), not
+  # codepoint count. This keeps render-state cursor tracking in sync with
+  # the terminal's actual cursor position when rendering wide characters.
   private def render_batch(
     renderer : Renderer,
     x : Int32,
@@ -439,6 +486,7 @@ class Termisu::Buffer
     fg : Color,
     bg : Color,
     attr : Attribute,
+    columns_advanced : Int32,
   )
     return if chars.empty?
 
@@ -452,12 +500,10 @@ class Termisu::Buffer
     renderer.write(chars)
 
     # Update cursor position in render state.
-    # Cursor advancement is based on rendered cell widths (via UnicodeWidth),
+    # Cursor advancement is based on rendered cell widths (columns_advanced),
     # not codepoint count. Wide characters (CJK, emoji) advance by 2 columns,
     # combining marks advance by 0. This keeps render-state cursor tracking
     # in sync with the terminal's actual cursor position.
-    chars.each_char do |char|
-      @render_state.advance_cursor(UnicodeWidth.codepoint_width(char.ord))
-    end
+    @render_state.advance_cursor(columns_advanced)
   end
 end
