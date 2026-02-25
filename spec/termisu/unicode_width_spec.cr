@@ -187,6 +187,32 @@ describe Termisu::UnicodeWidth do
       Termisu::UnicodeWidth.grapheme_width(grapheme).should eq(2)
     end
 
+    it "returns 2 for VS16 with emoji bases outside major symbol blocks" do
+      # Watch (U+231A) — Misc Technical, not in 2600..27BF
+      Termisu::UnicodeWidth.grapheme_width("\u{231A}\u{FE0F}").should eq(2)
+      # Squared Latin Capital Letter A (U+1F170) — below 1F300
+      Termisu::UnicodeWidth.grapheme_width("\u{1F170}\u{FE0F}").should eq(2)
+      # Trade Mark Sign (U+2122)
+      Termisu::UnicodeWidth.grapheme_width("\u{2122}\u{FE0F}").should eq(2)
+    end
+
+    it "does not widen non-emoji base with VS16" do
+      # Latin 'A' + VS16 should stay width 1
+      Termisu::UnicodeWidth.grapheme_width("A\u{FE0F}").should eq(1)
+      # Cyrillic Д (U+0414) + VS16
+      Termisu::UnicodeWidth.grapheme_width("\u{0414}\u{FE0F}").should eq(1)
+      # Latin-1 ¡ (U+00A1) + VS16
+      Termisu::UnicodeWidth.grapheme_width("\u{00A1}\u{FE0F}").should eq(1)
+      # Thai ก (U+0E01) + VS16
+      Termisu::UnicodeWidth.grapheme_width("\u{0E01}\u{FE0F}").should eq(1)
+      # Precomposed é (U+00E9) + VS16
+      Termisu::UnicodeWidth.grapheme_width("\u{00E9}\u{FE0F}").should eq(1)
+      # Black star (U+2605) + VS16 — NOT in Unicode Emoji property
+      Termisu::UnicodeWidth.grapheme_width("\u{2605}\u{FE0F}").should eq(1)
+      # Alchemical symbol 🜀 (U+1F700) + VS16 — NOT in Unicode Emoji property, EAW=Neutral
+      Termisu::UnicodeWidth.grapheme_width("\u{1F700}\u{FE0F}").should eq(1)
+    end
+
     it "returns 2 for ZWJ family emoji" do
       # Family emoji: man + ZWJ + woman + ZWJ + girl + ZWJ + boy
       grapheme = "👨‍👩‍👧‍👦"

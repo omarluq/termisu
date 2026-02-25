@@ -128,22 +128,6 @@ class Termisu::Buffer
     end
   end
 
-  # Clears the wide cell (leading + continuation) at position (x, y).
-  #
-  # If the cell at (x, y) is a wide cell (width 2), both it and its
-  # continuation at (x+1, y) are cleared to default cells.
-  private def clear_wide_cell(x : Int32, y : Int32) : Nil
-    return if out_of_bounds?(x, y)
-
-    row_start = y * @width
-    return if @back[row_start + x].width != 2
-
-    @back[row_start + x] = Cell.default
-    if x + 1 < @width
-      @back[row_start + x + 1] = Cell.default
-    end
-  end
-
   # Clears the owner of a continuation cell.
   #
   # If the cell at (x, y) is a continuation cell, clears its leading cell
