@@ -246,6 +246,15 @@ describe Termisu::UnicodeWidth do
       grapheme = "❤️‍🔥"
       Termisu::UnicodeWidth.grapheme_width(grapheme).should eq(2u8)
     end
+
+    it "returns 2 for keycap emoji sequences" do
+      # Keycap clusters: base + VS16 + COMBINING ENCLOSING KEYCAP (U+20E3)
+      Termisu::UnicodeWidth.grapheme_width("#\u{FE0F}\u{20E3}").should eq(2) # #️⃣
+      Termisu::UnicodeWidth.grapheme_width("1\u{FE0F}\u{20E3}").should eq(2) # 1️⃣
+      Termisu::UnicodeWidth.grapheme_width("0\u{FE0F}\u{20E3}").should eq(2) # 0️⃣
+      Termisu::UnicodeWidth.grapheme_width("*\u{FE0F}\u{20E3}").should eq(2) # *️⃣
+      Termisu::UnicodeWidth.grapheme_width("9\u{FE0F}\u{20E3}").should eq(2) # 9️⃣
+    end
   end
 
   describe ".string_width" do
@@ -269,6 +278,14 @@ describe Termisu::UnicodeWidth do
 
     it "counts emoji as width 2" do
       Termisu::UnicodeWidth.string_width("😀😁").should eq(4)
+    end
+
+    it "counts keycap emoji as width 2" do
+      # Keycap sequences: base + VS16 + COMBINING ENCLOSING KEYCAP
+      Termisu::UnicodeWidth.string_width("#\u{FE0F}\u{20E3}").should eq(2) # #️⃣
+      Termisu::UnicodeWidth.string_width("1\u{FE0F}\u{20E3}").should eq(2) # 1️⃣
+      # VS16 attaches to immediately preceding base: "1" (w=1) + "2️⃣" (w=2) = 3
+      Termisu::UnicodeWidth.string_width("12\u{FE0F}\u{20E3}").should eq(3)
     end
 
     it "counts combining sequences as width 1" do
