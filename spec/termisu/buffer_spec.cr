@@ -308,6 +308,140 @@ describe Termisu::Buffer do
     end
   end
 
+  describe "wide character rendering (WP4)" do
+    it "does not drift cursor when rendering CJK characters in diff mode" do
+      renderer = MockRenderer.new
+      buffer = Termisu::Buffer.new(10, 1)
+
+      # Write CJK character (width 2) at position 0
+      buffer.set_cell(0, 0, '中')
+      buffer.set_cell(2, 0, 'A')
+      buffer.render_to(renderer)
+
+      # The CJK character should be rendered as full grapheme.
+      # Use write_calls.join to check substring presence.
+      rendered_text = renderer.write_calls.join
+      rendered_text.should contain("中")
+      rendered_text.should contain("A")
+    end
+
+    it "does not drift cursor when rendering CJK characters in sync mode" do
+      renderer = MockRenderer.new
+      buffer = Termisu::Buffer.new(10, 1)
+
+      buffer.set_cell(0, 0, '中')
+      buffer.set_cell(2, 0, 'A')
+      buffer.sync_to(renderer)
+
+      rendered_text = renderer.write_calls.join
+      rendered_text.should contain("中")
+    end
+
+    it "skips continuation cells in diff render (no grapheme emitted for trailing cell)" do
+      renderer = MockRenderer.new
+      buffer = Termisu::Buffer.new(10, 1)
+
+      buffer.set_cell(0, 0, '中')
+      buffer.render_to(renderer)
+
+      # Continuation cell at col 1 should not produce a separate write.
+      # Only the grapheme '中' and remaining default spaces should appear.
+      rendered_text = renderer.write_calls.join
+      rendered_text.should contain("中")
+      # Verify '中' appears only once (no continuation cell writes)
+      count = renderer.write_calls.count(&.includes?("中"))
+      count.should eq(1)
+    end
+
+    it "skips continuation cells in sync render" do
+      renderer = MockRenderer.new
+      buffer = Termisu::Buffer.new(4, 1)
+
+      buffer.set_cell(0, 0, '中') # Cols 0-1
+      buffer.set_cell(2, 0, 'A') # Col 2
+      # Col 3 is default space
+      buffer.sync_to(renderer)
+
+      rendered_text = renderer.write_calls.join
+      # Should be: 中 + A + space = 4 visual columns but 3 graphemes written
+      rendered_text.should contain("中")
+      rendered_text.should contain("A")
+    end
+
+    it "does not start a diff batch at a continuation column" do
+      renderer = MockRenderer.new
+      buffer = Termisu::Buffer.new(10, 1)
+
+      # Set up: styled wide char at col 5, default char at col 7
+      buffer.set_cell(5, 0, '中', fg: Termisu::Color.red)
+      buffer.set_cell(7, 0, 'X')
+      buffer.render_to(renderer)
+
+      # Now change only col 7 content (col 6 is unchanged continuation)
+      renderer.clear
+      buffer.set_cell(7, 0, 'Y')
+      buffer.render_to(renderer)
+
+      # The batch for 'Y' must start at col 7, NOT col 6 (continuation).
+      # Verify that the move_cursor targets col 7.
+      renderer.write_calls.join.should contain("Y")
+      renderer.move_calls.should contain({7, 0})
+    end
+
+    it "handles styled wide glyph followed by changed default-style glyph without cursor drift" do
+      renderer = MockRenderer.new
+      buffer = Termisu::Buffer.new(10, 1)
+
+      # Initial render: red wide char at 3, default 'Z' at 5
+      buffer.set_cell(3, 0, '日', fg: Termisu::Color.red)
+      buffer.set_cell(5, 0, 'Z')
+      buffer.render_to(renderer)
+
+      # Change only the default-style glyph at col 5
+      renderer.clear
+      buffer.set_cell(5, 0, 'W')
+      buffer.render_to(renderer)
+
+      # 'W' must render at col 5, not at col 4 (continuation column)
+      renderer.write_calls.join.should contain("W")
+      renderer.move_calls.should contain({5, 0})
+    end
+
+    it "correctly renders multiple consecutive wide chars without drift" do
+      renderer = MockRenderer.new
+      buffer = Termisu::Buffer.new(10, 1)
+
+      # Three consecutive wide chars: cols 0-1, 2-3, 4-5
+      buffer.set_cell(0, 0, '中')
+      buffer.set_cell(2, 0, '日')
+      buffer.set_cell(4, 0, '本')
+      buffer.render_to(renderer)
+
+      rendered_text = renderer.write_calls.join
+      rendered_text.should contain("中")
+      rendered_text.should contain("日")
+      rendered_text.should contain("本")
+    end
+
+    it "sync_to correctly advances cursor past wide chars" do
+      renderer = MockRenderer.new
+      buffer = Termisu::Buffer.new(6, 1)
+
+      # Wide at 0, narrow at 2, wide at 3, narrow at 5
+      buffer.set_cell(0, 0, '中')
+      buffer.set_cell(2, 0, 'A')
+      buffer.set_cell(3, 0, '日')
+      buffer.set_cell(5, 0, 'B')
+      buffer.sync_to(renderer)
+
+      rendered_text = renderer.write_calls.join
+      rendered_text.should contain("中")
+      rendered_text.should contain("A")
+      rendered_text.should contain("日")
+      rendered_text.should contain("B")
+    end
+  end
+
   describe "#resize" do
     it "preserves existing content when growing" do
       buffer = Termisu::Buffer.new(5, 3)
