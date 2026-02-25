@@ -58,24 +58,24 @@ module Termisu::UnicodeWidth
   # ```
   def self.grapheme_width(grapheme : String) : UInt8
     return 0u8 if grapheme.empty?
-
-    # Handle regional indicator pairs (flags)
     return 2u8 if regional_indicator_pair?(grapheme)
 
-    # Sum codepoint widths, then normalize clusters
     width = calculate_grapheme_raw_width(grapheme)
     return 0u8 if width == 0
 
-    # Cluster normalization rules
-    return 1u8 if grapheme.includes?('\u{FE0E}')              # VS15: text presentation
-    return 2u8 if grapheme.includes?('\u{FE0F}')              # VS16: emoji presentation
-    return 2u8 if grapheme.includes?('\u{200D}') && width > 1 # ZWJ with emoji
+    normalize_cluster_width(grapheme, width)
+  end
 
-    # Lone regional indicator (shouldn't happen in valid grapheme)
-    return 1u8 if regional_indicator?(grapheme.char_at(0).ord)
+  # Applies cluster normalization rules (VS15/VS16, ZWJ) to raw width.
+  # :nodoc:
+  private def self.normalize_cluster_width(grapheme : String, raw_width : UInt32) : UInt8
+    return 1u8 if grapheme.includes?('\u{FE0E}') # VS15: text presentation
+    base_cp = grapheme.char_at(0).ord
+    return 2u8 if grapheme.includes?('\u{FE0F}') && emoji_presentation_base?(base_cp) # VS16: emoji-capable bases only
+    return 2u8 if grapheme.includes?('\u{200D}') && raw_width > 1                     # ZWJ with emoji
+    return 1u8 if regional_indicator?(base_cp)                                        # Lone regional indicator
 
-    # Return calculated width, capped at 2
-    width > 2 ? 2u8 : width.to_u8
+    raw_width > 2 ? 2u8 : raw_width.to_u8
   end
 
   # Returns the display width of a string (multiple grapheme clusters).
@@ -539,12 +539,142 @@ module Termisu::UnicodeWidth
 
   # :nodoc:
   private def self.regional_indicator_pair?(grapheme : String) : Bool
-    # Check if string has exactly 2 regional indicators (flag emoji)
-    return false if grapheme.empty?
-
-    cps = grapheme.chars.map(&.ord)
-    cps.size == 2 && regional_indicator?(cps[0]) && regional_indicator?(cps[1])
+    # Check if string has exactly 2 regional indicators (flag emoji).
+    # Iterates codepoints directly to avoid allocating an intermediate array.
+    count = 0
+    grapheme.each_char do |char|
+      return false unless regional_indicator?(char.ord)
+      count += 1
+      return false if count > 2
+    end
+    count == 2
   end
+
+  # Returns true if the codepoint has the Unicode `Emoji` property and can be
+  # widened by VS16 (U+FE0F). Based on Unicode 15 emoji-data.txt.
+  # Uses block ranges for dense regions and binary search for singletons.
+  # :nodoc:
+  private def self.emoji_presentation_base?(cp : Int32) : Bool
+    emoji_presentation_block?(cp) || emoji_presentation_singleton?(cp)
+  end
+
+  # Dense emoji sub-blocks in the SMP where virtually all codepoints
+  # have the Unicode Emoji property. Non-emoji blocks (Alchemical Symbols,
+  # Ornamental Dingbats, Supplemental Arrows, etc.) are excluded;
+  # scattered emoji outside these ranges live in the singleton table.
+  # :nodoc:
+  private def self.emoji_presentation_block?(cp : Int32) : Bool
+    (0x1F300..0x1F64F).includes?(cp) ||   # Misc Symbols & Pictographs + Emoticons
+      (0x1F680..0x1F6FF).includes?(cp) || # Transport & Map Symbols
+      (0x1F900..0x1F9FF).includes?(cp) || # Supplemental Symbols & Pictographs
+      (0x1FA70..0x1FAFF).includes?(cp)    # Symbols & Pictographs Extended-A
+  end
+
+  # Scattered emoji-capable codepoints outside the SMP block.
+  # Sorted for O(log n) binary search lookup.
+  # :nodoc:
+  private def self.emoji_presentation_singleton?(cp : Int32) : Bool
+    EMOJI_PRESENTATION_SINGLETONS.bsearch { |entry| entry >= cp } == cp
+  end
+
+  # Sorted codepoints with the Unicode `Emoji` property that fall outside
+  # the 4 dense SMP sub-blocks. Source: Unicode 15 emoji-data.txt.
+  # BMP emoji (2600..27BF) are enumerated individually since those ranges
+  # contain many non-emoji symbols (e.g. ★ U+2605). SMP emoji outside the
+  # dense blocks (1F300..1F64F, 1F680..1F6FF, 1F900..1F9FF, 1FA70..1FAFF)
+  # are also listed here.
+  private EMOJI_PRESENTATION_SINGLETONS = [
+    # Basic Latin and Latin-1 Supplement
+    0x00A9, 0x00AE, # ©®
+    # General Punctuation and Arrows
+    0x200D, 0x203C, 0x2049,                                         # ZWJ ‼⁉
+    0x2122, 0x2139,                                                 # ™ℹ
+    0x2194, 0x2195, 0x2196, 0x2197, 0x2198, 0x2199, 0x21A9, 0x21AA, # ↔..↪
+    # Misc Technical and Enclosed Alphanumerics
+    0x231A, 0x231B, 0x2328, 0x23CF,                         # ⌚⌛⌨⏏
+    0x23E9, 0x23EA, 0x23EB, 0x23EC, 0x23ED, 0x23EE, 0x23EF, # ⏩..⏯
+    0x23F0, 0x23F1, 0x23F2, 0x23F3, 0x23F8, 0x23F9, 0x23FA, # ⏰..⏺
+    0x24C2,                                                 # Ⓜ
+    # Geometric Shapes
+    0x25AA, 0x25AB, 0x25B6, 0x25C0, 0x25FB, 0x25FC, 0x25FD, 0x25FE, # ▪▫▶◀◻..◾
+    # Misc Symbols (2600..26FF) — ONLY Emoji property codepoints
+    0x2600, 0x2601, 0x2602, 0x2603, 0x2604,         # ☀☁☂☃☄
+    0x260E,                                         # ☎
+    0x2611,                                         # ☑
+    0x2614, 0x2615,                                 # ☔☕
+    0x2618,                                         # ☘
+    0x261D,                                         # ☝
+    0x2620, 0x2622, 0x2623,                         # ☠☢☣
+    0x2626, 0x262A,                                 # ☦☪
+    0x262E, 0x262F,                                 # ☮☯
+    0x2638, 0x2639, 0x263A,                         # ☸☹☺
+    0x2640, 0x2642,                                 # ♀♂
+    0x2648, 0x2649, 0x264A, 0x264B, 0x264C, 0x264D, # ♈..♍
+    0x264E, 0x264F, 0x2650, 0x2651, 0x2652, 0x2653, # ♎..♓
+    0x265F,                                         # ♟
+    0x2660, 0x2663,                                 # ♠♣
+    0x2665, 0x2666, 0x2668,                         # ♥♦♨
+    0x267B, 0x267E, 0x267F,                         # ♻♾♿
+    0x2692, 0x2693, 0x2694, 0x2695, 0x2696, 0x2697, # ⚒..⚗
+    0x2699,                                         # ⚙
+    0x269B, 0x269C,                                 # ⚛⚜
+    0x26A0,                                         # ⚠
+    0x26A1,                                         # ⚡
+    0x26A7,                                         # ⚧
+    0x26AA, 0x26AB,                                 # ⚪⚫
+    0x26B0, 0x26B1,                                 # ⚰⚱
+    0x26BD, 0x26BE,                                 # ⚽⚾
+    0x26C4, 0x26C5,                                 # ⛄⚅
+    0x26C8,                                         # ⚈
+    0x26CE, 0x26CF,                                 # ⚎⚏
+    0x26D1,                                         # ⚑
+    0x26D3, 0x26D4,                                 # ⚓⚔
+    0x26E9, 0x26EA,                                 # ⚩⚪
+    0x26F0, 0x26F1, 0x26F2, 0x26F3, 0x26F4, 0x26F5, # ⚰..⚵
+    0x26F7, 0x26F8, 0x26F9, 0x26FA,                 # ⚷..⚺
+    0x26FD,                                         # ⛽
+    # Dingbats (2700..27BF) — ONLY Emoji property codepoints
+    0x2702,                                         # ✂
+    0x2705,                                         # ✅
+    0x2708, 0x2709, 0x270A, 0x270B, 0x270C, 0x270D, # ✈..✍
+    0x270F,                                         # ✏
+    0x2712,                                         # ✒
+    0x2714,                                         # ✔
+    0x2716,                                         # ✖
+    0x271D,                                         # ✝
+    0x2721,                                         # ✡
+    0x2728,                                         # ✨
+    0x2733, 0x2734,                                 # ✳✴
+    0x2744,                                         # ❄
+    0x2747,                                         # ❇
+    0x274C, 0x274E,                                 # ❌❎
+    0x2753, 0x2754, 0x2755,                         # ❕❖❗
+    0x2763, 0x2764,                                 # ❣❤
+    0x2795, 0x2796, 0x2797,                         # ➕➖➗
+    0x27A1,                                         # ➡
+    0x27B0,                                         # ➰
+    0x27BF,                                         # ➿
+    # Supplemental Arrows-A/B
+    0x2934, 0x2935, # ⤴⤵
+    # CJK Letters and Months
+    0x3030, 0x303D, # 〰〽
+    0x3297, 0x3299, # ㊗㊙
+    # SMP emoji with Unicode Emoji property OUTSIDE the 4 dense sub-blocks
+    # (1F300..1F64F, 1F680..1F6FF, 1F900..1F9FF, 1FA70..1FAFF).
+    # Source: Unicode 15 emoji-data.txt.
+    0x1F004, 0x1F0CF,                            # 🀄🃏 Mahjong, Playing Cards
+    0x1F170, 0x1F171, 0x1F17E, 0x1F17F, 0x1F18E, # 🅰🅱🅾🅿🆎 Squared Latin
+    0x1F191, 0x1F192, 0x1F193, 0x1F194, 0x1F195, # 🆑..🆕
+    0x1F196, 0x1F197, 0x1F198, 0x1F199, 0x1F19A, # 🆖..🆚
+    0x1F201, 0x1F202, 0x1F21A, 0x1F22F,          # 🈁🈂🈚🈯
+    0x1F232, 0x1F233, 0x1F234, 0x1F235, 0x1F236, # 🈲..🈶
+    0x1F237, 0x1F238, 0x1F239, 0x1F23A,          # 🈷..🈺
+    0x1F250, 0x1F251,                            # 🉐🉑
+    # Geometric Shapes Extended — only emoji codepoints
+    0x1F7E0, 0x1F7E1, 0x1F7E2, 0x1F7E3, 0x1F7E4, 0x1F7E5, # 🟠..🟥
+    0x1F7E6, 0x1F7E7, 0x1F7E8, 0x1F7E9, 0x1F7EA, 0x1F7EB, # 🟦..🟫
+    0x1F7F0,                                              # 🟰 Heavy equals sign
+  ]
 
   # :nodoc:
   private def self.wide_codepoint?(cp : Int32) : Bool
@@ -571,9 +701,11 @@ module Termisu::UnicodeWidth
       (0xFFE0..0xFFE6).includes?(cp)    # Fullwidth Signs
   end
 
-  # Emoji and CJK supplementary planes (Extensions B-F, Tertiary)
+  # Emoji and CJK supplementary planes (Extensions B-F, Tertiary).
+  # Excludes Alchemical Symbols (1F700-1F77F) which have EAW = Neutral.
   private def self.wide_supplementary?(cp : Int32) : Bool
-    (0x1F300..0x1FAFF).includes?(cp) ||   # Emoji
+    (0x1F300..0x1F6FF).includes?(cp) ||   # Misc Symbols & Pictographs through Transport
+      (0x1F780..0x1FAFF).includes?(cp) || # Geometric Shapes Ext through Symbols Ext-A
       (0x20000..0x2FFFD).includes?(cp) || # CJK Extensions B-F
       (0x30000..0x3FFFD).includes?(cp)    # CJK Tertiary Ideographic
   end
