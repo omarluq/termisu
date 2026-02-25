@@ -71,6 +71,7 @@ module Termisu::UnicodeWidth
   private def self.normalize_cluster_width(grapheme : String, raw_width : UInt32) : UInt8
     return 1u8 if grapheme.includes?('\u{FE0E}') # VS15: text presentation
     base_cp = grapheme.char_at(0).ord
+    return 2u8 if grapheme.includes?('\u{20E3}') && keycap_base?(base_cp)             # Keycap sequence (e.g. #️⃣ 1️⃣)
     return 2u8 if grapheme.includes?('\u{FE0F}') && emoji_presentation_base?(base_cp) # VS16: emoji-capable bases only
     return 2u8 if grapheme.includes?('\u{200D}') && raw_width > 1                     # ZWJ with emoji
     return 1u8 if regional_indicator?(base_cp)                                        # Lone regional indicator
@@ -575,6 +576,13 @@ module Termisu::UnicodeWidth
   # :nodoc:
   private def self.emoji_presentation_singleton?(cp : Int32) : Bool
     EMOJI_PRESENTATION_SINGLETONS.bsearch { |entry| entry >= cp } == cp
+  end
+
+  # Keycap base characters: digits 0-9, '#', '*'.
+  # These combine with U+FE0F + U+20E3 to form keycap emoji sequences.
+  # :nodoc:
+  private def self.keycap_base?(cp : Int32) : Bool
+    (cp >= 0x30 && cp <= 0x39) || cp == 0x23 || cp == 0x2A
   end
 
   # Sorted codepoints with the Unicode `Emoji` property that fall outside
