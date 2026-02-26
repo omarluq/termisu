@@ -206,7 +206,10 @@ class Termisu::Event::Poller::Poll < Termisu::Event::Poller
     @fds.each_with_index do |pfd, i|
       next if pfd.revents == 0
       type = poll_to_result_type(pfd.revents)
-      @fds[i].revents = 0 # Clear the actual array element, not a copy
+      # Struct is a value type — must write back to clear revents in the array
+      cleared = pfd
+      cleared.revents = 0
+      @fds[i] = cleared
       return PollResult.new(type: type, fd: pfd.fd)
     end
     nil
@@ -231,23 +234,13 @@ class Termisu::Event::Poller::Poll < Termisu::Event::Poller
     end
 
     # At this point, at least one of timer_timeout or user_ms is non-nil
-    if timer_timeout.nil?
-      # Timer timeout is nil, so user_ms must be non-nil here
-      u = user_ms
-      return u ? u : -1
+    if (u = user_ms).nil?
+      timer_timeout.as(Int32)
+    elsif (t = timer_timeout).nil?
+      u
+    else
+      Math.min(t, u)
     end
-
-    if user_ms.nil?
-      # User ms is nil, so timer_timeout must be non-nil here
-      t = timer_timeout
-      return t ? t : -1
-    end
-
-    # Both present - use minimum
-    t = timer_timeout
-    u = user_ms
-    return Math.min(t, u) if t && u
-    -1
   end
 
   # Returns timeout until next timer in milliseconds, or nil if no timers

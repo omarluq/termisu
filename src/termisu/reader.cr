@@ -137,7 +137,11 @@ class Termisu::Reader
       pollfd.events = LibC::POLLIN
       pollfd.revents = 0_i16
 
-      result = LibC.poll(pointerof(pollfd), 1_u64, original_timeout_ms)
+      # Compute remaining timeout from original start to avoid drift
+      elapsed_ms = (monotonic_now - start).total_milliseconds.to_i
+      remaining_ms = {original_timeout_ms - elapsed_ms, 0}.max
+
+      result = LibC.poll(pointerof(pollfd), 1_u64, remaining_ms)
 
       if result > 0
         revents = pollfd.revents
@@ -160,18 +164,12 @@ class Termisu::Reader
           raise Termisu::IOError.select_failed(errno)
         end
 
-        # Recompute remaining timeout
-        elapsed = monotonic_now - start
-        elapsed_ms = elapsed.total_milliseconds.to_i
-        remaining_ms = {original_timeout_ms - elapsed_ms, 0}.max
-
-        if remaining_ms == 0
-          # Timeout expired during retry attempts
+        # Check if timeout has expired during retries
+        elapsed_ms = (monotonic_now - start).total_milliseconds.to_i
+        if elapsed_ms >= original_timeout_ms
           return false
         end
 
-        # Update timeout for next iteration
-        original_timeout_ms = remaining_ms
         next
       end
 

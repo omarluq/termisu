@@ -63,6 +63,7 @@ class Termisu::Event::Source::Resize < Termisu::Event::Source
 
   @running : Atomic(Bool)
   @signal_received : Atomic(Bool)
+  @generation : Atomic(Int32)
   @poll_interval : Time::Span
   @size_provider : SizeProvider
   @output : Channel(Event::Any)?
@@ -89,6 +90,7 @@ class Termisu::Event::Source::Resize < Termisu::Event::Source
   def initialize(@size_provider : SizeProvider, @poll_interval : Time::Span = DEFAULT_POLL_INTERVAL)
     @running = Atomic(Bool).new(false)
     @signal_received = Atomic(Bool).new(false)
+    @generation = Atomic(Int32).new(0)
   end
 
   # Returns the current polling interval.
@@ -127,8 +129,9 @@ class Termisu::Event::Source::Resize < Termisu::Event::Source
     # Install SIGWINCH handler
     install_signal_handler
 
+    gen = @generation.add(1) &+ 1
     @fiber = spawn(name: "termisu-resize") do
-      run_loop
+      run_loop(gen)
     end
 
     Log.debug { "Resize source started, initial size: #{initial_width}x#{initial_height}" }
@@ -140,6 +143,9 @@ class Termisu::Event::Source::Resize < Termisu::Event::Source
   # on its next poll cycle. Resets the SIGWINCH handler.
   def stop : Nil
     return unless @running.compare_and_set(true, false)
+
+    # Invalidate the current generation so any stale fiber self-terminates
+    @generation.add(1)
 
     # Reset signal handler first to prevent new signals from arriving
     Signal::WINCH.reset
@@ -179,14 +185,16 @@ class Termisu::Event::Source::Resize < Termisu::Event::Source
   # When a SIGWINCH signal is received, the flag is set by the signal handler
   # and the next poll cycle processes the resize. Maximum latency for signal-
   # triggered resizes is one poll interval (100ms by default).
-  private def run_loop : Nil
+  private def run_loop(my_generation : Int32) : Nil
     output = @output
     return unless output
 
     while @running.get
       sleep(@poll_interval)
 
-      # Check again after sleep in case we were stopped
+      # Check generation after sleep — if it changed, a stop+start cycle
+      # occurred and a new fiber owns this generation. Self-terminate.
+      break unless @generation.get == my_generation
       break unless @running.get
 
       # Clear the signal flag (swap returns previous value).
