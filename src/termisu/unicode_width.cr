@@ -717,7 +717,8 @@ module Termisu::UnicodeWidth
   # Excludes Alchemical Symbols (1F700-1F77F), Geometric Shapes Extended
   # (1F780-1F7DF), Supplemental Arrows-C (1F800-1F8FF), and Chess Symbols
   # (1FA00-1FA6F) which have EAW = Neutral and are NOT emoji.
-  # Only includes precise emoji subranges from Unicode 15 emoji-data.txt.
+  # Uses selected emoji ranges from Unicode 15 emoji-data.txt, including
+  # some broad contiguous blocks where most codepoints are emoji.
   private def self.wide_supplementary?(cp : Int32) : Bool
     (0x1F300..0x1F6FF).includes?(cp) ||   # Misc Symbols & Pictographs through Transport
       (0x1F7E0..0x1F7EB).includes?(cp) || # Geometric Shapes Ext — colored circles/squares (emoji)

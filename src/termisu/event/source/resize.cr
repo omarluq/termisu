@@ -28,12 +28,11 @@
 # ## Detection Strategy
 #
 # Uses a hybrid approach:
-# 1. **SIGWINCH Signal**: Immediate notification when terminal is resized
-# 2. **Polling Fallback**: Periodic checks (default 100ms) as a safety net
-#
-# The signal handler wakes the polling fiber immediately, providing
-# responsive resize detection while the polling serves as a fallback
-# for edge cases where signals might be missed.
+# 1. **SIGWINCH Signal**: Sets the `@signal_received` atomic flag; the
+#    polling fiber checks this flag each iteration and skips the sleep
+#    when set, providing near-immediate resize detection.
+# 2. **Polling Fallback**: Periodic size checks (default 100ms) catch
+#    resizes that signals might miss.
 #
 # ## Runtime Configuration
 #
@@ -181,26 +180,25 @@ class Termisu::Event::Source::Resize < Termisu::Event::Source
 
   # Main resize monitoring loop - runs in a spawned fiber.
   #
-  # Polls at `@poll_interval` and checks the `@signal_received` atomic flag.
-  # When a SIGWINCH signal is received, the flag is set by the signal handler
-  # and the next poll cycle processes the resize. Maximum latency for signal-
-  # triggered resizes is one poll interval (100ms by default).
+  # Checks the `@signal_received` atomic flag each iteration. If SIGWINCH
+  # was received, processes the resize immediately (skipping sleep). Otherwise
+  # sleeps for `@poll_interval` before checking for size changes.
   private def run_loop(my_generation : Int32) : Nil
     output = @output
     return unless output
 
     while @running.get
-      sleep(@poll_interval)
+      # If a SIGWINCH was received, process immediately with minimal delay;
+      # otherwise sleep for the full poll interval.
+      signaled = @signal_received.swap(false)
+      unless signaled
+        sleep(@poll_interval)
+      end
 
       # Check generation after sleep — if it changed, a stop+start cycle
       # occurred and a new fiber owns this generation. Self-terminate.
       break unless @generation.get == my_generation
       break unless @running.get
-
-      # Clear the signal flag (swap returns previous value).
-      # We check size regardless of whether a signal triggered it,
-      # since the poll also catches resizes missed by signals.
-      @signal_received.swap(false)
 
       check_and_emit_resize(output)
     end

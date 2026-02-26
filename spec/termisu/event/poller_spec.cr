@@ -200,41 +200,6 @@ describe Termisu::Event::Poller::Poll do
   end
 
   describe "fd registration" do
-    it "can register and unregister fds" do
-      poller = Termisu::Event::Poller::Poll.new
-
-      reader, writer = IO.pipe
-
-      poller.register_fd(reader.fd, Termisu::Event::Poller::FDEvents::Read)
-      poller.unregister_fd(reader.fd)
-
-      reader.close
-      writer.close
-      poller.close
-    end
-
-    it "detects readable fd" do
-      poller = Termisu::Event::Poller::Poll.new
-      reader, writer = IO.pipe
-
-      poller.register_fd(reader.fd, Termisu::Event::Poller::FDEvents::Read)
-
-      writer.print("test")
-      writer.flush
-
-      result = poller.wait(100.milliseconds)
-
-      result.should_not be_nil
-      if r = result
-        r.fd_readable?.should be_true
-        r.fd.should eq(reader.fd)
-      end
-
-      reader.close
-      writer.close
-      poller.close
-    end
-
     it "updates events when registering same fd twice" do
       poller = Termisu::Event::Poller::Poll.new
       reader, writer = IO.pipe
@@ -272,29 +237,6 @@ describe Termisu::Event::Poller::Poll do
       writer.close
       poller.close
     end
-
-    it "allows unregister then re-register of same fd" do
-      poller = Termisu::Event::Poller::Poll.new
-      reader, writer = IO.pipe
-
-      poller.register_fd(reader.fd, Termisu::Event::Poller::FDEvents::Read)
-      poller.unregister_fd(reader.fd)
-      poller.register_fd(reader.fd, Termisu::Event::Poller::FDEvents::Read)
-
-      writer.print("test")
-      writer.flush
-
-      result = poller.wait(100.milliseconds)
-      result.should_not be_nil
-      if r = result
-        r.fd_readable?.should be_true
-        r.fd.should eq(reader.fd)
-      end
-
-      reader.close
-      writer.close
-      poller.close
-    end
   end
 end
 
@@ -326,43 +268,6 @@ end
     end
 
     describe "fd registration" do
-      it "can register and unregister fds" do
-        poller = Termisu::Event::Poller::Linux.new
-
-        # Create a pipe for testing
-        reader, writer = IO.pipe
-
-        poller.register_fd(reader.fd, Termisu::Event::Poller::FDEvents::Read)
-        poller.unregister_fd(reader.fd)
-
-        reader.close
-        writer.close
-        poller.close
-      end
-
-      it "detects readable fd" do
-        poller = Termisu::Event::Poller::Linux.new
-        reader, writer = IO.pipe
-
-        poller.register_fd(reader.fd, Termisu::Event::Poller::FDEvents::Read)
-
-        # Write data to make it readable
-        writer.print("test")
-        writer.flush
-
-        result = poller.wait(100.milliseconds)
-
-        result.should_not be_nil
-        if r = result
-          r.fd_readable?.should be_true
-          r.fd.should eq(reader.fd)
-        end
-
-        reader.close
-        writer.close
-        poller.close
-      end
-
       it "updates events when registering same fd twice (idempotent)" do
         poller = Termisu::Event::Poller::Linux.new
         reader, writer = IO.pipe
@@ -388,29 +293,6 @@ end
         writer.close
         poller.close
       end
-
-      it "allows unregister then re-register of same fd" do
-        poller = Termisu::Event::Poller::Linux.new
-        reader, writer = IO.pipe
-
-        poller.register_fd(reader.fd, Termisu::Event::Poller::FDEvents::Read)
-        poller.unregister_fd(reader.fd)
-        poller.register_fd(reader.fd, Termisu::Event::Poller::FDEvents::Read)
-
-        writer.print("test")
-        writer.flush
-
-        result = poller.wait(100.milliseconds)
-        result.should_not be_nil
-        if r = result
-          r.fd_readable?.should be_true
-          r.fd.should eq(reader.fd)
-        end
-
-        reader.close
-        writer.close
-        poller.close
-      end
     end
   end
 {% end %}
@@ -421,41 +303,6 @@ end
     poller_shared_tests(Termisu::Event::Poller::Kqueue)
 
     describe "fd registration" do
-      it "can register and unregister fds" do
-        poller = Termisu::Event::Poller::Kqueue.new
-
-        reader, writer = IO.pipe
-
-        poller.register_fd(reader.fd, Termisu::Event::Poller::FDEvents::Read)
-        poller.unregister_fd(reader.fd)
-
-        reader.close
-        writer.close
-        poller.close
-      end
-
-      it "detects readable fd" do
-        poller = Termisu::Event::Poller::Kqueue.new
-        reader, writer = IO.pipe
-
-        poller.register_fd(reader.fd, Termisu::Event::Poller::FDEvents::Read)
-
-        writer.print("test")
-        writer.flush
-
-        result = poller.wait(100.milliseconds)
-
-        result.should_not be_nil
-        if r = result
-          r.fd_readable?.should be_true
-          r.fd.should eq(reader.fd)
-        end
-
-        reader.close
-        writer.close
-        poller.close
-      end
-
       it "updates events when registering same fd twice (idempotent)" do
         poller = Termisu::Event::Poller::Kqueue.new
         reader, writer = IO.pipe
@@ -467,29 +314,6 @@ end
         poller.register_fd(reader.fd, Termisu::Event::Poller::FDEvents::Read | Termisu::Event::Poller::FDEvents::Write)
 
         # Write data to make it readable
-        writer.print("test")
-        writer.flush
-
-        result = poller.wait(100.milliseconds)
-        result.should_not be_nil
-        if r = result
-          r.fd_readable?.should be_true
-          r.fd.should eq(reader.fd)
-        end
-
-        reader.close
-        writer.close
-        poller.close
-      end
-
-      it "allows unregister then re-register of same fd" do
-        poller = Termisu::Event::Poller::Kqueue.new
-        reader, writer = IO.pipe
-
-        poller.register_fd(reader.fd, Termisu::Event::Poller::FDEvents::Read)
-        poller.unregister_fd(reader.fd)
-        poller.register_fd(reader.fd, Termisu::Event::Poller::FDEvents::Read)
-
         writer.print("test")
         writer.flush
 

@@ -141,7 +141,7 @@ class Termisu::Reader
       elapsed_ms = (monotonic_now - start).total_milliseconds.to_i
       remaining_ms = {original_timeout_ms - elapsed_ms, 0}.max
 
-      result = LibC.poll(pointerof(pollfd), 1_u64, remaining_ms)
+      result = LibC.poll(pointerof(pollfd), LibC::NfdsT.new(1), remaining_ms)
 
       if result > 0
         revents = pollfd.revents
@@ -334,5 +334,13 @@ lib LibC
     POLLNVAL = 0x0020_i16
   {% end %}
 
-  fun poll(fds : Pollfd*, nfds : UInt64, timeout : Int32) : Int32
+  # nfds_t is unsigned long on Linux (64-bit on x86_64) but unsigned int
+  # on Darwin/BSD. Use a platform-conditional alias for ABI correctness.
+  {% if flag?(:linux) %}
+    alias NfdsT = UInt64
+  {% else %}
+    alias NfdsT = UInt32
+  {% end %}
+
+  fun poll(fds : Pollfd*, nfds : NfdsT, timeout : Int32) : Int32
 end

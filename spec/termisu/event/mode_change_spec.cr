@@ -102,6 +102,15 @@ describe Termisu::Event::ModeChange do
 
       event.to_raw?.should be_true
     end
+
+    it "returns false when not transitioning to raw mode" do
+      event = Termisu::Event::ModeChange.new(
+        mode: Termisu::Terminal::Mode.cooked,
+        previous_mode: Termisu::Terminal::Mode.cooked,
+      )
+
+      event.to_raw?.should be_false
+    end
   end
 
   describe "#from_raw?" do
@@ -116,6 +125,15 @@ describe Termisu::Event::ModeChange do
 
     it "returns false when previous_mode is nil" do
       event = Termisu::Event::ModeChange.new(mode: Termisu::Terminal::Mode.raw)
+
+      event.from_raw?.should be_false
+    end
+
+    it "returns false when not transitioning from raw mode" do
+      event = Termisu::Event::ModeChange.new(
+        mode: Termisu::Terminal::Mode.cooked,
+        previous_mode: Termisu::Terminal::Mode.cooked,
+      )
 
       event.from_raw?.should be_false
     end

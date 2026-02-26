@@ -196,10 +196,11 @@ describe "Synchronized Update Emission" do
         terminal.render
       end
 
-      # Count BSU and ESU occurrences - should be equal (paired)
+      # Count BSU and ESU occurrences - should be exactly 1 each (paired)
       output = terminal.output
       bsu_count = output.scan(Termisu::Terminal::BSU).size
       esu_count = output.scan(Termisu::Terminal::ESU).size
+      bsu_count.should eq(1)
       bsu_count.should eq(esu_count)
     ensure
       terminal.try &.close

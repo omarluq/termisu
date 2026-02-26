@@ -147,6 +147,66 @@ macro poller_shared_tests(poller_class)
     end
   end
 
+  describe "fd lifecycle" do
+    it "can register and unregister fds" do
+      poller = {{poller_class}}.new
+
+      reader, writer = IO.pipe
+
+      poller.register_fd(reader.fd, Termisu::Event::Poller::FDEvents::Read)
+      poller.unregister_fd(reader.fd)
+
+      reader.close
+      writer.close
+      poller.close
+    end
+
+    it "detects readable fd" do
+      poller = {{poller_class}}.new
+      reader, writer = IO.pipe
+
+      poller.register_fd(reader.fd, Termisu::Event::Poller::FDEvents::Read)
+
+      writer.print("test")
+      writer.flush
+
+      result = poller.wait(100.milliseconds)
+
+      result.should_not be_nil
+      if r = result
+        r.fd_readable?.should be_true
+        r.fd.should eq(reader.fd)
+      end
+
+      reader.close
+      writer.close
+      poller.close
+    end
+
+    it "allows unregister then re-register of same fd" do
+      poller = {{poller_class}}.new
+      reader, writer = IO.pipe
+
+      poller.register_fd(reader.fd, Termisu::Event::Poller::FDEvents::Read)
+      poller.unregister_fd(reader.fd)
+      poller.register_fd(reader.fd, Termisu::Event::Poller::FDEvents::Read)
+
+      writer.print("test")
+      writer.flush
+
+      result = poller.wait(100.milliseconds)
+      result.should_not be_nil
+      if r = result
+        r.fd_readable?.should be_true
+        r.fd.should eq(reader.fd)
+      end
+
+      reader.close
+      writer.close
+      poller.close
+    end
+  end
+
   describe "#close" do
     it "is idempotent" do
       poller = {{poller_class}}.new

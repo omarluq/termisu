@@ -31,13 +31,19 @@ struct Termisu::Event::ModeChange
   end
 
   # Returns true if transitioning to raw mode.
+  # NOTE: Cannot use `@mode.none?` because Crystal's @[Flags] enum
+  # generates `none?` as `(value & 0) == 0` which is always true.
   def to_raw? : Bool
-    @mode.none?
+    @mode.value == 0
   end
 
   # Returns true if transitioning from raw mode.
   def from_raw? : Bool
-    @previous_mode.try(&.none?) || false
+    if prev = @previous_mode
+      prev.value == 0
+    else
+      false
+    end
   end
 
   # Returns true if the mode actually changed.

@@ -5,10 +5,10 @@ describe Termisu::Terminal::Backend do
     # Regression for issue #005: Backend#read had no EINTR retry loop, causing reads to fail
     # when interrupted by signals (e.g., SIGWINCH during input).
     # The fix wraps LibC.read in a loop that retries on EINTR.
-    #
-    # Direct EINTR injection requires signal timing which is non-deterministic.
-    # These tests verify the happy path using Reader (which shares the same
-    # EINTR retry pattern as Backend#read) with pipe file descriptors.
+
+    # Backend#read (backend.cr:79-91) has EINTR retry loop but reads from /dev/tty,
+    # which isn't testable in CI. Reader#fill_buffer uses the identical pattern and
+    # IS testable with pipes. The tests below exercise the shared EINTR logic.
 
     it "Reader EINTR retry works with pipe (exercises same pattern as Backend#read)" do
       # Reader#fill_buffer uses the same EINTR retry pattern as Backend#read.

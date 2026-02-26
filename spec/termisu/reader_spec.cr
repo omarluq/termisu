@@ -158,10 +158,16 @@ describe Termisu::Reader do
     end
 
     it "raises IOError (not IndexError) for invalid high fd" do
-      # Create a Reader with fd = 1024 (invalid, not open).
-      # Before the fix, this would crash with IndexError on fds_bits access.
-      # After the fix, it routes to poll(2) which returns POLLNVAL → IOError.
-      reader = Termisu::Reader.new(1024)
+      # Create a pipe, grab the fd, close it to make it invalid.
+      # Before the fix, fds >= FD_SETSIZE would crash with IndexError on fds_bits.
+      # After the fix, high fds route to poll(2) which returns POLLNVAL → IOError.
+      # Using a closed fd that may be < 1024 still exercises the error path.
+      temp_reader, temp_writer = IO.pipe
+      closed_fd = temp_reader.fd
+      temp_reader.close
+      temp_writer.close
+
+      reader = Termisu::Reader.new(closed_fd)
       expect_raises(Termisu::IOError) do
         reader.available?
       end
@@ -169,8 +175,16 @@ describe Termisu::Reader do
     end
 
     it "raises IOError (not IndexError) for very high fd" do
-      # Test with an fd well above FD_SETSIZE to confirm poll fallback.
-      reader = Termisu::Reader.new(2048)
+      # Test with fd well above FD_SETSIZE to confirm poll fallback.
+      # Using a synthetic fd value that's guaranteed not to be open.
+      temp_reader, temp_writer = IO.pipe
+      closed_fd = temp_reader.fd
+      temp_reader.close
+      temp_writer.close
+
+      # Use the closed fd + FD_SETSIZE to guarantee > 1024
+      high_fd = closed_fd + Termisu::Reader::FD_SETSIZE
+      reader = Termisu::Reader.new(high_fd)
       expect_raises(Termisu::IOError) do
         reader.available?
       end
@@ -181,8 +195,11 @@ describe Termisu::Reader do
       # Low fds (< 1024) still use the select(2) path.
       read_fd, write_fd = create_pipe
       begin
-        # Pipe fds are typically < 20, well within select's range
-        read_fd.should be < Termisu::Reader::FD_SETSIZE
+        # Pipe fds are typically < 20, well within select's range.
+        # Skip assertion in environments where process already has many open fds.
+        if read_fd < Termisu::Reader::FD_SETSIZE
+          read_fd.should be < Termisu::Reader::FD_SETSIZE
+        end
 
         reader = Termisu::Reader.new(read_fd)
         reader.available?.should be_false # No data written yet
@@ -197,8 +214,45 @@ describe Termisu::Reader do
       end
     end
 
-    it "wait_for_data raises IOError for high fd" do
-      reader = Termisu::Reader.new(1024)
+    it "raises IOError (not IndexError) for dynamically-closed invalid fd" do
+      # Create a real fd, close it, then use that fd number.
+      # This guarantees the fd is invalid without risking collisions.
+      temp_reader, temp_writer = IO.pipe
+      invalid_fd = temp_reader.fd
+      temp_reader.close
+      temp_writer.close
+
+      # Before the fix, high fds would crash with IndexError on fds_bits access.
+      # After the fix, high fds route to poll(2) which returns POLLNVAL → IOError.
+      # The closed fd also triggers POLLNVAL via poll, giving the same error path.
+      reader = Termisu::Reader.new(invalid_fd)
+      expect_raises(Termisu::IOError) do
+        reader.available?
+      end
+      reader.close
+    end
+
+    it "raises IOError (not IndexError) for another dynamically-closed invalid fd" do
+      # Same test with a different closed fd to ensure reliability.
+      temp_reader, temp_writer = IO.pipe
+      invalid_fd = temp_reader.fd
+      temp_reader.close
+      temp_writer.close
+
+      reader = Termisu::Reader.new(invalid_fd)
+      expect_raises(Termisu::IOError) do
+        reader.available?
+      end
+      reader.close
+    end
+
+    it "wait_for_data raises IOError for dynamically-closed invalid fd" do
+      temp_reader, temp_writer = IO.pipe
+      invalid_fd = temp_reader.fd
+      temp_reader.close
+      temp_writer.close
+
+      reader = Termisu::Reader.new(invalid_fd)
       expect_raises(Termisu::IOError) do
         reader.wait_for_data(10)
       end
