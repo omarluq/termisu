@@ -18,10 +18,12 @@ This phase fixes the `register_fd` contract inconsistency across the three polle
   - The goal: calling `register_fd(fd, events)` twice with different events should result in only the second set of filters being active
   - **Done:** Added "delete then add" pattern in `register_fd`. When the fd is already in `@registered_fds`, both EVFILT_READ and EVFILT_WRITE are deleted (with `ignore_errors: true` to handle ENOENT) before applying the new filters. This follows the same pattern already used by `unregister_fd`. All 1079 tests pass, ameba clean. Note: kqueue-specific behavior can only be verified on macOS/FreeBSD.
 
-- [ ] **BUG-003: Add backend-specific specs verifying idempotent register_fd behavior.** In the spec files for each poller (`spec/termisu/event/poller/...`), add tests that verify:
+- [x] **BUG-003: Add backend-specific specs verifying idempotent register_fd behavior.** In the spec files for each poller (`spec/termisu/event/poller/...`), add tests that verify:
   - Registering fd for READ events, then registering same fd for READ|WRITE events, succeeds
   - The second registration updates the event mask (doesn't fail with EEXIST on Linux, doesn't accumulate filters on kqueue)
   - Unregistering and re-registering the same fd works
   - Use the poller interface directly and verify behavior matches the documentation
+  - **Done:** Added missing specs to achieve consistent coverage across all three backends. Poll backend gained "allows unregister then re-register of same fd" test. Kqueue backend gained both "updates events when registering same fd twice (idempotent)" and "allows unregister then re-register of same fd" tests. Linux backend already had both. All 46 poller specs pass (0 failures). Kqueue-specific tests are conditionally compiled for macOS/FreeBSD/OpenBSD.
 
-- [ ] **Run `bin/hace spec` and `bin/hace ameba` to verify all changes pass tests and linting.** Focus on the poller specs to confirm cross-platform consistency.
+- [x] **Run `bin/hace spec` and `bin/hace ameba` to verify all changes pass tests and linting.** Focus on the poller specs to confirm cross-platform consistency.
+  - **Done:** All 1080 examples pass (0 failures, 0 errors). Ameba: 113 files inspected, 0 failures. Poller specs specifically: 46 examples, 0 failures — all three backends have consistent idempotent register_fd coverage.
