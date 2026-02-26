@@ -43,11 +43,11 @@ struct Termisu::Event::ModeChange
   # Returns true if the mode actually changed.
   #
   # Returns false if:
-  # - Previous mode is nil (first change)
+  # - Previous mode is nil (first mode assignment, not a change)
   # - Previous mode equals current mode
   def changed? : Bool
     prev = @previous_mode
-    return true if prev.nil?
+    return false if prev.nil?
     prev != @mode
   end
 
