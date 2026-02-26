@@ -153,40 +153,33 @@ class Termisu::Event::Poller::Poll < Termisu::Event::Poller
   private def wait_internal(user_timeout : Time::Span?) : PollResult?
     return nil if @closed
 
-    loop do
-      # Calculate effective timeout
-      timeout_ms = calculate_timeout(user_timeout)
+    # Record deadline at method entry to honor user timeout across loop iterations
+    deadline = user_timeout ? monotonic_now + user_timeout : nil
 
-      # Check for already-expired timers before poll
-      if timer_result = check_expired_timers
-        return timer_result
+    loop do
+      # Calculate effective timeout (factors in both deadline and timer deadlines)
+      timeout_ms = calculate_timeout(deadline)
+
+      # Check for ready events (timers or fds) before polling
+      if ready = check_ready_events
+        return ready
       end
+
+      # Check if user deadline has passed
+      return nil if deadline_expired?(deadline)
 
       # poll() syscall
       result = poll_with_eintr(timeout_ms)
+      raise IO::Error.from_errno("poll") if result < 0
 
-      if result < 0
-        raise IO::Error.from_errno("poll")
+      # Check for ready events after poll
+      if ready = check_ready_events
+        return ready
       end
 
-      # Check timers first (higher priority)
-      if timer_result = check_expired_timers
-        return timer_result
-      end
-
-      # Check for timeout (no events, no timers)
-      if result == 0 && @timers.empty?
-        return nil
-      end
-
-      # Check fd events
-      @fds.each do |pfd|
-        next if pfd.revents == 0
-
-        type = poll_to_result_type(pfd.revents)
-        pfd.revents = 0
-        return PollResult.new(type: type, fd: pfd.fd)
-      end
+      # Check for timeout (no events, no timers, deadline passed)
+      return nil if deadline_expired?(deadline)
+      return nil if result == 0 && @timers.empty?
 
       # No events found, continue polling
       # This can happen if timeout was from timer calculation
@@ -194,10 +187,42 @@ class Termisu::Event::Poller::Poll < Termisu::Event::Poller
     end
   end
 
-  # Calculates poll timeout based on timer deadlines and user timeout
-  private def calculate_timeout(user_timeout : Time::Span?) : Int32
+  # Checks if the user-supplied deadline has expired
+  private def deadline_expired?(deadline : MonotonicTime?) : Bool
+    return false unless deadline
+    monotonic_now >= deadline
+  end
+
+  # Checks for any ready events: expired timers first, then readable fds
+  private def check_ready_events : PollResult?
+    if timer_result = check_expired_timers
+      return timer_result
+    end
+    check_fd_events
+  end
+
+  # Checks file descriptors for pending events from last poll() call
+  private def check_fd_events : PollResult?
+    @fds.each do |pfd|
+      next if pfd.revents == 0
+      type = poll_to_result_type(pfd.revents)
+      pfd.revents = 0
+      return PollResult.new(type: type, fd: pfd.fd)
+    end
+    nil
+  end
+
+  # Calculates poll timeout based on timer deadlines and user deadline
+  private def calculate_timeout(deadline : MonotonicTime?) : Int32
     timer_timeout = timer_timeout_ms
-    user_ms = user_timeout.try(&.total_milliseconds.to_i.clamp(0, Int32::MAX))
+
+    # Calculate remaining time to user deadline
+    user_ms = if deadline
+                remaining = deadline - monotonic_now
+                remaining.total_milliseconds.to_i.clamp(0, Int32::MAX)
+              else
+                nil
+              end
 
     # Determine appropriate timeout based on timer and user timeout states
     if timer_timeout.nil? && user_ms.nil?

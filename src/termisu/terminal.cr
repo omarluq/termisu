@@ -545,8 +545,11 @@ class Termisu::Terminal < Termisu::Renderer
   # (BSU/ESU) to prevent screen tearing during rapid updates.
   def render
     begin_sync_update
-    @buffer.render_to(self, auto_flush: !@sync_updates)
-    end_sync_update
+    begin
+      @buffer.render_to(self, auto_flush: !@sync_updates)
+    ensure
+      end_sync_update
+    end
   end
 
   # Forces a full redraw of all cells.
@@ -557,8 +560,11 @@ class Termisu::Terminal < Termisu::Renderer
   # (BSU/ESU) to prevent screen tearing during the full redraw.
   def sync
     begin_sync_update
-    @buffer.sync_to(self, auto_flush: !@sync_updates)
-    end_sync_update
+    begin
+      @buffer.sync_to(self, auto_flush: !@sync_updates)
+    ensure
+      end_sync_update
+    end
   end
 
   # Emits BSU (Begin Synchronized Update) sequence if sync_updates is enabled.

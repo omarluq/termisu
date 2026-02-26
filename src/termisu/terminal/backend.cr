@@ -77,9 +77,17 @@ class Termisu::Terminal::Backend
   # Returns the number of bytes read, or 0 on EOF.
   # Raises `IO::Error` on read failure.
   def read(buffer : Bytes) : Int32
-    bytes_read = LibC.read(@infd, buffer, buffer.size)
-    raise IO::Error.from_errno("read failed") if bytes_read < 0
-    bytes_read.to_i32
+    loop do
+      bytes_read = LibC.read(@infd, buffer, buffer.size)
+      if bytes_read >= 0
+        return bytes_read.to_i32
+      end
+      # bytes_read < 0: check errno
+      if Errno.value == Errno::EINTR
+        next # Retry on signal interruption
+      end
+      raise IO::Error.from_errno("read failed")
+    end
   end
 
   # Returns the terminal size as {width, height}.

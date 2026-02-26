@@ -105,11 +105,60 @@ class Termisu::Reader
     check_fd_readable(timeout_sec, timeout_usec)
   end
 
-  # Checks if file descriptor is readable using select(2).
+  # FD_SETSIZE limit for select(2). File descriptors >= this value
+  # cannot be used with select() and require poll() as a fallback.
+  FD_SETSIZE = 1024
+
+  # Checks if file descriptor is readable using select(2) or poll(2).
   #
-  # Handles EINTR by retrying the select() call automatically.
+  # Falls back to poll(2) when fd >= FD_SETSIZE (1024) since select()
+  # cannot handle high file descriptors.
+  # Handles EINTR by retrying automatically.
   # Other errors raise Termisu::IOError.
   private def check_fd_readable(timeout_sec : Int32 = 0, timeout_usec : Int32 = 0) : Bool
+    if @fd >= FD_SETSIZE
+      check_fd_readable_poll(timeout_sec, timeout_usec)
+    else
+      check_fd_readable_select(timeout_sec, timeout_usec)
+    end
+  end
+
+  # Checks readability using poll(2) for fd >= FD_SETSIZE.
+  private def check_fd_readable_poll(timeout_sec : Int32, timeout_usec : Int32) : Bool
+    timeout_ms = timeout_sec * 1000 + timeout_usec // 1000
+    retries = 0
+
+    loop do
+      pollfd = uninitialized LibC::Pollfd
+      pollfd.fd = @fd
+      pollfd.events = LibC::POLLIN
+      pollfd.revents = 0_i16
+
+      result = LibC.poll(pointerof(pollfd), 1_u64, timeout_ms)
+
+      if result > 0
+        return (pollfd.revents & LibC::POLLIN) != 0
+      elsif result == 0
+        return false
+      end
+
+      # result < 0: error
+      errno = Errno.value
+
+      if errno.eintr?
+        retries += 1
+        if retries >= MAX_EINTR_RETRIES
+          raise Termisu::IOError.select_failed(errno)
+        end
+        next
+      end
+
+      raise Termisu::IOError.select_failed(errno)
+    end
+  end
+
+  # Checks readability using select(2) for fd < FD_SETSIZE.
+  private def check_fd_readable_select(timeout_sec : Int32, timeout_usec : Int32) : Bool
     retries = 0
 
     loop do
@@ -232,4 +281,19 @@ lib LibC
   {% end %}
 
   fun select(nfds : Int32, readfds : FdSet*, writefds : FdSet*, errorfds : FdSet*, timeout : Timeval*) : Int32
+
+  # Poll bindings for fd >= FD_SETSIZE fallback
+  {% unless LibC.has_constant?(:Pollfd) %}
+    struct Pollfd
+      fd : Int32
+      events : Short
+      revents : Short
+    end
+  {% end %}
+
+  {% unless LibC.has_constant?(:POLLIN) %}
+    POLLIN = 0x0001_i16
+  {% end %}
+
+  fun poll(fds : Pollfd*, nfds : UInt64, timeout : Int32) : Int32
 end
