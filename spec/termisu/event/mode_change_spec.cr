@@ -64,6 +64,35 @@ describe Termisu::Event::ModeChange do
     end
   end
 
+  describe "#changed? (BUG-004 regression)" do
+    it "returns false for first change with nil previous_mode" do
+      event = Termisu::Event::ModeChange.new(
+        mode: Termisu::Terminal::Mode::Echo,
+        previous_mode: nil,
+      )
+
+      event.changed?.should be_false
+    end
+
+    it "returns true when mode differs from previous_mode (Echo vs None)" do
+      event = Termisu::Event::ModeChange.new(
+        mode: Termisu::Terminal::Mode::Echo,
+        previous_mode: Termisu::Terminal::Mode::None,
+      )
+
+      event.changed?.should be_true
+    end
+
+    it "returns false for same-mode transition (Echo to Echo)" do
+      event = Termisu::Event::ModeChange.new(
+        mode: Termisu::Terminal::Mode::Echo,
+        previous_mode: Termisu::Terminal::Mode::Echo,
+      )
+
+      event.changed?.should be_false
+    end
+  end
+
   describe "#to_raw?" do
     it "returns true when transitioning to raw mode" do
       event = Termisu::Event::ModeChange.new(
