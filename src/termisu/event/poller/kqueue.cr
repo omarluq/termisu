@@ -76,17 +76,16 @@
         end
       end
 
-      # Add/update requested filters. EV_ADD on an existing filter
-      # updates it in place without clearing pending events.
-      changes = [] of LibC::Kevent
+      # Add/update requested filters individually. EV_ADD on an
+      # existing filter updates it in place without clearing pending
+      # events. We apply one at a time because on FreeBSD batched
+      # kevent calls fail entirely if any single change fails.
       if events.read?
-        changes << make_kevent(fd.to_u64, LibC::EVFILT_READ, LibC::EV_ADD)
+        apply_changes([make_kevent(fd.to_u64, LibC::EVFILT_READ, LibC::EV_ADD)])
       end
       if events.write?
-        changes << make_kevent(fd.to_u64, LibC::EVFILT_WRITE, LibC::EV_ADD)
+        apply_changes([make_kevent(fd.to_u64, LibC::EVFILT_WRITE, LibC::EV_ADD)])
       end
-
-      apply_changes(changes)
       @registered_fds << fd
       Log.debug { "Registered fd=#{fd} for events=#{events}" }
     end

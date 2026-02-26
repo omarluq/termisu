@@ -310,8 +310,10 @@ end
         # Register for read
         poller.register_fd(reader.fd, Termisu::Event::Poller::FDEvents::Read)
 
-        # Re-register for read|write — should succeed (not accumulate filters)
-        poller.register_fd(reader.fd, Termisu::Event::Poller::FDEvents::Read | Termisu::Event::Poller::FDEvents::Write)
+        # Re-register for read — EV_ADD on existing filter updates in place.
+        # Note: we don't use Read|Write here because pipe read fds don't
+        # support EVFILT_WRITE on FreeBSD (kevent rejects it).
+        poller.register_fd(reader.fd, Termisu::Event::Poller::FDEvents::Read)
 
         # Write data to make it readable
         writer.print("test")
