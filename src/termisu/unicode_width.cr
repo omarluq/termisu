@@ -714,10 +714,16 @@ module Termisu::UnicodeWidth
   end
 
   # Emoji and CJK supplementary planes (Extensions B-F, Tertiary).
-  # Excludes Alchemical Symbols (1F700-1F77F) which have EAW = Neutral.
+  # Excludes Alchemical Symbols (1F700-1F77F), Geometric Shapes Extended
+  # (1F780-1F7DF), Supplemental Arrows-C (1F800-1F8FF), and Chess Symbols
+  # (1FA00-1FA6F) which have EAW = Neutral and are NOT emoji.
+  # Only includes precise emoji subranges from Unicode 15 emoji-data.txt.
   private def self.wide_supplementary?(cp : Int32) : Bool
     (0x1F300..0x1F6FF).includes?(cp) ||   # Misc Symbols & Pictographs through Transport
-      (0x1F780..0x1FAFF).includes?(cp) || # Geometric Shapes Ext through Symbols Ext-A
+      (0x1F7E0..0x1F7EB).includes?(cp) || # Geometric Shapes Ext — colored circles/squares (emoji)
+      cp == 0x1F7F0 ||                    # Heavy equals sign (emoji)
+      (0x1F90C..0x1F9FF).includes?(cp) || # Supplemental Symbols & Pictographs (emoji portion)
+      (0x1FA70..0x1FAFF).includes?(cp) || # Symbols & Pictographs Extended-A
       (0x20000..0x2FFFD).includes?(cp) || # CJK Extensions B-F
       (0x30000..0x3FFFD).includes?(cp)    # CJK Tertiary Ideographic
   end

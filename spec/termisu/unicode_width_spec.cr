@@ -169,6 +169,37 @@ describe Termisu::UnicodeWidth do
       Termisu::UnicodeWidth.codepoint_width(','.ord).should eq(1)
       Termisu::UnicodeWidth.codepoint_width('.'.ord).should eq(1)
     end
+
+    it "returns 1 for neutral non-emoji supplementary codepoints (BUG-012)" do
+      # Geometric Shapes Extended — non-emoji, EAW = Neutral
+      Termisu::UnicodeWidth.codepoint_width(0x1F780).should eq(1)
+      Termisu::UnicodeWidth.codepoint_width(0x1F7D9).should eq(1)
+      # Supplemental Arrows-C — non-emoji
+      Termisu::UnicodeWidth.codepoint_width(0x1F800).should eq(1)
+      Termisu::UnicodeWidth.codepoint_width(0x1F8FF).should eq(1)
+      # Start of Supplemental Symbols block — non-emoji portion
+      Termisu::UnicodeWidth.codepoint_width(0x1F900).should eq(1)
+      Termisu::UnicodeWidth.codepoint_width(0x1F90B).should eq(1)
+      # Chess Symbols — non-emoji
+      Termisu::UnicodeWidth.codepoint_width(0x1FA00).should eq(1)
+      Termisu::UnicodeWidth.codepoint_width(0x1FA6F).should eq(1)
+      # Alchemical Symbols — non-emoji
+      Termisu::UnicodeWidth.codepoint_width(0x1F700).should eq(1)
+    end
+
+    it "returns 2 for emoji within previously overbroad supplementary range" do
+      # Geometric Shapes Extended — colored circles/squares ARE emoji
+      Termisu::UnicodeWidth.codepoint_width(0x1F7E0).should eq(2) # 🟠
+      Termisu::UnicodeWidth.codepoint_width(0x1F7EB).should eq(2) # 🟫
+      Termisu::UnicodeWidth.codepoint_width(0x1F7F0).should eq(2) # 🟰
+      # Supplemental Symbols & Pictographs — emoji portion starts at 1F90C
+      Termisu::UnicodeWidth.codepoint_width(0x1F90C).should eq(2) # Pinched Fingers
+      Termisu::UnicodeWidth.codepoint_width(0x1F910).should eq(2) # Zipper-Mouth Face
+      Termisu::UnicodeWidth.codepoint_width(0x1F9FF).should eq(2) # Nazar Amulet
+      # Symbols & Pictographs Extended-A
+      Termisu::UnicodeWidth.codepoint_width(0x1FA70).should eq(2) # Ballet Shoes
+      Termisu::UnicodeWidth.codepoint_width(0x1FAFF).should eq(2) # End of block
+    end
   end
 
   describe ".grapheme_width" do
