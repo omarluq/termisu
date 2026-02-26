@@ -63,14 +63,15 @@
     def register_fd(fd : Int32, events : FDEvents) : Nil
       raise "Poller is closed" if @closed
 
-      # If fd already registered, delete previous filters first to ensure
-      # re-registration replaces rather than accumulates filters
+      # If fd already registered, delete previous filters individually.
+      # Batching deletes in one kevent() call fails on FreeBSD when one
+      # filter doesn't exist — the entire batch is rejected, leaving
+      # the other filter still active.
       if @registered_fds.includes?(fd)
-        delete_changes = [
-          make_kevent(fd.to_u64, LibC::EVFILT_READ, LibC::EV_DELETE),
-          make_kevent(fd.to_u64, LibC::EVFILT_WRITE, LibC::EV_DELETE),
-        ]
-        apply_changes(delete_changes, ignore_errors: true)
+        {LibC::EVFILT_READ, LibC::EVFILT_WRITE}.each do |filter|
+          change = make_kevent(fd.to_u64, filter, LibC::EV_DELETE)
+          apply_changes([change], ignore_errors: true)
+        end
       end
 
       changes = [] of LibC::Kevent
