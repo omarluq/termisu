@@ -63,6 +63,16 @@
     def register_fd(fd : Int32, events : FDEvents) : Nil
       raise "Poller is closed" if @closed
 
+      # If fd already registered, delete previous filters first to ensure
+      # re-registration replaces rather than accumulates filters
+      if @registered_fds.includes?(fd)
+        delete_changes = [
+          make_kevent(fd.to_u64, LibC::EVFILT_READ, LibC::EV_DELETE),
+          make_kevent(fd.to_u64, LibC::EVFILT_WRITE, LibC::EV_DELETE),
+        ]
+        apply_changes(delete_changes, ignore_errors: true)
+      end
+
       changes = [] of LibC::Kevent
 
       if events.read?
