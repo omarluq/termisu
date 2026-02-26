@@ -143,6 +143,62 @@ describe Termisu::Event::Poller::Poll do
     end
   end
 
+  describe "user timeout respected with active timer (BUG-011 regression)" do
+    # Regression for issue #011: Poll#wait(short_timeout) would ignore the user timeout when
+    # active timers existed. The poll loop would keep looping until the timer
+    # fired, effectively replacing the user's short timeout with the timer's
+    # longer interval. The fix records a deadline at method entry and checks
+    # it after every poll cycle.
+
+    it "wait(20ms) returns nil within ~50ms even with a 200ms timer" do
+      poller = Termisu::Event::Poller::Poll.new
+      poller.add_timer(200.milliseconds, repeating: true)
+
+      start = monotonic_now
+      result = poller.wait(20.milliseconds)
+      elapsed = monotonic_now - start
+
+      # Should return nil (timer hasn't fired yet)
+      result.should be_nil
+
+      # Should complete in ~20-50ms, NOT 200ms
+      elapsed.should be < 80.milliseconds
+      elapsed.should be >= 15.milliseconds
+
+      poller.close
+    end
+
+    it "wait(10ms) returns nil quickly with multiple long timers" do
+      poller = Termisu::Event::Poller::Poll.new
+      poller.add_timer(500.milliseconds, repeating: true)
+      poller.add_timer(1.second, repeating: true)
+
+      start = monotonic_now
+      result = poller.wait(10.milliseconds)
+      elapsed = monotonic_now - start
+
+      result.should be_nil
+      elapsed.should be < 50.milliseconds
+
+      poller.close
+    end
+
+    it "wait returns timer event when timer fires before user timeout" do
+      poller = Termisu::Event::Poller::Poll.new
+      poller.add_timer(10.milliseconds)
+
+      # User timeout is longer than timer interval
+      result = poller.wait(200.milliseconds)
+
+      result.should_not be_nil
+      if r = result
+        r.timer?.should be_true
+      end
+
+      poller.close
+    end
+  end
+
   describe "fd registration" do
     it "can register and unregister fds" do
       poller = Termisu::Event::Poller::Poll.new

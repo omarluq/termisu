@@ -146,4 +146,63 @@ describe Termisu::Reader do
       error.errno.should eq(Errno::EBADF)
     end
   end
+
+  describe "high fd guard (BUG-010 regression)" do
+    # Regression for issue #010: Reader used select(2) for all fds, but select() cannot handle
+    # fd >= FD_SETSIZE (1024) — it would write out-of-bounds into the fd_set
+    # bitmask, causing IndexError or memory corruption.
+    # The fix routes fd >= 1024 to poll(2) as a fallback.
+
+    it "defines FD_SETSIZE constant at 1024" do
+      Termisu::Reader::FD_SETSIZE.should eq(1024)
+    end
+
+    it "raises IOError (not IndexError) for invalid high fd" do
+      # Create a Reader with fd = 1024 (invalid, not open).
+      # Before the fix, this would crash with IndexError on fds_bits access.
+      # After the fix, it routes to poll(2) which returns POLLNVAL → IOError.
+      reader = Termisu::Reader.new(1024)
+      expect_raises(Termisu::IOError) do
+        reader.available?
+      end
+      reader.close
+    end
+
+    it "raises IOError (not IndexError) for very high fd" do
+      # Test with an fd well above FD_SETSIZE to confirm poll fallback.
+      reader = Termisu::Reader.new(2048)
+      expect_raises(Termisu::IOError) do
+        reader.available?
+      end
+      reader.close
+    end
+
+    it "normal pipe fd uses select path and works correctly" do
+      # Low fds (< 1024) still use the select(2) path.
+      read_fd, write_fd = create_pipe
+      begin
+        # Pipe fds are typically < 20, well within select's range
+        read_fd.should be < Termisu::Reader::FD_SETSIZE
+
+        reader = Termisu::Reader.new(read_fd)
+        reader.available?.should be_false # No data written yet
+
+        LibC.write(write_fd, "x".to_slice, 1)
+        reader.available?.should be_true
+
+        reader.close
+      ensure
+        LibC.close(read_fd)
+        LibC.close(write_fd)
+      end
+    end
+
+    it "wait_for_data raises IOError for high fd" do
+      reader = Termisu::Reader.new(1024)
+      expect_raises(Termisu::IOError) do
+        reader.wait_for_data(10)
+      end
+      reader.close
+    end
+  end
 end
