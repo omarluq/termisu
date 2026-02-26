@@ -203,10 +203,10 @@ class Termisu::Event::Poller::Poll < Termisu::Event::Poller
 
   # Checks file descriptors for pending events from last poll() call
   private def check_fd_events : PollResult?
-    @fds.each do |pfd|
+    @fds.each_with_index do |pfd, i|
       next if pfd.revents == 0
       type = poll_to_result_type(pfd.revents)
-      pfd.revents = 0
+      @fds[i].revents = 0 # Clear the actual array element, not a copy
       return PollResult.new(type: type, fd: pfd.fd)
     end
     nil
@@ -302,11 +302,19 @@ class Termisu::Event::Poller::Poll < Termisu::Event::Poller
     (elapsed / state.interval).to_u64.clamp(1_u64, UInt64::MAX)
   end
 
-  # Calls poll() with EINTR retry
+  # Calls poll() with EINTR retry, respecting elapsed time so retries
+  # do not extend the effective wait beyond the original timeout.
   private def poll_with_eintr(timeout_ms : Int32) : Int32
+    remaining = timeout_ms
     loop do
-      result = LibC.poll(@fds.to_unsafe, @fds.size, timeout_ms)
+      start = monotonic_now
+      result = LibC.poll(@fds.to_unsafe, @fds.size, remaining)
       if result < 0 && Errno.value == Errno::EINTR
+        if remaining >= 0 # finite timeout — subtract elapsed time
+          elapsed = (monotonic_now - start).total_milliseconds.to_i
+          remaining -= elapsed
+          return 0 if remaining <= 0 # timeout expired during retries
+        end
         next
       end
       return result
