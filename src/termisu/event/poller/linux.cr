@@ -66,7 +66,15 @@
 
       result = epoll_ctl_retry(LibC::EPOLL_CTL_ADD, fd, pointerof(event))
       if result < 0
-        raise IO::Error.from_errno("epoll_ctl ADD fd=#{fd}")
+        if Errno.value == Errno::EEXIST
+          # fd already registered — update its event mask instead
+          result = epoll_ctl_retry(LibC::EPOLL_CTL_MOD, fd, pointerof(event))
+          if result < 0
+            raise IO::Error.from_errno("epoll_ctl MOD fd=#{fd}")
+          end
+        else
+          raise IO::Error.from_errno("epoll_ctl ADD fd=#{fd}")
+        end
       end
       Log.debug { "Registered fd=#{fd} for events=#{events}" }
     end
