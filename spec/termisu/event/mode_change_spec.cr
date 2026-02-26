@@ -45,7 +45,7 @@ describe Termisu::Event::ModeChange do
       event.changed?.should be_true
     end
 
-    it "returns true for cooked to raw transition" do
+    it "returns true for raw to cooked transition" do
       event = Termisu::Event::ModeChange.new(
         mode: Termisu::Terminal::Mode.cooked,
         previous_mode: Termisu::Terminal::Mode.raw,
