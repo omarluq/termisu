@@ -1,6 +1,5 @@
 # Termisu
 
-
 [![Crystal Version](https://img.shields.io/badge/Crystal-%3E%3D1.18.2-000000?style=flat&labelColor=24292e&color=000000&logo=crystal&logoColor=white)](https://crystal-lang.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue?style=flat&labelColor=24292e&logo=opensourceinitiative&logoColor=white)](LICENSE)
 [![Tests](https://img.shields.io/github/actions/workflow/status/omarluq/termisu/test.yml?style=flat&labelColor=24292e&label=Tests&logo=github&logoColor=white)](https://github.com/omarluq/termisu/actions/workflows/test.yml)
@@ -9,6 +8,7 @@
 [![Docs](https://img.shields.io/badge/Docs-API%20Reference-5e5086?style=flat&labelColor=24292e&logo=gitbook&logoColor=white)](https://crystaldoc.info/github/omarluq/termisu)
 [![Maintained](https://img.shields.io/badge/Maintained%3F-yes-28a745?style=flat&labelColor=24292e&logo=checkmarx&logoColor=white)](https://github.com/omarluq/termisu)
 [![Made with Love](https://img.shields.io/badge/Made%20with-Love-ff69b4?style=flat&labelColor=24292e&logo=githubsponsors&logoColor=white)](https://github.com/omarluq/termisu)
+
 <!--  [![All Contributors](https://img.shields.io/github/all-contributors/omarluq/termisu?style=flat&labelColor=24292e&color=7f8c8d)](https://github.com/omarluq/termisu/graphs/contributors)-->
 
 <img src="assets/termisu.png" align="right" alt="Termisu Logo" width="200"/>
@@ -209,32 +209,34 @@ termisu.timer_interval = 8.milliseconds  # Change interval at runtime
 
 #### Timer Comparison
 
-| Feature | Timer (sleep) | SystemTimer (kernel) |
-|---------|---------------|----------------------|
-| Mechanism | `sleep` in fiber | timerfd/epoll (Linux), kqueue (macOS) |
-| Precision | ~1-2ms jitter | Sub-millisecond |
-| Max FPS | ~48 FPS reliable | ~90 FPS reliable |
-| Missed tick detection | No | Yes (`event.missed_ticks`) |
-| Portability | All platforms | Linux, macOS, BSD |
-| Best for | Simple animations, low FPS | Games, smooth animations |
+| Feature               | Timer (sleep)              | SystemTimer (kernel)                  |
+| --------------------- | -------------------------- | ------------------------------------- |
+| Mechanism             | `sleep` in fiber           | timerfd/epoll (Linux), kqueue (macOS) |
+| Precision             | ~1-2ms jitter              | Sub-millisecond                       |
+| Max FPS               | ~48 FPS reliable           | ~90 FPS reliable                      |
+| Missed tick detection | No                         | Yes (`event.missed_ticks`)            |
+| Portability           | All platforms              | Linux, macOS, BSD                     |
+| Best for              | Simple animations, low FPS | Games, smooth animations              |
 
 #### Benchmark Results
 
-| Target FPS | Target Interval | Timer (sleep) | SystemTimer (kernel) | Notes |
-|------------|-----------------|---------------|----------------------|-------|
-| 30 | 33ms | ⚠️ 41ms (~24 FPS) | ✅ 33ms (~30 FPS) | Sleep overshoots |
-| 60 | 16ms | ⚠️ 21ms (~48 FPS) | ✅ 17ms (~60 FPS) | Sleep hits ~21ms floor |
-| 90 | 11ms | ⚠️ 21ms (~48 FPS) | ✅ 11ms (~90 FPS) | Sleep stuck at floor |
-| 120 | 8ms | ⚠️ 11ms (~91 FPS) | ⚠️ 11ms (~91 FPS) | Both hit I/O ceiling |
-| 144 | 7ms | ⚠️ 11ms (~91 FPS) | ⚠️ 11ms (~91 FPS) | Same ceiling |
+| Target FPS | Target Interval | Timer (sleep)     | SystemTimer (kernel) | Notes                  |
+| ---------- | --------------- | ----------------- | -------------------- | ---------------------- |
+| 30         | 33ms            | ⚠️ 41ms (~24 FPS) | ✅ 33ms (~30 FPS)    | Sleep overshoots       |
+| 60         | 16ms            | ⚠️ 21ms (~48 FPS) | ✅ 17ms (~60 FPS)    | Sleep hits ~21ms floor |
+| 90         | 11ms            | ⚠️ 21ms (~48 FPS) | ✅ 11ms (~90 FPS)    | Sleep stuck at floor   |
+| 120        | 8ms             | ⚠️ 11ms (~91 FPS) | ⚠️ 11ms (~91 FPS)    | Both hit I/O ceiling   |
+| 144        | 7ms             | ⚠️ 11ms (~91 FPS) | ⚠️ 11ms (~91 FPS)    | Same ceiling           |
 
 **Key Findings:**
+
 - **SystemTimer accuracy:** Kernel timers hit target intervals precisely up to ~90 FPS
 - **Sleep timer quirks:** Has a ~21ms floor at mid-range targets, overshoots at low FPS
 - **Terminal I/O ceiling:** Both timers cap at ~91 FPS (~11ms) due to render/flush overhead
 - **Missed ticks:** SystemTimer detects and reports frame drops via `missed_ticks` field
 
 **Open Questions:**
+
 - Why does sleep timer overshoot at 30 FPS (41ms vs 33ms target)?
 - Can terminal I/O be batched more aggressively to push the ~91 FPS ceiling higher?
 - Would async rendering with double-buffered I/O help reduce the ~11ms floor?
@@ -308,14 +310,14 @@ Mode.password    # Secure input (no echo)
 Mode.semi_raw    # TUI with Ctrl+C support
 ```
 
-| Preset     | Canonical | Echo | Signals | Use Case                     |
-|------------|-----------|------|---------|------------------------------|
-| raw        | -         | -    | -       | Full TUI control             |
-| cbreak     | -         | ✓    | ✓       | Char-by-char with feedback   |
-| cooked     | ✓         | ✓    | ✓       | Shell-out, external programs |
-| full_cooked| ✓         | ✓    | ✓       | Complete shell emulation     |
-| password   | ✓         | -    | ✓       | Secure text entry            |
-| semi_raw   | -         | -    | ✓       | TUI with Ctrl+C support      |
+| Preset      | Canonical | Echo | Signals | Use Case                     |
+| ----------- | --------- | ---- | ------- | ---------------------------- |
+| raw         | -         | -    | -       | Full TUI control             |
+| cbreak      | -         | ✓    | ✓       | Char-by-char with feedback   |
+| cooked      | ✓         | ✓    | ✓       | Shell-out, external programs |
+| full_cooked | ✓         | ✓    | ✓       | Complete shell emulation     |
+| password    | ✓         | -    | ✓       | Secure text entry            |
+| semi_raw    | -         | -    | ✓       | TUI with Ctrl+C support      |
 
 #### Convenience Methods
 
@@ -460,22 +462,22 @@ mods.meta?
 
 **Current Status: v0.1.0 (async event system complete)**
 
-| Component           | Status      |
-| ------------------- | ----------- |
-| Terminal I/O        | ✅ Complete |
-| Terminfo            | ✅ Complete |
-| Double Buffering    | ✅ Complete |
-| Colors              | ✅ Complete |
-| Termisu::Attributes | ✅ Complete |
-| Keyboard Input      | ✅ Complete |
-| Mouse Input         | ✅ Complete |
-| Event System        | ✅ Complete |
-| Async Event Loop    | ✅ Complete |
-| Resize Events       | ✅ Complete |
-| Timer/Tick Events   | ✅ Complete |
-| Terminal Modes      | ✅ Complete |
-| Synchronized Updates| ✅ Complete |
-| Unicode/Wide Chars  | 🔄 Planned  |
+| Component            | Status      |
+| -------------------- | ----------- |
+| Terminal I/O         | ✅ Complete |
+| Terminfo             | ✅ Complete |
+| Double Buffering     | ✅ Complete |
+| Colors               | ✅ Complete |
+| Termisu::Attributes  | ✅ Complete |
+| Keyboard Input       | ✅ Complete |
+| Mouse Input          | ✅ Complete |
+| Event System         | ✅ Complete |
+| Async Event Loop     | ✅ Complete |
+| Resize Events        | ✅ Complete |
+| Timer/Tick Events    | ✅ Complete |
+| Terminal Modes       | ✅ Complete |
+| Synchronized Updates | ✅ Complete |
+| Unicode/Wide Chars   | ✅ Complete |
 
 ### Completed
 
@@ -495,10 +497,10 @@ mods.meta?
 - **Terminfo tparm** - Full processor with conditionals, stack, variables
 - **Logging** - Structured async/sync dispatch, zero hot-path overhead
 - **Synchronized Updates** - DEC mode 2026 (prevents screen tearing)
+- **Unicode/wide character support** - CJK, emoji (wcwidth)
 
 ### Planned
 
-- **Unicode/wide character support** - CJK, emoji (wcwidth)
 - **Image protocols** - Sixel and Kitty graphics for inline images
 
 ## Inspiration
