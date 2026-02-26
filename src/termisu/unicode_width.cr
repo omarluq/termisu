@@ -117,8 +117,12 @@ module Termisu::UnicodeWidth
 
   # :nodoc:
   private def self.format_control?(cp : Int32) : Bool
-    # Zero Width Joiner, Non-Joiner, Zero Width Space, Word Joiner
-    cp == 0x200D || cp == 0x200C || cp == 0x200B || cp == 0x2060
+    # ZWJ, ZWNJ, ZWS, WJ, LRM, RLM (contiguous 200B..200F)
+    return true if cp >= 0x200B && cp <= 0x200F
+    # Word Joiner, ALM
+    return true if cp == 0x2060 || cp == 0x061C
+    # Embedding (202A..202E) and isolate (2066..2069) controls
+    (cp >= 0x202A && cp <= 0x202E) || (cp >= 0x2066 && cp <= 0x2069)
   end
 
   # :nodoc:
