@@ -34,7 +34,15 @@ lib LibC
     revents : Short
   end
 
-  fun poll(fds : Pollfd*, nfds : UInt64, timeout : Int32) : Int32
+  # nfds_t is unsigned long on Linux (64-bit on x86_64) but unsigned int
+  # on Darwin/BSD. Use a platform-conditional alias for ABI correctness.
+  {% if flag?(:linux) %}
+    alias NfdsT = UInt64
+  {% else %}
+    alias NfdsT = UInt32
+  {% end %}
+
+  fun poll(fds : Pollfd*, nfds : NfdsT, timeout : Int32) : Int32
 
   POLLIN   = 0x0001_i16
   POLLPRI  = 0x0002_i16
@@ -301,7 +309,7 @@ class Termisu::Event::Poller::Poll < Termisu::Event::Poller
     remaining = timeout_ms
     loop do
       start = monotonic_now
-      result = LibC.poll(@fds.to_unsafe, @fds.size, remaining)
+      result = LibC.poll(@fds.to_unsafe, LibC::NfdsT.new(@fds.size), remaining)
       if result < 0 && Errno.value == Errno::EINTR
         if remaining >= 0 # finite timeout — subtract elapsed time
           elapsed = (monotonic_now - start).total_milliseconds.to_i

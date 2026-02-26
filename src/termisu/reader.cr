@@ -336,10 +336,12 @@ lib LibC
 
   # nfds_t is unsigned long on Linux (64-bit on x86_64) but unsigned int
   # on Darwin/BSD. Use a platform-conditional alias for ABI correctness.
-  {% if flag?(:linux) %}
-    alias NfdsT = UInt64
-  {% else %}
-    alias NfdsT = UInt32
+  {% unless LibC.has_constant?(:NfdsT) %}
+    {% if flag?(:linux) %}
+      alias NfdsT = UInt64
+    {% else %}
+      alias NfdsT = UInt32
+    {% end %}
   {% end %}
 
   fun poll(fds : Pollfd*, nfds : NfdsT, timeout : Int32) : Int32
