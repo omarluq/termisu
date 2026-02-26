@@ -38,12 +38,13 @@ This phase adds targeted regression tests for every bug fixed in Phases 1-4, run
     - BUG-004: 3 new tests in `spec/termisu/event/mode_change_spec.cr` under "#changed? (BUG-004 regression)" — verifies nil previous_mode returns false with Mode::Echo, Echo vs None returns true, and same-mode Echo-to-Echo returns false. All 18 examples pass.
     - BUG-012: Already had comprehensive regression tests (added in prior phase) in `spec/termisu/unicode_width_spec.cr` — "neutral non-emoji supplementary codepoints (BUG-012)" verifies 0x1F780 and 0x1F7D9 return width 1, and "emoji within previously overbroad supplementary range" verifies 0x1F900+ emoji still return width 2. All 49 examples pass.
 
-- [ ] **Run the full test suite and fix any failures.** Execute:
+- [x] **Run the full test suite and fix any failures.** Execute:
   - `bin/hace format` — fix any formatting issues
   - `bin/hace ameba` — fix any linting issues
   - `bin/hace spec` — run all specs (should pass 1077+ examples, 0 failures)
   - If any new spec fails, investigate and fix the underlying issue in the relevant phase's code
   - Confirm total test count is higher than the baseline 1077 (new regression tests added)
+  - **Done:** All three quality gates pass clean. `bin/hace format` — no changes needed. `bin/hace ameba` — 116 files inspected, 0 failures. `bin/hace spec` — 1130 examples, 0 failures, 0 errors, 0 pending. Test count of 1130 exceeds baseline of 1077 by 53 tests (regression tests from Phases 1-4).
 
 - [ ] **Update codex-bug-findings.md to mark all 10 bugs as closed.** Move BUG-001 through BUG-007 and BUG-010 through BUG-012 from the "Execution Queue" section to the "Closed / Archived" section. For each, add:
   - `Status: Closed (fixed in code)`
