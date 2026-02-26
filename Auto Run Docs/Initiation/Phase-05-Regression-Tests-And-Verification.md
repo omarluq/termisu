@@ -28,12 +28,15 @@ This phase adds targeted regression tests for every bug fixed in Phases 1-4, run
     - BUG-006: 4 tests in `spec/termisu/terminal_spec.cr` under "render cache reset after mode switch (BUG-006 regression)" — verifies foreground color re-emitted after with_mode cache reset, background color re-emitted, attribute cache reset, and reset_render_state clears all cached style state.
     - BUG-007: 6 tests in `spec/termisu/version_spec.cr` — verifies VERSION is non-empty string, VERSION_MAJOR/MINOR/PATCH are integers >= 0, VERSION matches MAJOR.MINOR.PATCH format with component consistency, and VERSION_STATE is nil or non-empty string.
 
-- [ ] **Add regression specs for BUG-004 (ModeChange#changed?) and BUG-012 (Unicode width).** Write two focused specs:
+- [x] **Add regression specs for BUG-004 (ModeChange#changed?) and BUG-012 (Unicode width).** Write two focused specs:
   - BUG-004 in `spec/termisu/event/mode_change_spec.cr`: Verify that `ModeChange.new(mode: Mode::Echo, previous_mode: nil).changed?` returns `false` (first change is not a change). Verify that `ModeChange.new(mode: Mode::Echo, previous_mode: Mode::None).changed?` returns `true`. Verify that same-mode transitions return `false`.
   - BUG-012 in `spec/termisu/unicode_width_spec.cr`: Verify that the previously over-classified neutral codepoints now return width 1:
     - `UnicodeWidth.codepoint_width(0x1F780)` should be `1` (not 2)
     - `UnicodeWidth.codepoint_width(0x1F7D9)` should be `1` (not 2)
     - Also verify that known emoji codepoints that should remain wide still return 2 (e.g., common emoji in the 0x1F900+ range)
+  - **Done:** Added/verified regression tests for both bugs:
+    - BUG-004: 3 new tests in `spec/termisu/event/mode_change_spec.cr` under "#changed? (BUG-004 regression)" — verifies nil previous_mode returns false with Mode::Echo, Echo vs None returns true, and same-mode Echo-to-Echo returns false. All 18 examples pass.
+    - BUG-012: Already had comprehensive regression tests (added in prior phase) in `spec/termisu/unicode_width_spec.cr` — "neutral non-emoji supplementary codepoints (BUG-012)" verifies 0x1F780 and 0x1F7D9 return width 1, and "emoji within previously overbroad supplementary range" verifies 0x1F900+ emoji still return width 2. All 49 examples pass.
 
 - [ ] **Run the full test suite and fix any failures.** Execute:
   - `bin/hace format` — fix any formatting issues
