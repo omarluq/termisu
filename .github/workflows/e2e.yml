@@ -44,7 +44,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
       - name: Download binaries
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: e2e-binaries-${{ matrix.os == 'ubuntu-latest' && 'linux' || 'macos' }}-${{ matrix.crystal }}
           path: bin/
@@ -68,14 +68,14 @@ jobs:
         run: pnpm test
       - name: Upload traces on failure
         if: failure()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: tui-traces-${{ matrix.os }}-${{ matrix.shell }}
           path: e2e/tui-traces/
           retention-days: 7
       - name: Upload snapshots on failure
         if: failure()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: snapshots-${{ matrix.os }}-${{ matrix.shell }}
           path: e2e/tests/__snapshots__/
