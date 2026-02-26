@@ -46,7 +46,8 @@ This phase adds targeted regression tests for every bug fixed in Phases 1-4, run
   - Confirm total test count is higher than the baseline 1077 (new regression tests added)
   - **Done:** All three quality gates pass clean. `bin/hace format` — no changes needed. `bin/hace ameba` — 116 files inspected, 0 failures. `bin/hace spec` — 1130 examples, 0 failures, 0 errors, 0 pending. Test count of 1130 exceeds baseline of 1077 by 53 tests (regression tests from Phases 1-4).
 
-- [ ] **Update codex-bug-findings.md to mark all 10 bugs as closed.** Move BUG-001 through BUG-007 and BUG-010 through BUG-012 from the "Execution Queue" section to the "Closed / Archived" section. For each, add:
+- [x] **Update codex-bug-findings.md to mark all 10 bugs as closed.** Move BUG-001 through BUG-007 and BUG-010 through BUG-012 from the "Execution Queue" section to the "Closed / Archived" section. For each, add:
   - `Status: Closed (fixed in code)`
   - A brief `Validation:` note describing how the fix was verified
   - Update the "Total Open Tasks" count at the bottom to 0
+  - **Done:** Moved all 10 bugs (BUG-001 through BUG-007, BUG-010 through BUG-012) from Execution Queue to Closed / Archived. Each entry now has `Status: Closed (fixed in code)` and a `Validation:` note summarizing the fix and regression test coverage. Execution Queue section now reads "No open bugs remaining." Total Open Tasks updated to **0**. Snapshot updated to current counts: 1130 examples, 0 failures; 116 inspected, 0 lint failures.
