@@ -4,12 +4,18 @@ class Termisu
   # All version components are parsed from shard.yml at compile time.
   # Format: MAJOR.MINOR.PATCH[-STATE] (e.g., "0.1.0-alpha", "1.0.0")
 
-  # Full version string from shard.yml
-  VERSION = {{ `shards version`.chomp.stringify }}
-
-  # Parsed components (computed at compile time)
+  # Parse version from shard.yml at compile time (no dependency on `shards` binary)
   {% begin %}
-    {% raw_version = `shards version`.chomp %}
+    {% shard_content = read_file("#{__DIR__}/../../shard.yml") %}
+    {% raw_version = nil %}
+    {% for line in shard_content.lines %}
+      {% if line.starts_with?("version:") %}
+        {% raw_version = line.split(":")[1].strip %}
+      {% end %}
+    {% end %}
+
+    {% raw_version = raw_version || "0.0.0-unknown" %}
+
     {% if raw_version.includes?("-") %}
       {% parts = raw_version.split("-") %}
       {% version_nums = parts[0].split(".") %}
@@ -19,6 +25,7 @@ class Termisu
       {% state = nil %}
     {% end %}
 
+    VERSION       = {{ raw_version }}
     VERSION_MAJOR = {{ version_nums[0].to_i }}
     VERSION_MINOR = {{ version_nums[1].to_i }}
     VERSION_PATCH = {{ version_nums[2].to_i }}
