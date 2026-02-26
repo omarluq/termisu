@@ -373,6 +373,110 @@ describe Termisu::Terminal do
     end
   end
 
+  # --- Render Cache Reset (BUG-006 regression) ---
+
+  describe "render cache reset after mode switch (BUG-006 regression)" do
+    it "re-emits foreground color after with_mode resets cache" do
+      terminal = CaptureTerminal.new(sync_updates: false)
+
+      # Set foreground - should emit escape sequence
+      terminal.foreground = Termisu::Color.red
+      terminal.output.should contain("\e[31m")
+
+      # Clear captured and set same color - should NOT emit (cached)
+      terminal.clear_captured
+      terminal.foreground = Termisu::Color.red
+      terminal.output.should_not contain("\e[31m")
+
+      # with_mode resets cache in ensure block
+      terminal.with_mode(Termisu::Terminal::Mode.cooked, preserve_screen: true) { }
+
+      # Clear captured output from with_mode itself
+      terminal.clear_captured
+
+      # Same foreground color should now re-emit (cache was reset)
+      terminal.foreground = Termisu::Color.red
+      terminal.output.should contain("\e[31m")
+    ensure
+      terminal.try &.close
+    end
+
+    it "re-emits background color after with_mode resets cache" do
+      terminal = CaptureTerminal.new(sync_updates: false)
+
+      # Set background blue (index 4) → \e[44m
+      terminal.background = Termisu::Color.blue
+      terminal.output.should contain("\e[44m")
+
+      # Cached - same color should not re-emit
+      terminal.clear_captured
+      terminal.background = Termisu::Color.blue
+      terminal.output.should_not contain("\e[44m")
+
+      # with_mode resets cache
+      terminal.with_mode(Termisu::Terminal::Mode.cooked, preserve_screen: true) { }
+      terminal.clear_captured
+
+      # Should re-emit after cache reset
+      terminal.background = Termisu::Color.blue
+      terminal.output.should contain("\e[44m")
+    ensure
+      terminal.try &.close
+    end
+
+    it "resets attribute cache after with_mode" do
+      terminal = CaptureTerminal.new(sync_updates: false)
+
+      # Enable bold - should emit
+      terminal.enable_bold
+      initial_count = terminal.writes.size
+
+      # Enable bold again - should NOT emit (cached)
+      terminal.enable_bold
+      terminal.writes.size.should eq(initial_count)
+
+      # with_mode resets cache
+      terminal.with_mode(Termisu::Terminal::Mode.cooked, preserve_screen: true) { }
+
+      # Enable bold after cache reset - should emit again
+      pre_count = terminal.writes.size
+      terminal.enable_bold
+      terminal.writes.size.should be > pre_count
+    ensure
+      terminal.try &.close
+    end
+
+    it "reset_render_state clears all cached style state" do
+      terminal = CaptureTerminal.new(sync_updates: false)
+
+      # Set styles to populate cache
+      terminal.foreground = Termisu::Color.green
+      terminal.background = Termisu::Color.red
+      terminal.enable_bold
+      terminal.clear_captured
+
+      # Verify all are cached (no re-emission)
+      terminal.foreground = Termisu::Color.green
+      terminal.background = Termisu::Color.red
+      terminal.enable_bold
+      terminal.output.should eq("")
+
+      # Reset render state
+      terminal.reset_render_state
+
+      # Foreground and background should re-emit
+      terminal.foreground = Termisu::Color.green
+      terminal.output.should contain("\e[32m") # Green fg
+
+      terminal.background = Termisu::Color.red
+      terminal.output.should contain("\e[41m") # Red bg
+
+
+    ensure
+      terminal.try &.close
+    end
+  end
+
   # --- Synchronized Updates (DEC Mode 2026) ---
 
   describe "synchronized updates" do

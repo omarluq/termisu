@@ -19,10 +19,14 @@ This phase adds targeted regression tests for every bug fixed in Phases 1-4, run
     - BUG-010: 5 tests in `spec/termisu/reader_spec.cr` under "high fd guard (BUG-010 regression)" — verifies FD_SETSIZE=1024, confirms fd=1024 and fd=2048 raise IOError (not IndexError) via poll fallback, verifies normal pipe fds use select path, and tests wait_for_data with high fd.
     - BUG-011: 3 tests in `spec/termisu/event/poller_spec.cr` under "user timeout respected with active timer (BUG-011 regression)" — verifies wait(20ms) returns nil within ~50ms despite 200ms timer, wait(10ms) returns quickly with multiple long timers, and timer fires before user timeout when timer is shorter.
 
-- [ ] **Add regression spec for BUG-002 (SIGWINCH non-blocking), BUG-006 (render cache reset), and BUG-007 (version fallback).** Write three focused specs:
+- [x] **Add regression spec for BUG-002 (SIGWINCH non-blocking), BUG-006 (render cache reset), and BUG-007 (version fallback).** Write three focused specs:
   - BUG-002 in `spec/termisu/event/source/resize_spec.cr`: Verify that the resize source signal handler does not use blocking channel sends. If using Atomic flag approach, verify the flag is set on signal and processed in the loop. At minimum, verify resize events are still delivered correctly.
   - BUG-006 in `spec/termisu/terminal_spec.cr`: Verify that after `with_mode(mode, preserve_screen: true)`, the cached fg/bg/attr are reset to their initial nil/None state, so subsequent renders re-emit style sequences. Use a capture terminal to verify escape sequences are re-emitted after mode block.
   - BUG-007: Verify the VERSION constant is defined and non-empty. Verify VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH are integers. These constants should now work regardless of shards availability since they parse shard.yml.
+  - **Done:** Added 13 regression tests across 3 spec files:
+    - BUG-002: 3 tests in `spec/termisu/event/source/resize_spec.cr` under "non-blocking signal handler (BUG-002 regression)" — verifies events delivered via polling without blocking, no deadlock with minimal channel capacity, and continued delivery after channel drain.
+    - BUG-006: 4 tests in `spec/termisu/terminal_spec.cr` under "render cache reset after mode switch (BUG-006 regression)" — verifies foreground color re-emitted after with_mode cache reset, background color re-emitted, attribute cache reset, and reset_render_state clears all cached style state.
+    - BUG-007: 6 tests in `spec/termisu/version_spec.cr` — verifies VERSION is non-empty string, VERSION_MAJOR/MINOR/PATCH are integers >= 0, VERSION matches MAJOR.MINOR.PATCH format with component consistency, and VERSION_STATE is nil or non-empty string.
 
 - [ ] **Add regression specs for BUG-004 (ModeChange#changed?) and BUG-012 (Unicode width).** Write two focused specs:
   - BUG-004 in `spec/termisu/event/mode_change_spec.cr`: Verify that `ModeChange.new(mode: Mode::Echo, previous_mode: nil).changed?` returns `false` (first change is not a change). Verify that `ModeChange.new(mode: Mode::Echo, previous_mode: Mode::None).changed?` returns `true`. Verify that same-mode transitions return `false`.

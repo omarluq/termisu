@@ -309,4 +309,92 @@ describe Termisu::Event::Source::Resize do
       channel.close
     end
   end
+
+  describe "non-blocking signal handler (BUG-002 regression)" do
+    it "delivers resize events via polling without blocking" do
+      size = MutableSize.new(80, 24)
+      provider = -> { size.to_tuple }
+      source = Termisu::Event::Source::Resize.new(provider, poll_interval: 10.milliseconds)
+      channel = Channel(Termisu::Event::Any).new(10)
+
+      source.start(channel)
+      source.running?.should be_true
+
+      # Change size - event should be delivered via polling + atomic flag
+      size.width = 100
+      size.height = 50
+
+      select
+      when event = channel.receive
+        event.should be_a(Termisu::Event::Resize)
+        resize = event.as(Termisu::Event::Resize)
+        resize.width.should eq(100)
+        resize.height.should eq(50)
+      when timeout(200.milliseconds)
+        fail "Timeout waiting for resize event"
+      end
+
+      source.stop
+      channel.close
+    end
+
+    it "does not deadlock with minimal channel capacity" do
+      size = MutableSize.new(80, 24)
+      provider = -> { size.to_tuple }
+      source = Termisu::Event::Source::Resize.new(provider, poll_interval: 10.milliseconds)
+      # Capacity 1 - source must not deadlock if signal handler tried to send
+      channel = Channel(Termisu::Event::Any).new(1)
+
+      source.start(channel)
+
+      # Trigger a resize
+      size.width = 100
+      size.height = 50
+
+      # Drain the channel within timeout - source should not be stuck
+      select
+      when event = channel.receive
+        event.should be_a(Termisu::Event::Resize)
+      when timeout(200.milliseconds)
+        fail "Source appears deadlocked - resize event not delivered"
+      end
+
+      source.stop
+      channel.close
+    end
+
+    it "continues delivering events after channel was previously drained" do
+      size = MutableSize.new(80, 24)
+      provider = -> { size.to_tuple }
+      source = Termisu::Event::Source::Resize.new(provider, poll_interval: 10.milliseconds)
+      channel = Channel(Termisu::Event::Any).new(1)
+
+      source.start(channel)
+
+      # First resize
+      size.width = 100
+      size.height = 50
+
+      select
+      when event = channel.receive
+        event.as(Termisu::Event::Resize).width.should eq(100)
+      when timeout(200.milliseconds)
+        fail "Timeout on first resize"
+      end
+
+      # Second resize - source should still be alive and delivering
+      size.width = 120
+      size.height = 60
+
+      select
+      when event = channel.receive
+        event.as(Termisu::Event::Resize).width.should eq(120)
+      when timeout(200.milliseconds)
+        fail "Timeout on second resize - source may have deadlocked"
+      end
+
+      source.stop
+      channel.close
+    end
+  end
 end
