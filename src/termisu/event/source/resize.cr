@@ -48,8 +48,8 @@
 #
 # ## Lifecycle
 #
-# The source can be restarted after stopping. Each `start` creates a
-# fresh signal channel and reinstalls the SIGWINCH handler.
+# The source can be restarted after stopping. Each `start` resets the
+# signal flag and reinstalls the SIGWINCH handler.
 class Termisu::Event::Source::Resize < Termisu::Event::Source
   Log = Termisu::Logs::Event
 
@@ -62,11 +62,11 @@ class Termisu::Event::Source::Resize < Termisu::Event::Source
   alias SizeProvider = -> {Int32, Int32}
 
   @running : Atomic(Bool)
+  @signal_received : Atomic(Bool)
   @poll_interval : Time::Span
   @size_provider : SizeProvider
   @output : Channel(Event::Any)?
   @fiber : Fiber?
-  @signal_channel : Channel(Nil)?
   @last_width : Int32?
   @last_height : Int32?
 
@@ -88,6 +88,7 @@ class Termisu::Event::Source::Resize < Termisu::Event::Source
   # ```
   def initialize(@size_provider : SizeProvider, @poll_interval : Time::Span = DEFAULT_POLL_INTERVAL)
     @running = Atomic(Bool).new(false)
+    @signal_received = Atomic(Bool).new(false)
   end
 
   # Returns the current polling interval.
@@ -115,8 +116,8 @@ class Termisu::Event::Source::Resize < Termisu::Event::Source
 
     @output = output
 
-    # Create a fresh signal channel for this run
-    @signal_channel = Channel(Nil).new(1)
+    # Reset signal flag for this run
+    @signal_received.set(false)
 
     # Get initial size
     initial_width, initial_height = @size_provider.call
@@ -136,23 +137,17 @@ class Termisu::Event::Source::Resize < Termisu::Event::Source
   # Stops monitoring for resize events.
   #
   # Sets the running flag to false, causing the fiber to exit
-  # on its next iteration. Closes the signal channel to unblock
-  # the fiber immediately.
+  # on its next poll cycle. Resets the SIGWINCH handler.
   def stop : Nil
     return unless @running.compare_and_set(true, false)
 
     # Reset signal handler first to prevent new signals from arriving
     Signal::WINCH.reset
 
-    # Close the signal channel to unblock the fiber's select
-    if signal_channel = @signal_channel
-      signal_channel.close
-    end
-
-    # Give fiber time to exit gracefully
+    # Give fiber time to exit gracefully (it will notice @running is false
+    # on its next poll cycle, up to one @poll_interval delay)
     Fiber.yield
 
-    @signal_channel = nil
     Log.debug { "Resize source stopped" }
   end
 
@@ -167,37 +162,40 @@ class Termisu::Event::Source::Resize < Termisu::Event::Source
   end
 
   # Installs the SIGWINCH signal handler.
+  #
+  # Uses an `Atomic(Bool)` flag instead of a channel send, because
+  # `Channel#send` can block when the buffer is full, which is unsafe
+  # inside a signal handler. `Atomic#set` is always non-blocking.
   private def install_signal_handler : Nil
-    signal_channel = @signal_channel
+    signal_received = @signal_received
     Signal::WINCH.trap do
-      # Non-blocking send to wake up the polling fiber
-      signal_channel.try &.send(nil) rescue nil
+      signal_received.set(true)
     end
   end
 
   # Main resize monitoring loop - runs in a spawned fiber.
+  #
+  # Polls at `@poll_interval` and checks the `@signal_received` atomic flag.
+  # When a SIGWINCH signal is received, the flag is set by the signal handler
+  # and the next poll cycle processes the resize. Maximum latency for signal-
+  # triggered resizes is one poll interval (100ms by default).
   private def run_loop : Nil
     output = @output
-    signal_channel = @signal_channel
-    return unless output && signal_channel
+    return unless output
 
     while @running.get
-      # Wait for either poll interval or SIGWINCH signal
-      select
-      when signal_channel.receive?
-        # Signal received - check size immediately
-      when timeout(@poll_interval)
-        # Regular poll interval
-      end
+      sleep(@poll_interval)
 
-      # Check again after wait in case we were stopped
+      # Check again after sleep in case we were stopped
       break unless @running.get
+
+      # Clear the signal flag (swap returns previous value).
+      # We check size regardless of whether a signal triggered it,
+      # since the poll also catches resizes missed by signals.
+      @signal_received.swap(false)
 
       check_and_emit_resize(output)
     end
-  rescue Channel::ClosedError
-    # Channel closed during shutdown - exit gracefully
-    Log.debug { "Resize signal channel closed, exiting" }
   end
 
   # Checks for size changes and emits resize event if changed.
@@ -207,8 +205,9 @@ class Termisu::Event::Source::Resize < Termisu::Event::Source
   # and sends it to the output channel. Updates last known size for the
   # next comparison.
   #
-  # NOTE: This is called from run_loop which has Channel::ClosedError rescue,
-  # so channel.send exceptions are handled at that level.
+  # NOTE: If the output channel is closed (e.g., during shutdown), the
+  # `output.send` call will raise Channel::ClosedError, which propagates
+  # up through run_loop and terminates the fiber.
   private def check_and_emit_resize(output : Channel(Event::Any)) : Nil
     new_width, new_height = @size_provider.call
 

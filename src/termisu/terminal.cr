@@ -414,6 +414,10 @@ class Termisu::Terminal < Termisu::Renderer
     # Always invalidate after non-raw modes - screen content is
     # unpredictable after puts/print/gets during the mode block
     invalidate_buffer unless mode.none?
+    # Reset cached style state so next render re-emits all escape sequences.
+    # External programs during the mode block may have changed terminal
+    # styling, making our cached fg/bg/attr assumptions stale.
+    reset_render_state
     flush
   end
 
