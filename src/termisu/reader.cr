@@ -19,6 +19,8 @@
 #
 # reader.close
 # ```
+require "./time_compat"
+
 class Termisu::Reader
   Log = Termisu::Logs::Reader
   @fd : Int32
@@ -125,7 +127,8 @@ class Termisu::Reader
 
   # Checks readability using poll(2) for fd >= FD_SETSIZE.
   private def check_fd_readable_poll(timeout_sec : Int32, timeout_usec : Int32) : Bool
-    timeout_ms = timeout_sec * 1000 + timeout_usec // 1000
+    original_timeout_ms = timeout_sec * 1000 + timeout_usec // 1000
+    start = monotonic_now
     retries = 0
 
     loop do
@@ -134,10 +137,16 @@ class Termisu::Reader
       pollfd.events = LibC::POLLIN
       pollfd.revents = 0_i16
 
-      result = LibC.poll(pointerof(pollfd), 1_u64, timeout_ms)
+      result = LibC.poll(pointerof(pollfd), 1_u64, original_timeout_ms)
 
       if result > 0
-        return (pollfd.revents & LibC::POLLIN) != 0
+        revents = pollfd.revents
+        # POLLERR/POLLNVAL indicate fd errors - raise rather than silently returning false
+        if (revents & LibC::POLLERR) != 0 || (revents & LibC::POLLNVAL) != 0
+          raise Termisu::IOError.select_failed(Errno.value)
+        end
+        # POLLIN or POLLHUP means data may be readable (HUP can have trailing data)
+        return (revents & LibC::POLLIN) != 0 || (revents & LibC::POLLHUP) != 0
       elsif result == 0
         return false
       end
@@ -150,6 +159,19 @@ class Termisu::Reader
         if retries >= MAX_EINTR_RETRIES
           raise Termisu::IOError.select_failed(errno)
         end
+
+        # Recompute remaining timeout
+        elapsed = monotonic_now - start
+        elapsed_ms = elapsed.total_milliseconds.to_i
+        remaining_ms = {original_timeout_ms - elapsed_ms, 0}.max
+
+        if remaining_ms == 0
+          # Timeout expired during retry attempts
+          return false
+        end
+
+        # Update timeout for next iteration
+        original_timeout_ms = remaining_ms
         next
       end
 
@@ -159,6 +181,8 @@ class Termisu::Reader
 
   # Checks readability using select(2) for fd < FD_SETSIZE.
   private def check_fd_readable_select(timeout_sec : Int32, timeout_usec : Int32) : Bool
+    original_total_usec = timeout_sec.to_i64 * 1_000_000 + timeout_usec.to_i64
+    start = monotonic_now
     retries = 0
 
     loop do
@@ -188,6 +212,20 @@ class Termisu::Reader
         if retries >= MAX_EINTR_RETRIES
           raise Termisu::IOError.select_failed(errno)
         end
+
+        # Recompute remaining timeout
+        elapsed = monotonic_now - start
+        elapsed_usec = (elapsed.total_milliseconds * 1000).to_i64
+        remaining_usec = {original_total_usec - elapsed_usec, 0_i64}.max
+
+        if remaining_usec == 0
+          # Timeout expired during retry attempts
+          return false
+        end
+
+        # Update timeout for next iteration
+        timeout_sec = (remaining_usec // 1_000_000).to_i32
+        timeout_usec = (remaining_usec % 1_000_000).to_i32
         next
       end
 
@@ -292,7 +330,10 @@ lib LibC
   {% end %}
 
   {% unless LibC.has_constant?(:POLLIN) %}
-    POLLIN = 0x0001_i16
+    POLLIN   = 0x0001_i16
+    POLLERR  = 0x0008_i16
+    POLLHUP  = 0x0010_i16
+    POLLNVAL = 0x0020_i16
   {% end %}
 
   fun poll(fds : Pollfd*, nfds : UInt64, timeout : Int32) : Int32
