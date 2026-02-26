@@ -91,6 +91,21 @@ describe Termisu::UnicodeWidth do
       Termisu::UnicodeWidth.codepoint_width(0x200D).should eq(0)
     end
 
+    it "returns 0 for bidi and format controls" do
+      Termisu::UnicodeWidth.codepoint_width(0x200E).should eq(0) # LRM
+      Termisu::UnicodeWidth.codepoint_width(0x200F).should eq(0) # RLM
+      Termisu::UnicodeWidth.codepoint_width(0x061C).should eq(0) # ALM
+      Termisu::UnicodeWidth.codepoint_width(0x202A).should eq(0) # LRE
+      Termisu::UnicodeWidth.codepoint_width(0x202B).should eq(0) # RLE
+      Termisu::UnicodeWidth.codepoint_width(0x202C).should eq(0) # PDF
+      Termisu::UnicodeWidth.codepoint_width(0x202D).should eq(0) # LRO
+      Termisu::UnicodeWidth.codepoint_width(0x202E).should eq(0) # RLO
+      Termisu::UnicodeWidth.codepoint_width(0x2066).should eq(0) # LRI
+      Termisu::UnicodeWidth.codepoint_width(0x2067).should eq(0) # RLI
+      Termisu::UnicodeWidth.codepoint_width(0x2068).should eq(0) # FSI
+      Termisu::UnicodeWidth.codepoint_width(0x2069).should eq(0) # PDI
+    end
+
     it "returns 0 for emoji skin tone modifiers" do
       # Light skin tone
       Termisu::UnicodeWidth.codepoint_width(0x1F3FB).should eq(0)
