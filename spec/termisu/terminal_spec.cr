@@ -471,6 +471,11 @@ describe Termisu::Terminal do
       terminal.background = Termisu::Color.red
       terminal.output.should contain("\e[41m") # Red bg
 
+      # Bold should also re-emit after reset
+      terminal.clear_captured
+      terminal.enable_bold
+      terminal.output.should contain("\e[1m") # Bold SGR
+
 
     ensure
       terminal.try &.close
