@@ -123,6 +123,7 @@ class Termisu::Event::Source::Timer < Termisu::Event::Source
 
     # Track last tick time locally for delta calculations
     current_last_tick = last_tick
+    pending_missed = 0_u64
 
     while @running.get
       sleep @interval
@@ -139,6 +140,7 @@ class Termisu::Event::Source::Timer < Termisu::Event::Source
         elapsed: elapsed,
         delta: delta,
         frame: frame,
+        missed_ticks: pending_missed,
       )
 
       # Update both local and instance variables
@@ -146,10 +148,25 @@ class Termisu::Event::Source::Timer < Termisu::Event::Source
       @last_tick = now
       @frame += 1
 
-      output.send(tick)
+      if send_nonblocking(output, tick)
+        pending_missed = 0_u64
+      else
+        # Preserve dropped frame accounting without blocking the timer fiber.
+        pending_missed += 1_u64
+      end
     end
   rescue Channel::ClosedError
     # Channel closed during shutdown - exit gracefully
     Log.debug { "Timer channel closed, exiting" }
+  end
+
+  # Sends without blocking. Returns true on success, false when channel is full.
+  private def send_nonblocking(output : Channel(Event::Any), event : Event::Tick) : Bool
+    select
+    when output.send(event)
+      true
+    else
+      false
+    end
   end
 end

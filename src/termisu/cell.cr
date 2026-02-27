@@ -47,6 +47,13 @@ struct Termisu::Cell
   property bg : Color
   property attr : Attribute
 
+  # Shared immutable templates for common cell states.
+  #
+  # Returning these from `default`/`continuation` avoids rebuilding equivalent
+  # structs on hot paths (clear, overlap clearing, resize).
+  @@default_cell = Cell.new(" ", continuation: false, fg: Color.white, bg: Color.default, attr: Attribute::None)
+  @@continuation_cell = Cell.new("", continuation: true, fg: Color.white, bg: Color.default, attr: Attribute::None)
+
   # Creates a new Cell with the specified grapheme and colors.
   #
   # Parameters:
@@ -108,7 +115,7 @@ struct Termisu::Cell
 
   # Creates a default empty cell (space with default colors, width 1, not continuation).
   def self.default : Cell
-    new
+    @@default_cell
   end
 
   # Creates a continuation cell for wide graphemes.
@@ -123,7 +130,7 @@ struct Termisu::Cell
   # trail.grapheme      # => ""
   # ```
   def self.continuation : Cell
-    new(continuation: true)
+    @@continuation_cell
   end
 
   # Checks if this cell equals another cell.
@@ -170,5 +177,18 @@ struct Termisu::Cell
     @grapheme = value.to_s
     @width = UnicodeWidth.codepoint_width(value.ord)
     @continuation = false
+  end
+
+  # Returns true when this cell is the canonical default blank cell.
+  #
+  # Used by Buffer hot paths (clear/dirtiness accounting) to avoid
+  # expensive full-buffer work when rows are already blank.
+  def default_state? : Bool
+    !@continuation &&
+      @width == 1_u8 &&
+      @grapheme == " " &&
+      @fg == Color.white &&
+      @bg == Color.default &&
+      @attr == Attribute::None
   end
 end

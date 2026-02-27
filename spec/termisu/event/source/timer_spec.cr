@@ -246,6 +246,35 @@ describe Termisu::Event::Source::Timer do
       timer.stop
       channel.close
     end
+
+    it "reports missed_ticks when output channel is backpressured" do
+      timer = Termisu::Event::Source::Timer.new(interval: 2.milliseconds)
+      channel = Channel(Termisu::Event::Any).new(1)
+
+      timer.start(channel)
+
+      # Intentionally do not consume to force drops while buffer is full.
+      sleep 30.milliseconds
+
+      # First tick may have been queued before backpressure accumulated.
+      select
+      when channel.receive
+      when timeout(100.milliseconds)
+        fail "Timeout waiting for first tick"
+      end
+
+      # Next delivered tick should carry dropped-frame accounting.
+      select
+      when event = channel.receive
+        tick = event.as(Termisu::Event::Tick)
+        tick.missed_ticks.should be >= 1_u64
+      when timeout(100.milliseconds)
+        fail "Timeout waiting for backpressure tick"
+      end
+
+      timer.stop
+      channel.close
+    end
   end
 
   describe "restart lifecycle" do

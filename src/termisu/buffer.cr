@@ -25,10 +25,14 @@ class Termisu::Buffer
   getter height : Int32
   getter cursor : Cursor
 
-  @front : Array(Cell)        # Currently displayed buffer
-  @back : Array(Cell)         # Buffer being written to
-  @render_state : RenderState # Tracks current terminal state for optimization
-  @batch_buffer : IO::Memory  # Reusable buffer for character batching
+  @front : Array(Cell)                   # Currently displayed buffer
+  @back : Array(Cell)                    # Buffer being written to
+  @render_state : RenderState            # Tracks current terminal state for optimization
+  @batch_buffer : IO::Memory             # Reusable buffer for character batching
+  @row_non_default_counts : Array(Int32) # Number of non-default cells per back-buffer row
+  @dirty_rows : Array(Bool)              # Rows that may differ between front/back
+  @dirty_row_list : Array(Int32)         # Ordered list of currently dirty row indices
+  @any_dirty : Bool                      # Fast-path flag for dirty row checks
 
   # Creates a new Buffer with the specified dimensions.
   #
@@ -37,11 +41,16 @@ class Termisu::Buffer
   # - height: Number of rows
   def initialize(@width : Int32, @height : Int32)
     size = @width * @height
-    @front = Array(Cell).new(size) { Cell.default }
-    @back = Array(Cell).new(size) { Cell.default }
+    default_cell = Cell.default
+    @front = Array(Cell).new(size, default_cell)
+    @back = Array(Cell).new(size, default_cell)
     @cursor = Cursor.new # Hidden by default
     @render_state = RenderState.new
     @batch_buffer = IO::Memory.new(@width) # Pre-sized for typical row batches
+    @row_non_default_counts = Array(Int32).new(@height, 0)
+    @dirty_rows = Array(Bool).new(@height, false)
+    @dirty_row_list = [] of Int32
+    @any_dirty = false
     Log.debug { "Buffer initialized: #{@width}x#{@height} (#{size} cells)" }
   end
 
@@ -97,6 +106,8 @@ class Termisu::Buffer
   # Assumes caller has validated bounds and fit constraints.
   private def set_cell_internal(x : Int32, y : Int32, cell : Cell, width : UInt8) : Nil
     row_start = y * @width
+    default_cell = Cell.default
+    continuation_cell = Cell.continuation
 
     # Clear overlap: if writing into a continuation cell, clear its owner first
     if @back[row_start + x].continuation?
@@ -108,23 +119,23 @@ class Termisu::Buffer
       # If x+1 is a wide leading cell, clear its continuation at x+2 first
       # to prevent orphan continuation cells (BUG-008)
       if x + 2 < @width && @back[row_start + x + 1].width == 2
-        @back[row_start + x + 2] = Cell.default
+        assign_back_cell(row_start + x + 2, y, default_cell)
       end
 
       # Pre-clear both target positions
-      @back[row_start + x] = Cell.default
-      @back[row_start + x + 1] = Cell.default
+      assign_back_cell(row_start + x, y, default_cell)
+      assign_back_cell(row_start + x + 1, y, default_cell)
 
       # Write leading cell
-      @back[row_start + x] = cell
+      assign_back_cell(row_start + x, y, cell)
       # Write continuation cell
-      @back[row_start + x + 1] = Cell.continuation
+      assign_back_cell(row_start + x + 1, y, continuation_cell)
     else
       # Narrow write: clear any wide cell that overlaps next position
       if x + 1 < @width && @back[row_start + x].width == 2
-        @back[row_start + x + 1] = Cell.default
+        assign_back_cell(row_start + x + 1, y, default_cell)
       end
-      @back[row_start + x] = cell
+      assign_back_cell(row_start + x, y, cell)
     end
   end
 
@@ -138,7 +149,7 @@ class Termisu::Buffer
     row_start = y * @width
     return unless @back[row_start + x].continuation?
 
-    @back[row_start + x - 1] = Cell.default
+    assign_back_cell(row_start + x - 1, y, Cell.default)
   end
 
   # Gets a cell at the specified position from the back buffer.
@@ -153,8 +164,22 @@ class Termisu::Buffer
 
   # Clears the back buffer (fills with default cells).
   def clear
-    @back.size.times do |index|
-      @back[index] = Cell.default
+    default_cell = Cell.default
+
+    @height.times do |row|
+      # Skip rows that are already fully default.
+      next if @row_non_default_counts[row] == 0
+
+      row_start = row * @width
+      row_end = row_start + @width
+      idx = row_start
+      while idx < row_end
+        @back[idx] = default_cell
+        idx += 1
+      end
+
+      @row_non_default_counts[row] = 0
+      mark_row_dirty(row)
     end
   end
 
@@ -178,6 +203,7 @@ class Termisu::Buffer
       @front[index] = invalid_cell
     end
     @render_state.reset
+    mark_all_rows_dirty
   end
 
   # Sets cursor position and makes it visible.
@@ -216,8 +242,13 @@ class Termisu::Buffer
   # - auto_flush: Whether to flush at the end (default: true). Set to false
   #   when caller needs to control flush timing (e.g., for synchronized updates).
   def render_to(renderer : Renderer, auto_flush : Bool = true)
-    @height.times do |row|
-      render_row_diff(renderer, row)
+    if @any_dirty
+      @dirty_row_list.each do |row|
+        render_row_diff(renderer, row)
+        @dirty_rows[row] = false
+      end
+      @dirty_row_list.clear
+      @any_dirty = false
     end
 
     # Render cursor
@@ -242,6 +273,8 @@ class Termisu::Buffer
       render_row_full(renderer, row)
     end
 
+    reset_dirty_rows
+
     # Render cursor
     render_cursor(renderer)
 
@@ -256,8 +289,9 @@ class Termisu::Buffer
     return if new_width == @width && new_height == @height
 
     new_size = new_width * new_height
-    new_back = Array(Cell).new(new_size) { Cell.default }
-    new_front = Array(Cell).new(new_size) { Cell.default }
+    default_cell = Cell.default
+    new_back = Array(Cell).new(new_size, default_cell)
+    new_front = Array(Cell).new(new_size, default_cell)
 
     # Copy existing content (up to new dimensions)
     min_height = Math.min(@height, new_height)
@@ -299,6 +333,10 @@ class Termisu::Buffer
     @height = new_height
     @back = new_back
     @front = new_front
+    rebuild_row_non_default_counts
+    @dirty_rows = Array(Bool).new(@height, true)
+    @dirty_row_list = Array(Int32).new(@height) { |row| row }
+    @any_dirty = @height > 0
 
     # Clamp cursor position to new bounds
     @cursor.clamp(@width, @height)
@@ -315,6 +353,63 @@ class Termisu::Buffer
   private def control_char?(char : Char) : Bool
     cp = char.ord
     cp < 0x20 || (cp >= 0x7F && cp <= 0x9F)
+  end
+
+  # Assigns a cell in the back buffer while maintaining:
+  # - non-default row counts (for selective clear)
+  # - dirty row tracking (for selective render diff)
+  private def assign_back_cell(index : Int32, row : Int32, new_cell : Cell) : Nil
+    old_cell = @back[index]
+    return if old_cell == new_cell
+
+    old_default = old_cell.default_state?
+    new_default = new_cell.default_state?
+    if old_default != new_default
+      @row_non_default_counts[row] += new_default ? -1 : 1
+    end
+
+    @back[index] = new_cell
+    mark_row_dirty(row)
+  end
+
+  private def mark_row_dirty(row : Int32) : Nil
+    return if @dirty_rows[row]
+    @dirty_rows[row] = true
+    @dirty_row_list << row
+    @any_dirty = true
+  end
+
+  private def mark_all_rows_dirty : Nil
+    @dirty_rows.fill(true)
+    @dirty_row_list.clear
+    @height.times { |row| @dirty_row_list << row }
+    @any_dirty = @height > 0
+  end
+
+  private def reset_dirty_rows : Nil
+    @dirty_rows.fill(false)
+    @dirty_row_list.clear
+    @any_dirty = false
+  end
+
+  private def rebuild_row_non_default_counts : Nil
+    counts = Array(Int32).new(@height, 0)
+
+    @height.times do |row|
+      row_start = row * @width
+      row_end = row_start + @width
+      idx = row_start
+      count = 0
+
+      while idx < row_end
+        count += 1 unless @back[idx].default_state?
+        idx += 1
+      end
+
+      counts[row] = count
+    end
+
+    @row_non_default_counts = counts
   end
 
   # Renders cursor position and visibility to the renderer.
