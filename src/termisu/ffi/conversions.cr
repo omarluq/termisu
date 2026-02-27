@@ -99,9 +99,11 @@ module Termisu::FFI::Conversions
     out.resize_width = event.width
     out.resize_height = event.height
     if old_width = event.old_width
-      out.resize_old_width = old_width
-      out.resize_old_height = event.old_height || 0
-      out.resize_has_old = 1_u8
+      if old_height = event.old_height
+        out.resize_old_width = old_width
+        out.resize_old_height = old_height
+        out.resize_has_old = 1_u8
+      end
     end
     out
   end
