@@ -37,6 +37,11 @@ bin/hace docs:serve
 ```
 
 If `hwaro` is missing, install from <https://hwaro.hahwul.com/> first.
+Local docs tasks default `DOCS_BASE_URL` to `http://localhost:3000`; override with:
+
+```bash
+DOCS_BASE_URL=https://termisu.io bin/hace docs:build
+```
 
 ## Deploy (Netlify via Hwaro)
 
@@ -59,4 +64,6 @@ hwaro deploy netlify-preview
 
 Netlify CI uses the repo-level `netlify.toml` config with `base = "docs-web"` and `publish = "public"`.
 The build command downloads a prebuilt `hwaro` Linux binary, so Crystal/shards are not required in Netlify.
-You can override the pinned version with `HWARO_VERSION` in Netlify environment variables.
+`base_url` is dynamic in CI and resolved as:
+`DOCS_BASE_URL` (explicit override) -> `DEPLOY_PRIME_URL` -> `URL` -> `https://termisu.io`.
+You can override the pinned hwaro version with `HWARO_VERSION` in Netlify environment variables.

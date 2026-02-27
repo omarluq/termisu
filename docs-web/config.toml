@@ -4,7 +4,7 @@
 
 title = "Termisu Docs"
 description = "Terminal-first docs for Termisu, the Crystal TUI library."
-base_url = "http://localhost:3000"
+base_url = "https://termisu.io"
 
 # =============================================================================
 # Multilingual (Optional)

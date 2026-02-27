@@ -357,10 +357,10 @@ tasks:
     phony: true
     always_run: true
     commands: |
-      cd docs-web && hwaro build --no-parallel
+      cd docs-web && DOCS_BASE_URL="${DOCS_BASE_URL:-http://localhost:3000}" && hwaro build --no-parallel --base-url "$DOCS_BASE_URL"
   docs:serve:
     description: Run Hwaro dev server on docs-web with live reload (port 3000)
     phony: true
     always_run: true
     commands: |
-      cd docs-web && CRYSTAL_WORKERS=1 hwaro serve -p 3000
+      cd docs-web && DOCS_BASE_URL="${DOCS_BASE_URL:-http://localhost:3000}" && CRYSTAL_WORKERS=1 hwaro serve -p 3000 --base-url "$DOCS_BASE_URL"
