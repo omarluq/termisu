@@ -132,13 +132,13 @@ test.describe("Animation Example", () => {
         await new Promise((resolve) => setTimeout(resolve, pollInterval));
         elapsed += pollInterval;
         const maybePos = getBallPosition();
-        if (!maybePos) break;
+        if (!maybePos) continue;
         newPos = maybePos;
       }
 
       // Animation should have moved the ball
       expect(
-        newPos?.x !== initialPos?.x || newPos?.y !== initialPos?.y
+        newPos.x !== initialPos.x || newPos.y !== initialPos.y
       ).toBeTruthy();
     });
   });

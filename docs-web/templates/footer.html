@@ -661,9 +661,7 @@
       if (!pre || pre.dataset.shikiDone === '1') continue
 
       const className = Array.from(code.classList).find((name) => name.startsWith('language-'))
-      const lang = className && className.startsWith('language-')
-        ? className.slice('language-'.length)
-        : (className || 'text')
+      const lang = className ? className.slice('language-'.length) : 'text'
       const source = code.textContent || ''
 
       try {
