@@ -1,5 +1,5 @@
 name: termisu
-version: 0.4.0
+version: 0.4.1
 authors:
   - omarluq <omar.luqman@hey.com>
 crystal: ">= 1.18.2"
