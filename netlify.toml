@@ -4,8 +4,9 @@ publish = "public"
 command = """
 set -eu
 HWARO_VERSION="${HWARO_VERSION:-0.0.17}"
+DOCS_BASE_URL="${DOCS_BASE_URL:-${DEPLOY_PRIME_URL:-${URL:-https://termisu.io}}}"
 HWARO_URL="https://github.com/hahwul/hwaro/releases/download/v${HWARO_VERSION}/hwaro-v${HWARO_VERSION}-linux-x86_64"
 curl -fsSL "$HWARO_URL" -o ./hwaro
 chmod +x ./hwaro
-./hwaro build --no-parallel
+./hwaro build --no-parallel --base-url "$DOCS_BASE_URL"
 """
