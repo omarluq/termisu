@@ -5,10 +5,11 @@ module Termisu::FFI
   end
 
   def self.destroy(handle : UInt64) : Status
-    context = Registry.delete(handle)
+    context = Registry.fetch(handle)
     return invalid_handle_status unless context
 
     context.close
+    Registry.delete(handle)
     Status::Ok
   end
 

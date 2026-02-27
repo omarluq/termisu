@@ -1,17 +1,18 @@
+require "crystal/thread_local_value"
+
 module Termisu::FFI::ErrorState
-  @@last_error = ""
-  @@lock = Mutex.new
+  @@last_error = Crystal::ThreadLocalValue(String).new
 
   def self.current : String
-    @@lock.synchronize { @@last_error }
+    @@last_error.get { "" }
   end
 
   def self.set(message : String) : Nil
-    @@lock.synchronize { @@last_error = message }
+    @@last_error.set(message)
   end
 
   def self.clear : Nil
-    set("")
+    @@last_error.set("")
   end
 
   def self.format(ex : Exception) : String

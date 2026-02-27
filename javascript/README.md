@@ -8,7 +8,7 @@ TypeScript bindings for Termisu using `bun:ffi`.
 - Built Termisu shared library:
   - Linux: `libtermisu.so`
   - macOS: `libtermisu.dylib`
-  - Windows: `termisu.dll`
+  - Windows: not supported
 
 Build native lib from the repository root:
 
