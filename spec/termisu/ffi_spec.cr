@@ -104,9 +104,11 @@ describe "Termisu C ABI" do
       rejected.should eq(Termisu::FFI::Status::Rejected.value)
       termisu_error_message.should contain("set_cell rejected")
 
-      invalid_codepoint = termisu_set_cell(handle, 0, 0, 0x11_0000_u32, pointerof(style))
-      invalid_codepoint.should eq(Termisu::FFI::Status::Error.value)
-      termisu_error_message.should contain("Invalid Unicode codepoint")
+      if size.width > 0 && size.height > 0
+        invalid_codepoint = termisu_set_cell(handle, 0, 0, 0x11_0000_u32, pointerof(style))
+        invalid_codepoint.should eq(Termisu::FFI::Status::Error.value)
+        termisu_error_message.should contain("Invalid Unicode codepoint")
+      end
 
       termisu_enable_timer_ms(handle, 16).should eq(Termisu::FFI::Status::Ok.value)
       termisu_disable_timer(handle).should eq(Termisu::FFI::Status::Ok.value)

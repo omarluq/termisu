@@ -145,7 +145,12 @@ describe("Termisu wrapper behavior", () => {
     const sizeCall = calls.find((entry) => entry.name === "termisu_size");
     expect(sizeCall).toBeDefined();
     expect(sizeCall?.args[0]).toBe(1n);
-    expect((sizeCall?.args[1] as number) !== 0).toBe(true);
+    const sizeOutPtr = sizeCall?.args[1];
+    if (typeof sizeOutPtr === "bigint") {
+      expect(sizeOutPtr !== 0n).toBe(true);
+    } else {
+      expect(Number(sizeOutPtr ?? 0) !== 0).toBe(true);
+    }
 
     const cursorCall = calls.find((entry) => entry.name === "termisu_set_cursor");
     expect(cursorCall?.args).toEqual([1n, 12, 4]);
