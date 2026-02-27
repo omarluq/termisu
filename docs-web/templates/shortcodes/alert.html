@@ -1,0 +1,6 @@
+{% if type and message %}
+<div class="alert alert-{{ type }}">
+  <span class="iconify" data-icon="pixelarticons:info-box"></span>
+  <div>{{ message }}</div>
+</div>
+{% endif %}

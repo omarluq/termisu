@@ -1,0 +1,51 @@
+{% set template_kind = "page" %}
+{% include "header.html" %}
+<header class="docs-header">
+  <a href="{{ "/" | relative_url }}" class="logo">
+    <span class="iconify" data-icon="pixelarticons:terminal"></span>
+    TERMISU
+    <span class="logo-cursor"></span>
+  </a>
+  {% include "header_nav.html" %}
+</header>
+<div class="docs-container">
+  <aside class="docs-sidebar">
+    <div class="sidebar-section">
+      <div class="sidebar-title"><span class="iconify" data-icon="pixelarticons:list-box"></span> Docs</div>
+      <ul class="sidebar-links">
+        <li><a href="{{ "/getting-started/installation/" | relative_url }}"><span class="iconify" data-icon="pixelarticons:download"></span>Install</a></li>
+        <li><a href="{{ "/getting-started/quick-start/" | relative_url }}"><span class="iconify" data-icon="pixelarticons:sparkles"></span>Quick Start</a></li>
+        <li><a href="{{ "/getting-started/configuration/" | relative_url }}"><span class="iconify" data-icon="pixelarticons:dashboard"></span>Runtime</a></li>
+        <li><a href="{{ "/guide/terminal/" | relative_url }}"><span class="iconify" data-icon="pixelarticons:terminal"></span>Terminal</a></li>
+        <li><a href="{{ "/guide/cell-buffer/" | relative_url }}"><span class="iconify" data-icon="pixelarticons:files"></span>Buffer</a></li>
+        <li><a href="{{ "/guide/cursor/" | relative_url }}"><span class="iconify" data-icon="pixelarticons:target"></span>Cursor</a></li>
+        <li><a href="{{ "/guide/events/" | relative_url }}"><span class="iconify" data-icon="pixelarticons:command"></span>Events</a></li>
+        <li><a href="{{ "/guide/event-types/" | relative_url }}"><span class="iconify" data-icon="pixelarticons:list"></span>Types</a></li>
+        <li><a href="{{ "/guide/mouse-keyboard/" | relative_url }}"><span class="iconify" data-icon="pixelarticons:mouse"></span>Mouse Keys</a></li>
+        <li><a href="{{ "/guide/timer/" | relative_url }}"><span class="iconify" data-icon="pixelarticons:clock"></span>Timer</a></li>
+        <li><a href="{{ "/guide/terminal-modes/" | relative_url }}"><span class="iconify" data-icon="pixelarticons:sliders"></span>Modes</a></li>
+        <li><a href="{{ "/guide/colors/" | relative_url }}"><span class="iconify" data-icon="pixelarticons:sun"></span>Colors</a></li>
+        <li><a href="{{ "/guide/attributes/" | relative_url }}"><span class="iconify" data-icon="pixelarticons:article"></span>Attrs</a></li>
+        <li><a href="{{ "/guide/keys/" | relative_url }}"><span class="iconify" data-icon="pixelarticons:keyboard"></span>Keys</a></li>
+        <li><a href="{{ "/guide/modifiers/" | relative_url }}"><span class="iconify" data-icon="pixelarticons:link"></span>Mods</a></li>
+        <li><a href="{{ "/reference/cli/" | relative_url }}"><span class="iconify" data-icon="pixelarticons:server"></span>Tooling</a></li>
+        <li><a href="{{ "/reference/api/" | relative_url }}"><span class="iconify" data-icon="pixelarticons:clipboard"></span>API</a></li>
+      </ul>
+    </div>
+  </aside>
+  <main class="docs-main">
+    {{ content }}
+
+    <nav class="doc-prev-next" aria-label="Document pagination">
+      <span class="nav-spacer"></span>
+      <span class="nav-spacer"></span>
+    </nav>
+  </main>
+  <aside class="docs-toc" aria-label="On this page">
+    <div class="toc-section">
+      <div class="toc-title"><span class="iconify" data-icon="pixelarticons:list-box"></span> On This Page</div>
+      <ul class="toc-links"></ul>
+    </div>
+  </aside>
+</div>
+{% include "footer.html" %}
