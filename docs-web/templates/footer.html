@@ -1,0 +1,346 @@
+<footer class="docs-footer">
+  <div class="docs-footer-inner">
+    <p>
+      <span class="iconify" data-icon="pixelarticons:terminal"></span>
+      Built with Hwaro.
+    </p>
+    <p class="footer-copyright">
+      <span class="iconify" data-icon="pixelarticons:badge-captions"></span>
+      All rights reserved Omar Alani
+    </p>
+  </div>
+</footer>
+<script src="https://code.iconify.design/3/3.1.1/iconify.min.js"></script>
+<script type="module">
+  import { codeToHtml } from 'https://esm.sh/shiki@3.0.0'
+
+  function normalizePath(path) {
+    if (!path) return '/'
+    let value = path
+    if (!value.startsWith('/')) value = `/${value}`
+    value = value.replace(/\/{2,}/g, '/')
+    if (value.length > 1 && value.endsWith('/')) value = value.slice(0, -1)
+    return `${value}/`.replace('//', '/')
+  }
+
+  function pathFromHref(href) {
+    try {
+      const url = new URL(href, window.location.origin)
+      if (url.origin !== window.location.origin) return null
+      return normalizePath(url.pathname)
+    } catch (_error) {
+      return null
+    }
+  }
+
+  const themeStorageKey = 'termisu-docs-theme'
+  const themeMeta = {
+    terminal: { label: 'Neon Night', icon: 'pixelarticons:moon-star' },
+    logo: { label: 'Termisu Wood', icon: 'pixelarticons:sun' },
+  }
+
+  function sanitizeTheme(theme) {
+    return theme === 'logo' ? 'logo' : 'terminal'
+  }
+
+  function getCurrentTheme() {
+    return sanitizeTheme(document.documentElement.dataset.theme || 'terminal')
+  }
+
+  function hydrateTheme() {
+    let theme = getCurrentTheme()
+    try {
+      theme = sanitizeTheme(localStorage.getItem(themeStorageKey) || theme)
+    } catch (_error) {
+      theme = sanitizeTheme(theme)
+    }
+    document.documentElement.dataset.theme = theme
+    return theme
+  }
+
+  function syncFavicon(activeTheme = getCurrentTheme()) {
+    const file = activeTheme === 'logo' ? 'favicon-wood.svg' : 'favicon.svg'
+    for (const rel of ['icon', 'shortcut icon']) {
+      const link = document.querySelector(`link[rel="${rel}"]`)
+      if (!link) continue
+      try {
+        link.href = new URL(`/${file}`, window.location.origin).href
+      } catch (_error) {
+        link.setAttribute('href', `/${file}`)
+      }
+    }
+  }
+
+  function updateThemeToggle(root = document, activeTheme = getCurrentTheme()) {
+    const toggle = root.querySelector('[data-theme-toggle]')
+    if (!toggle) return
+
+    const nextTheme = activeTheme === 'terminal' ? 'logo' : 'terminal'
+    const activeMeta = themeMeta[activeTheme]
+    const nextMeta = themeMeta[nextTheme]
+    toggle.dataset.nextTheme = nextTheme
+    toggle.title = `Theme: ${activeMeta.label} (switch to ${nextMeta.label})`
+    toggle.setAttribute('aria-label', `Switch to ${nextMeta.label} theme`)
+
+    const icon = toggle.querySelector('[data-theme-icon]')
+    if (icon) icon.setAttribute('data-icon', activeMeta.icon)
+
+    if (window.Iconify && typeof window.Iconify.scan === 'function') {
+      window.Iconify.scan(toggle)
+    }
+  }
+
+  function setTheme(theme, root = document) {
+    const safeTheme = sanitizeTheme(theme)
+    document.documentElement.dataset.theme = safeTheme
+    try {
+      localStorage.setItem(themeStorageKey, safeTheme)
+    } catch (_error) {
+      // no-op when storage is unavailable
+    }
+    syncFavicon(safeTheme)
+    updateThemeToggle(root, safeTheme)
+  }
+
+  function initThemeToggle(root = document) {
+    const toggle = root.querySelector('[data-theme-toggle]')
+    if (!toggle) return
+    if (toggle.dataset.bound === '1') {
+      updateThemeToggle(root)
+      return
+    }
+
+    toggle.dataset.bound = '1'
+    updateThemeToggle(root)
+    toggle.addEventListener('click', () => {
+      setTheme(toggle.dataset.nextTheme || 'terminal', root)
+    })
+  }
+
+  function markActiveLinks(root = document) {
+    const current = normalizePath(window.location.pathname)
+    const sidebarLinks = Array.from(root.querySelectorAll('.docs-sidebar .sidebar-links a[href]'))
+    let activeSidebar = null
+
+    for (const link of sidebarLinks) {
+      link.classList.remove('active')
+      if (pathFromHref(link.getAttribute('href')) === current) {
+        activeSidebar = link
+      }
+    }
+
+    if (activeSidebar) activeSidebar.classList.add('active')
+  }
+
+  function createSpacer() {
+    const spacer = document.createElement('span')
+    spacer.className = 'nav-spacer'
+    return spacer
+  }
+
+  function createPrevLink(source) {
+    const anchor = document.createElement('a')
+    anchor.className = 'prev-link'
+    anchor.href = source.getAttribute('href') || '#'
+
+    const icon = document.createElement('span')
+    icon.className = 'iconify'
+    icon.setAttribute('data-icon', 'pixelarticons:arrow-left')
+    anchor.append(icon, document.createTextNode(source.textContent?.trim() || 'Previous'))
+    return anchor
+  }
+
+  function createNextLink(source) {
+    const anchor = document.createElement('a')
+    anchor.className = 'next-link'
+    anchor.href = source.getAttribute('href') || '#'
+
+    const label = document.createTextNode(source.textContent?.trim() || 'Next')
+    const icon = document.createElement('span')
+    icon.className = 'iconify'
+    icon.setAttribute('data-icon', 'pixelarticons:arrow-right')
+    anchor.append(label, icon)
+    return anchor
+  }
+
+  function renderPrevNext(root = document) {
+    const nav = root.querySelector('.doc-prev-next')
+    if (!nav) return
+
+    const current = normalizePath(window.location.pathname)
+    const sidebarLinks = Array.from(root.querySelectorAll('.docs-sidebar .sidebar-links a[href]'))
+    const ordered = []
+    const seen = new Set()
+
+    for (const link of sidebarLinks) {
+      const path = pathFromHref(link.getAttribute('href'))
+      if (!path || seen.has(path)) continue
+      seen.add(path)
+      ordered.push({ path, link })
+    }
+
+    let prev = null
+    let next = null
+
+    if (current === '/') {
+      next = ordered.find((item) => item.path !== current)?.link || null
+    } else {
+      const index = ordered.findIndex((item) => item.path === current)
+      if (index >= 0) {
+        prev = index > 0 ? ordered[index - 1].link : null
+        next = index < ordered.length - 1 ? ordered[index + 1].link : null
+      }
+    }
+
+    nav.replaceChildren(
+      prev ? createPrevLink(prev) : createSpacer(),
+      next ? createNextLink(next) : createSpacer(),
+    )
+  }
+
+  function slugifyHeading(value) {
+    return value
+      .toLowerCase()
+      .replace(/[^a-z0-9\s-]/g, '')
+      .trim()
+      .replace(/\s+/g, '-')
+      .replace(/-+/g, '-')
+  }
+
+  function renderPageToc(root = document) {
+    const toc = root.querySelector('.docs-toc .toc-links')
+    const content = root.querySelector('.docs-main')
+    if (!toc || !content) return
+
+    const headings = Array.from(content.querySelectorAll('h1, h2, h3')).filter(
+      (heading) => (heading.textContent || '').trim().length > 0,
+    )
+
+    if (!headings.length) {
+      toc.replaceChildren()
+      const empty = document.createElement('li')
+      empty.className = 'toc-empty'
+      empty.textContent = 'No sections'
+      toc.append(empty)
+      return
+    }
+
+    const usedIds = new Set(
+      Array.from(content.querySelectorAll('[id]'))
+        .map((node) => node.id)
+        .filter((id) => id),
+    )
+
+    const fragment = document.createDocumentFragment()
+    for (const heading of headings) {
+      if (!heading.id) {
+        const base = slugifyHeading(heading.textContent || '') || 'section'
+        let candidate = base
+        let index = 2
+        while (usedIds.has(candidate)) {
+          candidate = `${base}-${index}`
+          index += 1
+        }
+        heading.id = candidate
+        usedIds.add(candidate)
+      }
+
+      const item = document.createElement('li')
+      item.className = heading.tagName === 'H1'
+        ? 'toc-l1'
+        : heading.tagName === 'H3'
+          ? 'toc-l3'
+          : 'toc-l2'
+
+      const link = document.createElement('a')
+      link.href = `#${heading.id}`
+      link.textContent = (heading.textContent || '').trim()
+      item.append(link)
+      fragment.append(item)
+    }
+
+    toc.replaceChildren(fragment)
+  }
+
+  function attachCopyButton(block, source) {
+    if (!block || block.dataset.copyAttached === '1') return
+    block.dataset.copyAttached = '1'
+    block.classList.add('has-copy')
+
+    const button = document.createElement('button')
+    button.type = 'button'
+    button.className = 'copy-btn'
+    button.title = 'Copy code'
+    button.setAttribute('aria-label', 'Copy code')
+    button.innerHTML = '<span class="iconify" data-icon="pixelarticons:copy"></span>'
+
+    button.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(source)
+        button.classList.add('copied')
+        button.innerHTML = '<span class="iconify" data-icon="pixelarticons:check"></span>'
+        setTimeout(() => {
+          button.classList.remove('copied')
+          button.innerHTML = '<span class="iconify" data-icon="pixelarticons:copy"></span>'
+        }, 900)
+      } catch (_error) {
+        button.classList.add('copied')
+        setTimeout(() => button.classList.remove('copied'), 900)
+      }
+    })
+
+    block.prepend(button)
+  }
+
+  async function enhanceCodeBlocks(root = document) {
+    const blocks = Array.from(root.querySelectorAll('pre code'))
+    for (const code of blocks) {
+      const pre = code.parentElement
+      if (!pre || pre.dataset.shikiDone === '1') continue
+
+      const className = Array.from(code.classList).find((name) => name.startsWith('language-'))
+      const lang = className ? className.replace('language-', '') : 'text'
+      const source = code.textContent || ''
+
+      try {
+        const html = await codeToHtml(source, {
+          lang,
+          theme: 'vitesse-dark',
+        })
+
+        const wrapper = document.createElement('div')
+        wrapper.innerHTML = html
+        const shiki = wrapper.firstElementChild
+        if (!shiki) continue
+
+        shiki.classList.add('code-block')
+        shiki.dataset.shikiDone = '1'
+        attachCopyButton(shiki, source)
+        pre.replaceWith(shiki)
+      } catch (_error) {
+        pre.dataset.shikiDone = '1'
+        pre.classList.add('code-block')
+        attachCopyButton(pre, source)
+      }
+    }
+  }
+
+  async function enhancePage() {
+    const activeTheme = hydrateTheme()
+    syncFavicon(activeTheme)
+    initThemeToggle(document)
+    markActiveLinks(document)
+    renderPageToc(document)
+    renderPrevNext(document)
+    await enhanceCodeBlocks(document)
+    if (window.Iconify && typeof window.Iconify.scan === 'function') {
+      window.Iconify.scan()
+    }
+  }
+
+  await enhancePage()
+</script>
+{{ highlight_js }}
+{{ auto_includes_js }}
+</body>
+</html>

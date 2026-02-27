@@ -27,5 +27,7 @@
 /e2e/tui-traces/
 /e2e/test-results/
 
+/docs-web/public
+
 
 .claude/tsc-cache/

@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  {% if template_kind == 'section' and section and section.description %}
+  <meta name="description" content="{{ section.description }}">
+  {% elif page and page.description %}
+  <meta name="description" content="{{ page.description }}">
+  {% else %}
+  <meta name="description" content="{{ site.description }}">
+  {% endif %}
+  <title>
+    {% if template_kind == 'section' and section and section.title %}
+    {{ section.title }} · {{ site.title }}
+    {% elif page and page.title %}
+    {{ page.title }} · {{ site.title }}
+    {% else %}
+    {{ site.title }}
+    {% endif %}
+  </title>
+  {{ og_all_tags }}
+  <link rel="icon" type="image/svg+xml" href="{{ "/favicon.svg" | relative_url }}">
+  <link rel="shortcut icon" href="{{ "/favicon.svg" | relative_url }}">
+  <script>
+    (function () {
+      var key = 'termisu-docs-theme'
+      try {
+        var saved = localStorage.getItem(key)
+        document.documentElement.dataset.theme = saved === 'logo' ? 'logo' : 'terminal'
+      } catch (_error) {
+        document.documentElement.dataset.theme = 'terminal'
+      }
+    })()
+  </script>
+  <link rel="stylesheet" href="{{ "/css/theme.css" | relative_url }}">
+  <link rel="stylesheet" href="{{ "/css/style.css" | relative_url }}">
+  {{ highlight_css }}
+  {{ auto_includes_css }}
+</head>
+<body data-section="{% if template_kind == 'section' and section and section.url %}{{ section.url }}{% elif page and page.section %}{{ page.section }}{% elif section and section.url %}{{ section.url }}{% endif %}"{% if template_kind %} class="template-{{ template_kind }}"{% endif %}>

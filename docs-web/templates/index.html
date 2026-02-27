@@ -1,0 +1,14 @@
+{% set template_kind = "index" %}
+{% include "header.html" %}
+<header class="docs-header landing-header">
+  <a href="{{ "/" | relative_url }}" class="logo">
+    <span class="iconify" data-icon="pixelarticons:terminal"></span>
+    TERMISU
+    <span class="logo-cursor"></span>
+  </a>
+  {% include "header_nav.html" %}
+</header>
+<main class="site-main landing-main">
+  {{ content }}
+</main>
+{% include "footer.html" %}

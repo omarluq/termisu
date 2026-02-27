@@ -349,3 +349,18 @@ tasks:
     always_run: true
     commands: |
       bin/hace e2e:build && bin/hace e2e:test
+  # ===========================================
+  # Docs Site Tasks
+  # ===========================================
+  docs:build:
+    description: Build docs-web with Hwaro (parallel disabled for deterministic output)
+    phony: true
+    always_run: true
+    commands: |
+      cd docs-web && hwaro build --no-parallel
+  docs:serve:
+    description: Run Hwaro dev server on docs-web with live reload (port 3000)
+    phony: true
+    always_run: true
+    commands: |
+      cd docs-web && CRYSTAL_WORKERS=1 hwaro serve -p 3000
