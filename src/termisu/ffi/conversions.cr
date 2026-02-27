@@ -11,7 +11,7 @@ module Termisu::FFI::Conversions
 
   def self.codepoint_to_char(codepoint : UInt32) : Char
     codepoint.chr
-  rescue ex
+  rescue ex : ArgumentError
     raise ArgumentError.new("Invalid Unicode codepoint #{codepoint}: #{ex.message || ex.class.name}")
   end
 
