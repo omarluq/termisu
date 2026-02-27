@@ -86,6 +86,7 @@ typedef struct termisu_event {
 
 /* Version and lifecycle */
 uint32_t termisu_abi_version(void);
+uint64_t termisu_layout_signature(void);
 termisu_handle_t termisu_create(uint8_t sync_updates);
 int32_t termisu_destroy(termisu_handle_t handle);
 int32_t termisu_close(termisu_handle_t handle);

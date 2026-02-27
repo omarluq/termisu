@@ -13,8 +13,15 @@ function makeAnsi8(index: number): TermisuColor {
     throw new RangeError(`ANSI8 index must be -1..7, got ${index}`);
   }
 
+  if (index === -1) {
+    return {
+      mode: ColorMode.Default,
+      index: -1,
+    };
+  }
+
   return {
-    mode: index === -1 ? ColorMode.Default : ColorMode.Ansi8,
+    mode: ColorMode.Ansi8,
     index,
   };
 }
@@ -81,29 +88,75 @@ const namedBright = {
   bright_white: 15,
 } as const;
 
+/**
+ * Convenience constructors and named colors for Termisu cell styles.
+ */
 interface ColorApi {
+  /**
+   * ANSI 8-color palette entry. Use -1 for terminal default.
+   * @param index - `-1..7`
+   */
   ansi8(index: number): TermisuColor;
+  /**
+   * ANSI 256-color palette entry.
+   * @param index - `0..255`
+   */
   ansi256(index: number): TermisuColor;
+  /**
+   * 24-bit RGB color.
+   * @param r - red channel `0..255`
+   * @param g - green channel `0..255`
+   * @param b - blue channel `0..255`
+   */
   rgb(r: number, g: number, b: number): TermisuColor;
+  /**
+   * Parse `RRGGBB` or `#RRGGBB` into an RGB color.
+   * Alias of {@link fromHex}.
+   */
   from_hex(hex: string): TermisuColor;
+  /**
+   * Parse `RRGGBB` or `#RRGGBB` into an RGB color.
+   * Alias of {@link from_hex}.
+   */
   fromHex(hex: string): TermisuColor;
+  /**
+   * ANSI grayscale ramp entry.
+   * @param level - `0..23` (maps to ANSI256 `232..255`)
+   */
   grayscale(level: number): TermisuColor;
+  /** Terminal default foreground/background color. */
   default: TermisuColor;
+  /** ANSI black (`0`). */
   black: TermisuColor;
+  /** ANSI red (`1`). */
   red: TermisuColor;
+  /** ANSI green (`2`). */
   green: TermisuColor;
+  /** ANSI yellow (`3`). */
   yellow: TermisuColor;
+  /** ANSI blue (`4`). */
   blue: TermisuColor;
+  /** ANSI magenta (`5`). */
   magenta: TermisuColor;
+  /** ANSI cyan (`6`). */
   cyan: TermisuColor;
+  /** ANSI white (`7`). */
   white: TermisuColor;
+  /** ANSI bright black (`8`). */
   bright_black: TermisuColor;
+  /** ANSI bright red (`9`). */
   bright_red: TermisuColor;
+  /** ANSI bright green (`10`). */
   bright_green: TermisuColor;
+  /** ANSI bright yellow (`11`). */
   bright_yellow: TermisuColor;
+  /** ANSI bright blue (`12`). */
   bright_blue: TermisuColor;
+  /** ANSI bright magenta (`13`). */
   bright_magenta: TermisuColor;
+  /** ANSI bright cyan (`14`). */
   bright_cyan: TermisuColor;
+  /** ANSI bright white (`15`). */
   bright_white: TermisuColor;
 }
 

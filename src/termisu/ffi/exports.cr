@@ -4,6 +4,11 @@ fun termisu_abi_version : UInt32
   Termisu::FFI::ABI_VERSION
 end
 
+fun termisu_layout_signature : UInt64
+  Termisu::FFI::Runtime.ensure_initialized
+  Termisu::FFI::Layout.signature
+end
+
 fun termisu_create(sync_updates : UInt8) : UInt64
   Termisu::FFI::Guards.safe_handle { Termisu::FFI.create(sync_updates != 0_u8) }
 end

@@ -1,20 +1,38 @@
 module Termisu::FFI::Runtime
-  @@bootstrapped = false
+  @@bootstrapped = Atomic(Bool).new(false)
+  @@bootstrapping = Atomic(Bool).new(false)
 
   def self.mark_bootstrapped! : Nil
-    @@bootstrapped = true
+    @@bootstrapped.set(true)
   end
 
   def self.ensure_initialized : Nil
-    return if @@bootstrapped
+    loop do
+      return if @@bootstrapped.get
 
-    GC.init
-    Crystal.init_runtime
+      unless @@bootstrapping.compare_and_set(false, true)
+        Fiber.yield
+        next
+      end
 
-    argv = Pointer(UInt8*).malloc(1_u64)
-    argv[0] = "termisu-ffi".to_unsafe.as(UInt8*)
-    Crystal.main_user_code(1, argv)
-    @@bootstrapped = true
+      begin
+        return if @@bootstrapped.get
+
+        GC.init
+        Crystal.init_runtime
+
+        argv = Pointer(UInt8*).malloc(1_u64)
+        argv[0] = "termisu-ffi".to_unsafe.as(UInt8*)
+        Crystal.main_user_code(1, argv)
+        @@bootstrapped.set(true)
+        return
+      rescue ex
+        @@bootstrapped.set(false)
+        raise ex
+      ensure
+        @@bootstrapping.set(false)
+      end
+    end
   end
 end
 

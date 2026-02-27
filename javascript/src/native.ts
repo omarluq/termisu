@@ -3,8 +3,11 @@ import { existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { ABI_VERSION, STRUCT_LAYOUT_SIGNATURE } from "./constants";
+
 const SYMBOLS = {
   termisu_abi_version: { args: [], returns: "u32" },
+  termisu_layout_signature: { args: [], returns: "u64" },
   termisu_create: { args: ["u8"], returns: "u64" },
   termisu_destroy: { args: ["u64"], returns: "i32" },
   termisu_close: { args: ["u64"], returns: "i32" },
@@ -45,6 +48,47 @@ export interface NativeLibrary {
   path: string;
 }
 
+function asNumber(value: number | bigint | undefined): number {
+  if (value === undefined) {
+    throw new Error("Native symbol returned undefined");
+  }
+  return typeof value === "number" ? value : Number(value);
+}
+
+function asBigInt(value: number | bigint | undefined): bigint {
+  if (value === undefined) {
+    throw new Error("Native symbol returned undefined");
+  }
+  return typeof value === "bigint" ? value : BigInt(value);
+}
+
+function formatHex(value: bigint): string {
+  return `0x${value.toString(16).padStart(16, "0")}`;
+}
+
+function validateNativeLayout(path: string, symbols: SymbolMap): void {
+  const abiVersion = asNumber(symbols.termisu_abi_version());
+  if (abiVersion !== ABI_VERSION) {
+    throw new Error(
+      [
+        `Unsupported Termisu ABI version from ${path}.`,
+        `Expected ${ABI_VERSION}, got ${abiVersion}.`,
+      ].join(" ")
+    );
+  }
+
+  const nativeSignature = asBigInt(symbols.termisu_layout_signature());
+  if (nativeSignature !== STRUCT_LAYOUT_SIGNATURE) {
+    throw new Error(
+      [
+        `Native struct layout mismatch for ${path}.`,
+        `Expected ${formatHex(STRUCT_LAYOUT_SIGNATURE)}, got ${formatHex(nativeSignature)}.`,
+        "Rebuild native library and JS bindings from the same revision.",
+      ].join(" ")
+    );
+  }
+}
+
 function resolveLibraryPath(explicit?: string): string {
   if (explicit) return resolve(explicit);
 
@@ -79,9 +123,19 @@ export function loadNative(explicitPath?: string): NativeLibrary {
   if (cached) return cached;
 
   const loaded = dlopen(path, SYMBOLS);
+  validateNativeLayout(path, loaded.symbols as unknown as SymbolMap);
+
+  const close = () => {
+    try {
+      loaded.close();
+    } finally {
+      cache.delete(path);
+    }
+  };
+
   const native: NativeLibrary = {
     symbols: loaded.symbols as unknown as SymbolMap,
-    close: loaded.close,
+    close,
     path,
   };
 

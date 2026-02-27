@@ -12,6 +12,7 @@ on:
       - ".clang-format"
       - ".clang-tidy"
       - "Hacefile.yml"
+      - ".github/actions/build-ffi/**"
       - ".github/workflows/ffi-bindings.yml"
   pull_request:
     branches: [main]
@@ -25,6 +26,7 @@ on:
       - ".clang-format"
       - ".clang-tidy"
       - "Hacefile.yml"
+      - ".github/actions/build-ffi/**"
       - ".github/workflows/ffi-bindings.yml"
   workflow_dispatch:
 jobs:
@@ -47,10 +49,7 @@ jobs:
           clang-tidy -quiet examples/c/basic.c --config-file=.clang-tidy -- -std=c11 -Iinclude
           clang-tidy -quiet tests/c/ffi_test.c --config-file=.clang-tidy -- -std=c11 -Iinclude
       - name: Build native FFI library
-        run: |
-          mkdir -p bin
-          crystal build src/termisu.cr --release --cross-compile -o bin/libtermisu
-          cc -shared bin/libtermisu.o -o bin/libtermisu.so -L$(crystal env CRYSTAL_LIBRARY_PATH) -lgc -lpthread -ldl
+        uses: ./.github/actions/build-ffi
       - name: Build and run C ABI tests
         run: |
           cc tests/c/ffi_test.c -Iinclude -Lbin -ltermisu -Wl,-rpath,'$ORIGIN' -o bin/termisu-c-test
@@ -72,10 +71,7 @@ jobs:
         with:
           bun-version: "1.3.9"
       - name: Build native FFI library
-        run: |
-          mkdir -p bin
-          crystal build src/termisu.cr --release --cross-compile -o bin/libtermisu
-          cc -shared bin/libtermisu.o -o bin/libtermisu.so -L$(crystal env CRYSTAL_LIBRARY_PATH) -lgc -lpthread -ldl
+        uses: ./.github/actions/build-ffi
       - name: Install JavaScript dependencies
         working-directory: javascript
         run: bun install

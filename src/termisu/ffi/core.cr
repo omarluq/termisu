@@ -183,16 +183,17 @@ module Termisu::FFI
 
     message = ErrorState.current
     bytes = message.to_slice
-    writable = buffer_len.to_i64 - 1_i64
-    max_copy = writable > 0 ? writable.to_i : 0
-    to_copy = Math.min(bytes.size, max_copy)
+    writable = buffer_len - 1_u64
+    max_copy = bytes.size.to_u64
+    to_copy_u64 = writable < max_copy ? writable : max_copy
+    to_copy = to_copy_u64.to_i
 
     if to_copy > 0
       buffer.copy_from(bytes.to_unsafe, to_copy)
     end
 
     buffer[to_copy] = 0_u8
-    to_copy.to_u64
+    to_copy_u64
   end
 
   def self.clear_error_message : Nil

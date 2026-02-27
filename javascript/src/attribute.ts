@@ -5,6 +5,7 @@ export const Attribute = Object.freeze({
   Reverse: 4,
   Blink: 8,
   Dim: 16,
+  // Cursive and Italic are aliases in Termisu and share the same bit.
   Cursive: 32,
   Italic: 32,
   Hidden: 64,
