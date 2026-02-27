@@ -27,7 +27,7 @@
     "format:check": "biome check --formatter-enabled=true --linter-enabled=false --assist-enabled=false .",
     "lint": "biome lint .",
     "lint:fix": "biome lint --write .",
-    "test": "bun run tests/ffi.test.ts",
+    "test": "bun test tests",
     "typecheck": "bunx tsc -p tsconfig.json --noEmit",
     "dev": "bun run examples/basic.ts"
   },
