@@ -19,7 +19,7 @@ jobs:
         uses: SonarSource/sonarqube-scan-action@v6
         with:
           args: >
-            -Dsonar.organization=${{ vars.SONAR_ORGANIZATION || github.repository_owner }} -Dsonar.projectKey=${{ vars.SONAR_PROJECT_KEY || format('{0}_{1}', github.repository_owner, github.event.repository.name) }} -Dsonar.projectName=${{ github.event.repository.name }}
+            -Dsonar.organization=${{ vars.SONAR_ORGANIZATION || github.repository_owner }} -Dsonar.projectKey=${{ vars.SONAR_PROJECT_KEY || format('{0}_{1}', github.repository_owner, github.event.repository.name) }} -Dsonar.projectName=${{ github.event.repository.name }} -Dsonar.c.file.suffixes=- -Dsonar.cpp.file.suffixes=- -Dsonar.objc.file.suffixes=- -Dsonar.exclusions=**/*.png,**/*.jpg,**/*.jpeg,**/*.gif,**/*.webp,**/*.ico,**/*.svg
 
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
