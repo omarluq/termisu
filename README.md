@@ -209,37 +209,31 @@ termisu.timer_interval = 8.milliseconds  # Change interval at runtime
 
 #### Timer Comparison
 
-| Feature               | Timer (sleep)              | SystemTimer (kernel)                  |
-| --------------------- | -------------------------- | ------------------------------------- |
-| Mechanism             | `sleep` in fiber           | timerfd/epoll (Linux), kqueue (macOS) |
-| Precision             | ~1-2ms jitter              | Sub-millisecond                       |
-| Max FPS               | ~48 FPS reliable           | ~90 FPS reliable                      |
-| Missed tick detection | No                         | Yes (`event.missed_ticks`)            |
-| Portability           | All platforms              | Linux, macOS, BSD                     |
-| Best for              | Simple animations, low FPS | Games, smooth animations              |
+| Feature               | Timer (sleep)                    | SystemTimer (kernel)                          |
+| --------------------- | -------------------------------- | --------------------------------------------- |
+| Mechanism             | `sleep` in fiber                 | timerfd/epoll (Linux), kqueue (macOS)         |
+| Precision             | Good, scheduler-dependent jitter | Higher precision, kernel-driven               |
+| Missed tick detection | Yes (channel backpressure drops) | Yes (kernel expirations + backpressure drops) |
+| Portability           | All platforms                    | Linux, macOS, BSD                             |
+| Best for              | Simple/portable animation loops  | High-refresh loops and tighter timing         |
 
-#### Benchmark Results
+#### Current Probe Results (No Render I/O)
 
-| Target FPS | Target Interval | Timer (sleep)     | SystemTimer (kernel) | Notes                  |
-| ---------- | --------------- | ----------------- | -------------------- | ---------------------- |
-| 30         | 33ms            | ⚠️ 41ms (~24 FPS) | ✅ 33ms (~30 FPS)    | Sleep overshoots       |
-| 60         | 16ms            | ⚠️ 21ms (~48 FPS) | ✅ 17ms (~60 FPS)    | Sleep hits ~21ms floor |
-| 90         | 11ms            | ⚠️ 21ms (~48 FPS) | ✅ 11ms (~90 FPS)    | Sleep stuck at floor   |
-| 120        | 8ms             | ⚠️ 11ms (~91 FPS) | ⚠️ 11ms (~91 FPS)    | Both hit I/O ceiling   |
-| 144        | 7ms             | ⚠️ 11ms (~91 FPS) | ⚠️ 11ms (~91 FPS)    | Same ceiling           |
+Measured on this codebase with local probe scripts:
 
-**Key Findings:**
+| Scenario                                | Mean Delta | Approx FPS | Missed Ticks |
+| --------------------------------------- | ---------- | ---------- | ------------ |
+| Timer (sleep) @144 idle                 | 7.003ms    | 142.8      | 0            |
+| SystemTimer @144 idle                   | 6.944ms    | 144.0      | 0            |
+| Timer (sleep) @144 +4ms work            | 7.005ms    | 142.7      | 0            |
+| SystemTimer @144 +4ms work              | 6.945ms    | 144.0      | 0            |
+| SystemTimer @144 + input source enabled | 6.944ms    | 144.0      | 0            |
 
-- **SystemTimer accuracy:** Kernel timers hit target intervals precisely up to ~90 FPS
-- **Sleep timer quirks:** Has a ~21ms floor at mid-range targets, overshoots at low FPS
-- **Terminal I/O ceiling:** Both timers cap at ~91 FPS (~11ms) due to render/flush overhead
-- **Missed ticks:** SystemTimer detects and reports frame drops via `missed_ticks` field
+**Notes:**
 
-**Open Questions:**
-
-- Why does sleep timer overshoot at 30 FPS (41ms vs 33ms target)?
-- Can terminal I/O be batched more aggressively to push the ~91 FPS ceiling higher?
-- Would async rendering with double-buffered I/O help reduce the ~11ms floor?
+- These numbers isolate event-loop/timer behavior and do not include terminal render/flush costs.
+- End-to-end FPS with heavy drawing still depends on terminal emulator, output volume, and app workload.
+- `event.missed_ticks` is useful for detecting timer pressure and compensating animation/game state updates.
 
 ### Terminal Modes
 
@@ -478,26 +472,6 @@ mods.meta?
 | Terminal Modes       | ✅ Complete |
 | Synchronized Updates | ✅ Complete |
 | Unicode/Wide Chars   | ✅ Complete |
-
-### Completed
-
-- **Terminal I/O** - Raw mode, alternate screen, EINTR handling
-- **Terminfo** - Binary parser (16/32-bit), 414 capabilities, builtin fallbacks
-- **Double Buffering** - Diff-based rendering, cell batching, state caching
-- **Colors** - ANSI-8, ANSI-256, RGB/TrueColor with conversions
-- **Termisu::Attributes** - Bold, underline, blink, reverse, dim, italic, hidden, strikethrough
-- **Keyboard Input** - 170+ keys, F1-F24, modifiers (Ctrl/Alt/Shift/Meta)
-- **Mouse Input** - SGR (mode 1006), normal (mode 1000), motion events
-- **Event System** - Unified Key/Mouse events, Kitty protocol, modifyOtherKeys
-- **Async Event Loop** - Crystal fiber/channel-based multiplexer
-- **Resize Events** - SIGWINCH-based with debouncing
-- **Timer Events** - Sleep-based and kernel-level (timerfd/kqueue) timers
-- **Terminal Modes** - Cooked, cbreak, password modes with seamless TUI restoration
-- **Performance** - RenderState optimization, escape sequence batching
-- **Terminfo tparm** - Full processor with conditionals, stack, variables
-- **Logging** - Structured async/sync dispatch, zero hot-path overhead
-- **Synchronized Updates** - DEC mode 2026 (prevents screen tearing)
-- **Unicode/wide character support** - CJK, emoji (wcwidth)
 
 ### Planned
 
