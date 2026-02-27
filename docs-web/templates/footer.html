@@ -11,7 +11,7 @@
   </div>
 </footer>
 <div class="search-overlay" data-search-overlay hidden></div>
-<section id="docs-search-panel" class="search-panel" data-search-panel role="dialog" aria-modal="true" aria-label="Search docs" hidden>
+<dialog id="docs-search-panel" class="search-panel" data-search-panel aria-label="Search docs" hidden>
   <div class="search-panel-head">
     <span class="iconify" data-icon="pixelarticons:search"></span>
     <input
@@ -28,27 +28,40 @@
   </div>
   <p class="search-hint">Search titles and content. Press <kbd>/</kbd> to open and <kbd>Esc</kbd> to close.</p>
   <ul class="search-results" data-search-results aria-live="polite"></ul>
-</section>
+</dialog>
 <script src="https://code.iconify.design/3/3.1.1/iconify.min.js"></script>
 <script type="module">
   import Fuse from 'https://esm.sh/fuse.js@7.1.0?bundle'
   import { codeToHtml } from 'https://esm.sh/shiki@3.0.0'
 
+  function logNonFatalError(context, error) {
+    if (globalThis.console && typeof globalThis.console.debug === 'function') {
+      globalThis.console.debug(`[docs] ${context}`, error)
+    }
+  }
+
+  function scanIconify(target) {
+    if (globalThis.Iconify && typeof globalThis.Iconify.scan === 'function') {
+      globalThis.Iconify.scan(target)
+    }
+  }
+
   function normalizePath(path) {
     if (!path) return '/'
     let value = path
     if (!value.startsWith('/')) value = `/${value}`
-    value = value.replace(/\/{2,}/g, '/')
+    value = value.replaceAll(/\/{2,}/g, '/')
     if (value.length > 1 && value.endsWith('/')) value = value.slice(0, -1)
-    return `${value}/`.replace('//', '/')
+    return `${value}/`.replaceAll('//', '/')
   }
 
   function pathFromHref(href) {
     try {
-      const url = new URL(href, window.location.origin)
-      if (url.origin !== window.location.origin) return null
+      const url = new URL(href, globalThis.location.origin)
+      if (url.origin !== globalThis.location.origin) return null
       return normalizePath(url.pathname)
-    } catch (_error) {
+    } catch (error) {
+      logNonFatalError('pathFromHref', error)
       return null
     }
   }
@@ -71,7 +84,8 @@
     let theme = getCurrentTheme()
     try {
       theme = sanitizeTheme(localStorage.getItem(themeStorageKey) || theme)
-    } catch (_error) {
+    } catch (error) {
+      logNonFatalError('hydrateTheme', error)
       theme = sanitizeTheme(theme)
     }
     document.documentElement.dataset.theme = theme
@@ -84,8 +98,9 @@
       const link = document.querySelector(`link[rel="${rel}"]`)
       if (!link) continue
       try {
-        link.href = new URL(`/${file}`, window.location.origin).href
-      } catch (_error) {
+        link.href = new URL(`/${file}`, globalThis.location.origin).href
+      } catch (error) {
+        logNonFatalError('syncFavicon', error)
         link.setAttribute('href', `/${file}`)
       }
     }
@@ -103,11 +118,8 @@
     toggle.setAttribute('aria-label', `Switch to ${nextMeta.label} theme`)
 
     const icon = toggle.querySelector('[data-theme-icon]')
-    if (icon) icon.setAttribute('data-icon', activeMeta.icon)
-
-    if (window.Iconify && typeof window.Iconify.scan === 'function') {
-      window.Iconify.scan(toggle)
-    }
+    if (icon) icon.dataset.icon = activeMeta.icon
+    scanIconify(toggle)
   }
 
   function setTheme(theme, root = document) {
@@ -115,8 +127,8 @@
     document.documentElement.dataset.theme = safeTheme
     try {
       localStorage.setItem(themeStorageKey, safeTheme)
-    } catch (_error) {
-      // no-op when storage is unavailable
+    } catch (error) {
+      logNonFatalError('setTheme', error)
     }
     syncFavicon(safeTheme)
     updateThemeToggle(root, safeTheme)
@@ -138,7 +150,7 @@
   }
 
   function markActiveLinks(root = document) {
-    const current = normalizePath(window.location.pathname)
+    const current = normalizePath(globalThis.location.pathname)
     const sidebarLinks = Array.from(root.querySelectorAll('.docs-sidebar .sidebar-links a[href]'))
     let activeSidebar = null
 
@@ -153,7 +165,7 @@
   }
 
   function isMobileSidebar() {
-    return window.matchMedia('(max-width: 61.25rem)').matches
+    return globalThis.matchMedia('(max-width: 61.25rem)').matches
   }
 
   function setSidebarOpen(open, root = document) {
@@ -169,7 +181,7 @@
     toggle.setAttribute('aria-label', open ? 'Hide docs navigation' : 'Show docs navigation')
 
     const icon = toggle.querySelector('[data-sidebar-toggle-icon]')
-    if (icon) icon.setAttribute('data-icon', open ? 'pixelarticons:close' : 'pixelarticons:menu')
+    if (icon) icon.dataset.icon = open ? 'pixelarticons:close' : 'pixelarticons:menu'
   }
 
   function initSidebarToggle(root = document) {
@@ -183,7 +195,7 @@
       toggle.addEventListener('click', () => {
         const isOpen = (root.body || document.body).classList.contains('docs-sidebar-open')
         setSidebarOpen(!isOpen, root)
-        if (window.Iconify && typeof window.Iconify.scan === 'function') window.Iconify.scan(toggle)
+        scanIconify(toggle)
       })
 
       sidebar.addEventListener('click', (event) => {
@@ -194,7 +206,7 @@
         setSidebarOpen(false, root)
       })
 
-      window.addEventListener('resize', () => {
+      globalThis.addEventListener('resize', () => {
         if (!isMobileSidebar()) setSidebarOpen(false, root)
       })
     }
@@ -241,7 +253,7 @@
     if (searchState.fuse) return searchState.fuse
     if (searchState.loadPromise) return searchState.loadPromise
 
-    const url = new URL('/search.json', window.location.origin).href
+    const url = new URL('/search.json', globalThis.location.origin).href
     searchState.loadPromise = fetch(url, { cache: 'force-cache' })
       .then((response) => {
         if (!response.ok) throw new Error(`Failed search index request: ${response.status}`)
@@ -276,7 +288,7 @@
 
   function buildSearchSnippet(item, query) {
     const raw = typeof item.content === 'string' ? item.content : ''
-    const content = raw.replace(/\s+/g, ' ').trim()
+    const content = raw.replaceAll(/\s+/g, ' ').trim()
     const fallback = item.url || '/'
     if (!content) return fallback
 
@@ -366,12 +378,13 @@
         const query = input && typeof input.value === 'string' ? input.value : ''
         renderSearchResults(query, root)
       })
-      .catch(() => {
+      .catch((error) => {
+        logNonFatalError('setSearchOpen', error)
         renderSearchStatus('Search index is unavailable.', root)
       })
 
     if (input) {
-      window.requestAnimationFrame(() => {
+      globalThis.requestAnimationFrame(() => {
         input.focus()
         input.select()
       })
@@ -388,7 +401,7 @@
     toggle.addEventListener('click', () => {
       const isOpen = body.classList.contains('search-open')
       setSearchOpen(!isOpen, root)
-      if (window.Iconify && typeof window.Iconify.scan === 'function') window.Iconify.scan(toggle)
+      scanIconify(toggle)
     })
 
     close.addEventListener('click', () => setSearchOpen(false, root))
@@ -404,12 +417,13 @@
 
     let pendingInput = 0
     input.addEventListener('input', () => {
-      window.clearTimeout(pendingInput)
-      pendingInput = window.setTimeout(async () => {
+      globalThis.clearTimeout(pendingInput)
+      pendingInput = globalThis.setTimeout(async () => {
         try {
           await ensureSearchIndexLoaded()
           renderSearchResults(input.value || '', root)
-        } catch (_error) {
+        } catch (error) {
+          logNonFatalError('search input', error)
           renderSearchStatus('Search index is unavailable.', root)
         }
       }, 60)
@@ -441,10 +455,10 @@
 
     setSearchOpen(false, root)
 
-    if ('requestIdleCallback' in window) {
-      window.requestIdleCallback(() => ensureSearchIndexLoaded().catch(() => {}))
+    if ('requestIdleCallback' in globalThis) {
+      globalThis.requestIdleCallback(() => ensureSearchIndexLoaded().catch((error) => logNonFatalError('search warmup', error)))
     } else {
-      window.setTimeout(() => ensureSearchIndexLoaded().catch(() => {}), 400)
+      globalThis.setTimeout(() => ensureSearchIndexLoaded().catch((error) => logNonFatalError('search warmup', error)), 400)
     }
   }
 
@@ -461,7 +475,7 @@
 
     const icon = document.createElement('span')
     icon.className = 'iconify'
-    icon.setAttribute('data-icon', 'pixelarticons:arrow-left')
+    icon.dataset.icon = 'pixelarticons:arrow-left'
     anchor.append(icon, document.createTextNode(source.textContent?.trim() || 'Previous'))
     return anchor
   }
@@ -474,16 +488,12 @@
     const label = document.createTextNode(source.textContent?.trim() || 'Next')
     const icon = document.createElement('span')
     icon.className = 'iconify'
-    icon.setAttribute('data-icon', 'pixelarticons:arrow-right')
+    icon.dataset.icon = 'pixelarticons:arrow-right'
     anchor.append(label, icon)
     return anchor
   }
 
-  function renderPrevNext(root = document) {
-    const nav = root.querySelector('.doc-prev-next')
-    if (!nav) return
-
-    const current = normalizePath(window.location.pathname)
+  function collectOrderedSidebarLinks(root = document) {
     const sidebarLinks = Array.from(root.querySelectorAll('.docs-sidebar .sidebar-links a[href]'))
     const ordered = []
     const seen = new Set()
@@ -494,19 +504,33 @@
       seen.add(path)
       ordered.push({ path, link })
     }
+    return ordered
+  }
 
-    let prev = null
-    let next = null
-
+  function findPrevNextLink(current, ordered) {
     if (current === '/') {
-      next = ordered.find((item) => item.path !== current)?.link || null
-    } else {
-      const index = ordered.findIndex((item) => item.path === current)
-      if (index >= 0) {
-        prev = index > 0 ? ordered[index - 1].link : null
-        next = index < ordered.length - 1 ? ordered[index + 1].link : null
+      return {
+        prev: null,
+        next: ordered.find((item) => item.path !== current)?.link || null,
       }
     }
+
+    const index = ordered.findIndex((item) => item.path === current)
+    if (index < 0) return { prev: null, next: null }
+
+    return {
+      prev: index > 0 ? ordered[index - 1].link : null,
+      next: index < ordered.length - 1 ? ordered[index + 1].link : null,
+    }
+  }
+
+  function renderPrevNext(root = document) {
+    const nav = root.querySelector('.doc-prev-next')
+    if (!nav) return
+
+    const current = normalizePath(globalThis.location.pathname)
+    const ordered = collectOrderedSidebarLinks(root)
+    const { prev, next } = findPrevNextLink(current, ordered)
 
     nav.replaceChildren(
       prev ? createPrevLink(prev) : createSpacer(),
@@ -517,10 +541,16 @@
   function slugifyHeading(value) {
     return value
       .toLowerCase()
-      .replace(/[^a-z0-9\s-]/g, '')
+      .replaceAll(/[^a-z0-9\s-]/g, '')
       .trim()
-      .replace(/\s+/g, '-')
-      .replace(/-+/g, '-')
+      .replaceAll(/\s+/g, '-')
+      .replaceAll(/-+/g, '-')
+  }
+
+  function tocClassForHeading(tagName) {
+    if (tagName === 'H1') return 'toc-l1'
+    if (tagName === 'H3') return 'toc-l3'
+    return 'toc-l2'
   }
 
   function renderPageToc(root = document) {
@@ -544,7 +574,7 @@
     const usedIds = new Set(
       Array.from(content.querySelectorAll('[id]'))
         .map((node) => node.id)
-        .filter((id) => id),
+        .filter(Boolean),
     )
 
     const fragment = document.createDocumentFragment()
@@ -562,11 +592,7 @@
       }
 
       const item = document.createElement('li')
-      item.className = heading.tagName === 'H1'
-        ? 'toc-l1'
-        : heading.tagName === 'H3'
-          ? 'toc-l3'
-          : 'toc-l2'
+      item.className = tocClassForHeading(heading.tagName)
 
       const link = document.createElement('a')
       link.href = `#${heading.id}`
@@ -599,7 +625,8 @@
           button.classList.remove('copied')
           button.innerHTML = '<span class="iconify" data-icon="pixelarticons:copy"></span>'
         }, 900)
-      } catch (_error) {
+      } catch (error) {
+        logNonFatalError('copy button', error)
         button.classList.add('copied')
         setTimeout(() => button.classList.remove('copied'), 900)
       }
@@ -615,7 +642,7 @@
       if (!pre || pre.dataset.shikiDone === '1') continue
 
       const className = Array.from(code.classList).find((name) => name.startsWith('language-'))
-      const lang = className ? className.replace('language-', '') : 'text'
+      const lang = className ? className.replaceAll('language-', '') : 'text'
       const source = code.textContent || ''
 
       try {
@@ -633,7 +660,8 @@
         shiki.dataset.shikiDone = '1'
         attachCopyButton(shiki, source)
         pre.replaceWith(shiki)
-      } catch (_error) {
+      } catch (error) {
+        logNonFatalError('enhanceCodeBlocks', error)
         pre.dataset.shikiDone = '1'
         pre.classList.add('code-block')
         attachCopyButton(pre, source)
@@ -651,9 +679,7 @@
     renderPageToc(document)
     renderPrevNext(document)
     await enhanceCodeBlocks(document)
-    if (window.Iconify && typeof window.Iconify.scan === 'function') {
-      window.Iconify.scan()
-    }
+    scanIconify()
   }
 
   await enhancePage()

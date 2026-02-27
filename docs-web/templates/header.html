@@ -28,7 +28,10 @@
       try {
         var saved = localStorage.getItem(key)
         document.documentElement.dataset.theme = saved === 'logo' ? 'logo' : 'terminal'
-      } catch (_error) {
+      } catch (error) {
+        if (typeof console !== 'undefined' && typeof console.debug === 'function') {
+          console.debug('[docs] theme bootstrap', error)
+        }
         document.documentElement.dataset.theme = 'terminal'
       }
     })()

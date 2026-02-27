@@ -21,6 +21,35 @@ test.use({
   },
 });
 
+const orderedSectionLabels = [
+  "ANSI-8 Colors",
+  "ANSI-256 Bright Colors:",
+  "Color Cube",
+  "Grayscale",
+  "TrueColor",
+  "Color Conversions:",
+  "Hex Colors:",
+  "Background Colors:",
+] as const;
+
+function findSectionRowIndexes(buffer: string[][]): Record<string, number> {
+  const positions: Record<string, number> = {};
+  for (const label of orderedSectionLabels) {
+    positions[label] = -1;
+  }
+
+  for (let i = 0; i < buffer.length; i++) {
+    const rowText = buffer[i].join("");
+    for (const label of orderedSectionLabels) {
+      if (positions[label] === -1 && rowText.includes(label)) {
+        positions[label] = i;
+      }
+    }
+  }
+
+  return positions;
+}
+
 test.describe("Colors Example", () => {
   test.describe("ANSI-8 Basic Colors Section", () => {
     test("displays ANSI-8 colors section header", async ({ terminal }) => {
@@ -348,36 +377,17 @@ test.describe("Colors Example", () => {
       await expect(terminal.getByText(/ANSI-8 Colors/g)).toBeVisible();
 
       const buffer = terminal.getBuffer();
-      let ansi8Row = -1;
-      let brightRow = -1;
-      let cubeRow = -1;
-      let grayscaleRow = -1;
-      let rgbRow = -1;
-      let conversionRow = -1;
-      let hexRow = -1;
-      let bgRow = -1;
+      const positions = findSectionRowIndexes(buffer);
 
-      for (let i = 0; i < buffer.length; i++) {
-        const rowText = buffer[i].join("");
-
-        if (rowText.includes("ANSI-8 Colors")) ansi8Row = i;
-        if (rowText.includes("ANSI-256 Bright Colors:")) brightRow = i;
-        if (rowText.includes("Color Cube")) cubeRow = i;
-        if (rowText.includes("Grayscale")) grayscaleRow = i;
-        if (rowText.includes("TrueColor")) rgbRow = i;
-        if (rowText.includes("Color Conversions:")) conversionRow = i;
-        if (rowText.includes("Hex Colors:")) hexRow = i;
-        if (rowText.includes("Background Colors:")) bgRow = i;
+      for (const label of orderedSectionLabels) {
+        expect(positions[label]).toBeGreaterThan(-1);
       }
 
-      // Verify order: ANSI-8 < Bright < Cube < Grayscale < RGB < Conversion < Hex < Background
-      expect(ansi8Row).toBeLessThan(brightRow);
-      expect(brightRow).toBeLessThan(cubeRow);
-      expect(cubeRow).toBeLessThan(grayscaleRow);
-      expect(grayscaleRow).toBeLessThan(rgbRow);
-      expect(rgbRow).toBeLessThan(conversionRow);
-      expect(conversionRow).toBeLessThan(hexRow);
-      expect(hexRow).toBeLessThan(bgRow);
+      for (let i = 0; i < orderedSectionLabels.length - 1; i++) {
+        const current = orderedSectionLabels[i];
+        const next = orderedSectionLabels[i + 1];
+        expect(positions[current]).toBeLessThan(positions[next]);
+      }
     });
   });
 

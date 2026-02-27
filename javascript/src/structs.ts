@@ -19,7 +19,10 @@ function writeColor(view: DataView, offset: number, color?: CellStyle["fg"]): vo
   const mode = color?.mode ?? ColorMode.Default;
   view.setUint8(offset + STRUCT.color.mode, mode);
 
-  const index = color?.index ?? (mode === ColorMode.Default ? -1 : 0);
+  let index = -1;
+  if (color && (color.mode === ColorMode.Ansi8 || color.mode === ColorMode.Ansi256)) {
+    index = color.index;
+  }
   view.setInt32(offset + STRUCT.color.index, index, LITTLE_ENDIAN);
 
   view.setUint8(offset + STRUCT.color.r, color?.r ?? 0);

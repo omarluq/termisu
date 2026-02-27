@@ -122,10 +122,8 @@ test.describe("Animation Example", () => {
       let elapsed = 0;
 
       while (
-        newPos &&
-        initialPos &&
-        newPos.x === initialPos.x &&
-        newPos.y === initialPos.y &&
+        newPos?.x === initialPos?.x &&
+        newPos?.y === initialPos?.y &&
         elapsed < maxWait
       ) {
         await new Promise((resolve) => setTimeout(resolve, pollInterval));

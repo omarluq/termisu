@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap');
+@import 'https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap';
 
 /* Theme variables live in /css/theme.css. */
 
@@ -12,6 +12,8 @@ html,
 body {
   margin: 0;
   min-height: 100%;
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-scroll-thumb-b) var(--color-scroll-track);
 }
 
 body {
@@ -46,12 +48,6 @@ body::before {
   );
   opacity: 0.18;
   z-index: 0;
-}
-
-html,
-body {
-  scrollbar-width: thin;
-  scrollbar-color: var(--color-scroll-thumb-b) var(--color-scroll-track);
 }
 
 html::-webkit-scrollbar,
