@@ -1,0 +1,38 @@
+{
+  "name": "termisu-workspace",
+  "private": true,
+  "type": "module",
+  "packageManager": "bun@1.3.10",
+  "workspaces": [
+    "javascript",
+    "e2e"
+  ],
+  "scripts": {
+    "js:build": "bun run --cwd javascript build",
+    "js:check": "bun run --cwd javascript check",
+    "js:check:fix": "bun run --cwd javascript check:fix",
+    "js:dev": "bun run --cwd javascript dev",
+    "js:format": "bun run --cwd javascript format",
+    "js:format:check": "bun run --cwd javascript format:check",
+    "js:lint": "bun run --cwd javascript lint",
+    "js:lint:fix": "bun run --cwd javascript lint:fix",
+    "js:test": "bun run --cwd javascript test",
+    "js:typecheck": "bun run --cwd javascript typecheck",
+    "e2e:check": "bun run --cwd e2e check",
+    "e2e:check:fix": "bun run --cwd e2e check:fix",
+    "e2e:format": "bun run --cwd e2e format",
+    "e2e:format:check": "bun run --cwd e2e format:check",
+    "e2e:lint": "bun run --cwd e2e lint",
+    "e2e:lint:fix": "bun run --cwd e2e lint:fix",
+    "e2e:test": "bun run --cwd e2e test",
+    "e2e:test:trace": "bun run --cwd e2e test:trace",
+    "e2e:test:update": "bun run --cwd e2e test:update",
+    "e2e:typecheck": "bun run --cwd e2e typecheck"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.4.4",
+    "bun-types": "^1.3.9",
+    "rimraf": "^6.0.1",
+    "typescript": "^5.9.2"
+  }
+}

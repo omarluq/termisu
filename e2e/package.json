@@ -5,9 +5,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "tui-test",
-    "test:trace": "tui-test --trace",
-    "test:update": "tui-test --updateSnapshot",
+    "test": "npx -y node@24 ./node_modules/@microsoft/tui-test/index.js",
+    "test:trace": "npx -y node@24 ./node_modules/@microsoft/tui-test/index.js --trace",
+    "test:update": "npx -y node@24 ./node_modules/@microsoft/tui-test/index.js --updateSnapshot",
     "lint": "biome lint .",
     "lint:fix": "biome lint --write .",
     "format": "biome format --write .",
@@ -17,19 +17,9 @@
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.0.0",
-    "@microsoft/tui-test": "github:jacob314/tui-test#node_24_support",
-    "typescript": "^5.7.0"
+    "@microsoft/tui-test": "github:jacob314/tui-test#node_24_support"
   },
   "engines": {
     "node": ">=20.0.0"
-  },
-  "packageManager": "pnpm@10.30.3",
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "@homebridge/node-pty-prebuilt-multiarch",
-      "@biomejs/biome",
-      "@swc/core"
-    ]
   }
 }

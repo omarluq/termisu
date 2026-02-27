@@ -31,72 +31,6 @@ dependencies:
 
 2. Run `shards install`
 
-## C ABI (Experimental)
-
-Termisu now exports a C ABI for non-Crystal callers (C/C++/Rust/Zig via FFI).
-
-Build the shared library:
-
-```bash
-bin/hace ffi:build
-```
-
-This generates `bin/libtermisu.so` on Linux. In macOS CI builds, the output is `bin/libtermisu.dylib`.
-
-Header file:
-
-```text
-include/termisu/ffi.h
-```
-
-Build the C example:
-
-```bash
-bin/hace ffi:example:build
-```
-
-Run it interactively:
-
-```bash
-bin/hace ffi:example:run
-```
-
-Minimal C usage:
-
-```c
-#include "termisu/ffi.h"
-
-termisu_handle_t h = termisu_create(1); /* sync updates on */
-if (h == 0) { /* read termisu_last_error_* */ }
-
-termisu_set_cell(h, 0, 0, 'H', NULL);
-termisu_render(h);
-termisu_destroy(h);
-```
-
-## JavaScript Package (@termisu/core)
-
-`@termisu/core` is a Bun + TypeScript wrapper over the Termisu C ABI using `bun:ffi`.
-
-Package location:
-
-```text
-javascript/
-```
-
-Install/build/typecheck from repo root:
-
-```bash
-bin/hace js:install
-bin/hace js:typecheck
-bin/hace js:build
-```
-
-Runtime requirement:
-
-- Built native library (`bin/libtermisu.so` on Linux, `bin/libtermisu.dylib` on macOS CI) via `bin/hace ffi:build`
-- Or set `TERMISU_LIB_PATH` to your full native library path
-
 ## Usage
 
 ```crystal
@@ -542,6 +476,74 @@ mods.meta?
 ### Planned
 
 - **Image protocols** - Sixel and Kitty graphics for inline images
+
+## Interop
+
+### C ABI (Experimental)
+
+Termisu exports a C ABI for non-Crystal callers (C/C++/Rust/Zig via FFI).
+
+Build the shared library:
+
+```bash
+bin/hace ffi:build
+```
+
+This generates `bin/libtermisu.so` on Linux and `bin/libtermisu.dylib` on macOS.
+
+Header file:
+
+```text
+include/termisu/ffi.h
+```
+
+Build and run the C example:
+
+```bash
+bin/hace ffi:example:build
+bin/hace ffi:example:run
+```
+
+Minimal C usage:
+
+```c
+#include "termisu/ffi.h"
+
+termisu_handle_t h = termisu_create(1); /* sync updates on */
+if (h == 0) { /* read termisu_last_error_* */ }
+
+termisu_set_cell(h, 0, 0, 'H', NULL);
+termisu_render(h);
+termisu_destroy(h);
+```
+
+### JavaScript Package (@termisu/core)
+
+`@termisu/core` is a Bun + TypeScript wrapper over the Termisu C ABI using `bun:ffi`.
+
+Package location:
+
+```text
+javascript/
+```
+
+Install dependencies from repo root:
+
+```bash
+bun install
+```
+
+Build and typecheck from repo root:
+
+```bash
+bin/hace js:typecheck
+bin/hace js:build
+```
+
+Runtime requirement:
+
+- Built native library (`bin/libtermisu.so` on Linux, `bin/libtermisu.dylib` on macOS) via `bin/hace ffi:build`
+- Or set `TERMISU_LIB_PATH` to your full native library path
 
 ## Inspiration
 

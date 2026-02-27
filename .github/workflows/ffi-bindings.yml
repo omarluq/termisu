@@ -9,6 +9,11 @@ on:
       - "examples/c/**/*.c"
       - "tests/c/**/*.c"
       - "javascript/**"
+      - "e2e/package.json"
+      - "package.json"
+      - "biome.json"
+      - "tsconfig.base.json"
+      - "bun.lock"
       - ".clang-format"
       - ".clang-tidy"
       - "Hacefile.yml"
@@ -23,6 +28,11 @@ on:
       - "examples/c/**/*.c"
       - "tests/c/**/*.c"
       - "javascript/**"
+      - "e2e/package.json"
+      - "package.json"
+      - "biome.json"
+      - "tsconfig.base.json"
+      - "bun.lock"
       - ".clang-format"
       - ".clang-tidy"
       - "Hacefile.yml"
@@ -104,17 +114,12 @@ jobs:
             echo "TERMISU_LIB_PATH=${GITHUB_WORKSPACE}/bin/libtermisu.dylib" >> "$GITHUB_ENV"
           fi
       - name: Install JavaScript dependencies
-        working-directory: javascript
         run: bun install
       - name: Run TypeScript lint
-        working-directory: javascript
-        run: bun run lint
+        run: bun run js:lint
       - name: Run TypeScript format check
-        working-directory: javascript
-        run: bun run format:check
+        run: bun run js:format:check
       - name: Run TypeScript typecheck
-        working-directory: javascript
-        run: bun run typecheck
+        run: bun run js:typecheck
       - name: Run TypeScript tests
-        working-directory: javascript
-        run: bun run test
+        run: bun run js:test

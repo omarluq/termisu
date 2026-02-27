@@ -23,7 +23,10 @@
 .croupier
 
 # E2E test artifacts
+/node_modules/
+/javascript/node_modules/
 /e2e/node_modules/
+/e2e/.tui-test/
 /e2e/tui-traces/
 /e2e/test-results/
 
