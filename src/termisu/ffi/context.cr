@@ -10,6 +10,12 @@ class Termisu::FFI::Context
 
   def close : Nil
     return unless @closed.compare_and_set(false, true)
-    @termisu.close
+
+    begin
+      @termisu.close
+    rescue ex
+      @closed.set(false)
+      raise ex
+    end
   end
 end

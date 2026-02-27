@@ -11,7 +11,8 @@ module Termisu::FFI::Runtime
       return if @@bootstrapped.get
 
       unless @@bootstrapping.compare_and_set(false, true)
-        Fiber.yield
+        # Runtime may not be initialized yet; use OS-thread yield instead of fiber scheduling.
+        LibC.sched_yield
         next
       end
 
