@@ -7,6 +7,9 @@
     "javascript",
     "e2e"
   ],
+  "trustedDependencies": [
+    "@homebridge/node-pty-prebuilt-multiarch"
+  ],
   "scripts": {
     "js:build": "bun run --cwd javascript build",
     "js:check": "bun run --cwd javascript check",
