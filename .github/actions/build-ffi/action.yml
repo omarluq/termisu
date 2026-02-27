@@ -7,11 +7,14 @@ runs:
       shell: bash
       run: |
         mkdir -p bin
-        crystal build src/termisu.cr --release --cross-compile --emit obj -o bin/libtermisu
         if [[ "$RUNNER_OS" == "Linux" ]]; then
+          crystal build src/termisu.cr --release --cross-compile -o bin/libtermisu
           cc -shared bin/libtermisu.o -o bin/libtermisu.so -L$(crystal env CRYSTAL_LIBRARY_PATH) -lgc -lpthread -ldl
         elif [[ "$RUNNER_OS" == "macOS" ]]; then
           SDKROOT="$(xcrun --sdk macosx --show-sdk-path)"
+          crystal build src/termisu.cr --release --cross-compile \
+            --link-flags "$SDKROOT/usr/lib/libiconv.tbd" \
+            -o bin/libtermisu
           cc -dynamiclib bin/libtermisu.o -o bin/libtermisu.dylib \
             -Wl,-install_name,@rpath/libtermisu.dylib \
             -L$(crystal env CRYSTAL_LIBRARY_PATH) -lgc -lpthread \
