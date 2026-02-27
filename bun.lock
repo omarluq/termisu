@@ -16,7 +16,7 @@
       "version": "1.0.0",
       "devDependencies": {
         "@homebridge/node-pty-prebuilt-multiarch": "^0.13.1",
-        "@microsoft/tui-test": "github:jacob314/tui-test#6ae2984",
+        "@microsoft/tui-test": "github:jacob314/tui-test#eda5ffa",
       },
     },
     "javascript": {
@@ -60,7 +60,7 @@
 
     "@jest/types": ["@jest/types@29.6.3", "", { "dependencies": { "@jest/schemas": "^29.6.3", "@types/istanbul-lib-coverage": "^2.0.0", "@types/istanbul-reports": "^3.0.0", "@types/node": "*", "@types/yargs": "^17.0.8", "chalk": "^4.0.0" } }, "sha512-u3UPsIilWKOM3F9CXtrG8LEJmNxwoCQC/XVj4IKYXvvpx7QIi/Kg1LI5uDmDpKlac62NUtX7eLjRh+jVZcLOzw=="],
 
-    "@microsoft/tui-test": ["@microsoft/tui-test@github:jacob314/tui-test#6ae2984", { "dependencies": { "@homebridge/node-pty-prebuilt-multiarch": "^0.13.1", "@swc/core": "^1.3.102", "@xterm/headless": "^5.3.0", "chalk": "^5.3.0", "color-convert": "^2.0.1", "commander": "^11.1.0", "expect": "^29.7.0", "glob": "^10.3.10", "jest-diff": "^29.7.0", "pretty-ms": "^8.0.0", "proper-lockfile": "^4.1.2", "which": "^4.0.0", "workerpool": "^9.1.0" }, "bin": { "tui-test": "index.js" } }, "jacob314-tui-test-6ae2984"],
+    "@microsoft/tui-test": ["@microsoft/tui-test@github:jacob314/tui-test#eda5ffa", { "dependencies": { "@homebridge/node-pty-prebuilt-multiarch": "^0.11.12", "@swc/core": "^1.3.102", "@xterm/headless": "^5.3.0", "chalk": "^5.3.0", "color-convert": "^2.0.1", "commander": "^11.1.0", "expect": "^29.7.0", "glob": "^10.3.10", "jest-diff": "^29.7.0", "pretty-ms": "^8.0.0", "proper-lockfile": "^4.1.2", "which": "^4.0.0", "workerpool": "^9.1.0" }, "bin": { "tui-test": "index.js" } }, "jacob314-tui-test-eda5ffa", "sha512-DwuuyXnb4tpa+F3KwDyPeQKoIdnxhyXYyrN8a1OCCTFzfLGT8r/q7Dh5GplNzmqXy2kh75EcHRAyzlpI2HLy/g=="],
 
     "@pkgjs/parseargs": ["@pkgjs/parseargs@0.11.0", "", {}, "sha512-+1VkjdD0QBLPodGrJUeqarH8VAIvQODIbwh9XpP5Syisf7YoQgsJKPNFoqqLQlu+VQ/tVSshMR6loPMn8U+dPg=="],
 
@@ -216,6 +216,8 @@
 
     "mkdirp-classic": ["mkdirp-classic@0.5.3", "", {}, "sha512-gKLcREMhtuZRwRAfqP3RFW+TK4JqApVBtOIftVgjuABpAtpxhPGaDcfvbhNvD0B8iD1oUr/txX35NjcaY6Ns/A=="],
 
+    "nan": ["nan@2.25.0", "", {}, "sha512-0M90Ag7Xn5KMLLZ7zliPWP3rT90P6PN+IzVFS0VqmnPktBk3700xUVv8Ikm9EUaUE5SDWdp/BIxdENzVznpm1g=="],
+
     "napi-build-utils": ["napi-build-utils@2.0.0", "", {}, "sha512-GEbrYkbfF7MoNaoh2iGG84Mnf/WZfB0GdGEsM8wz7Expx/LlWf5U8t9nvJKXSp3qr5IsEbK04cBGhol/KwOsWA=="],
 
     "node-abi": ["node-abi@3.87.0", "", { "dependencies": { "semver": "^7.3.5" } }, "sha512-+CGM1L1CgmtheLcBuleyYOn7NWPVu0s0EJH2C4puxgEZb9h8QpR9G2dBfZJOAUhi7VQxuBPMd0hiISWcTyiYyQ=="],
@@ -315,6 +317,8 @@
     "wrappy": ["wrappy@1.0.2", "", {}, "sha512-l4Sp/DRseor9wL6EvV2+TuQn63dMkPjZ/sp9XkghTEbV9KlPS1xUsZ3u7/IQO4wxtcFB4bgpQPRcR3QCvezPcQ=="],
 
     "@jest/types/chalk": ["chalk@4.1.2", "", { "dependencies": { "ansi-styles": "^4.1.0", "supports-color": "^7.1.0" } }, "sha512-oKnbhFyRIXpUuez8iBMmyEa4nbj4IOQyuhc/wy9kY7/WVPcwIO9VA668Pu8RkO7+0G76SLROeyw9CpQ061i4mA=="],
+
+    "@microsoft/tui-test/@homebridge/node-pty-prebuilt-multiarch": ["@homebridge/node-pty-prebuilt-multiarch@0.11.14", "", { "dependencies": { "nan": "^2.19.0", "prebuild-install": "^7.1.2" } }, "sha512-fuiq5kb4i0Ao0BTf7O6kvtwUhCCCJHLhWLWaaUaLuniDGS4xmj+gxvkidJpxYVT/zTXdbcLuCY44UnoWC7xODg=="],
 
     "@microsoft/tui-test/glob": ["glob@10.5.0", "", { "dependencies": { "foreground-child": "^3.1.0", "jackspeak": "^3.1.2", "minimatch": "^9.0.4", "minipass": "^7.1.2", "package-json-from-dist": "^1.0.0", "path-scurry": "^1.11.1" }, "bin": { "glob": "dist/esm/bin.mjs" } }, "sha512-DfXN8DfhJ7NH3Oe7cFmu3NCu1wKbkReJ8TorzSAFbSKrlNaQSKfIzqYqVY8zlbs2NLBbWpRiU52GX2PbaBVNkg=="],
 
