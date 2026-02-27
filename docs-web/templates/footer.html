@@ -132,6 +132,56 @@
     if (activeSidebar) activeSidebar.classList.add('active')
   }
 
+  function isMobileSidebar() {
+    return window.matchMedia('(max-width: 61.25rem)').matches
+  }
+
+  function setSidebarOpen(open, root = document) {
+    const body = root.body || document.body
+    if (!body) return
+
+    body.classList.toggle('docs-sidebar-open', open)
+
+    const toggle = root.querySelector('[data-sidebar-toggle]')
+    if (!toggle) return
+
+    toggle.setAttribute('aria-expanded', open ? 'true' : 'false')
+    toggle.setAttribute('aria-label', open ? 'Hide docs navigation' : 'Show docs navigation')
+
+    const icon = toggle.querySelector('[data-sidebar-toggle-icon]')
+    if (icon) icon.setAttribute('data-icon', open ? 'pixelarticons:close' : 'pixelarticons:menu')
+  }
+
+  function initSidebarToggle(root = document) {
+    const toggle = root.querySelector('[data-sidebar-toggle]')
+    const sidebar = root.querySelector('[data-sidebar]')
+    if (!toggle || !sidebar) return
+
+    if (toggle.dataset.bound !== '1') {
+      toggle.dataset.bound = '1'
+
+      toggle.addEventListener('click', () => {
+        const isOpen = (root.body || document.body).classList.contains('docs-sidebar-open')
+        setSidebarOpen(!isOpen, root)
+        if (window.Iconify && typeof window.Iconify.scan === 'function') window.Iconify.scan(toggle)
+      })
+
+      sidebar.addEventListener('click', (event) => {
+        const target = event.target
+        if (!(target instanceof Element)) return
+        const link = target.closest('a[href]')
+        if (!link || !isMobileSidebar()) return
+        setSidebarOpen(false, root)
+      })
+
+      window.addEventListener('resize', () => {
+        if (!isMobileSidebar()) setSidebarOpen(false, root)
+      })
+    }
+
+    setSidebarOpen(false, root)
+  }
+
   function createSpacer() {
     const spacer = document.createElement('span')
     spacer.className = 'nav-spacer'
@@ -329,6 +379,7 @@
     const activeTheme = hydrateTheme()
     syncFavicon(activeTheme)
     initThemeToggle(document)
+    initSidebarToggle(document)
     markActiveLinks(document)
     renderPageToc(document)
     renderPrevNext(document)
