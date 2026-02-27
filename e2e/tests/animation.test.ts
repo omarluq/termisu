@@ -114,6 +114,9 @@ test.describe("Animation Example", () => {
 
       const initialPos = getBallPosition();
       expect(initialPos).not.toBeNull();
+      if (!initialPos) {
+        throw new Error("Ball position was not found after initial render");
+      }
 
       // Poll until ball moves (more reliable than fixed timeout)
       let newPos = initialPos;
@@ -122,13 +125,15 @@ test.describe("Animation Example", () => {
       let elapsed = 0;
 
       while (
-        newPos?.x === initialPos?.x &&
-        newPos?.y === initialPos?.y &&
+        newPos.x === initialPos.x &&
+        newPos.y === initialPos.y &&
         elapsed < maxWait
       ) {
         await new Promise((resolve) => setTimeout(resolve, pollInterval));
         elapsed += pollInterval;
-        newPos = getBallPosition();
+        const maybePos = getBallPosition();
+        if (!maybePos) break;
+        newPos = maybePos;
       }
 
       // Animation should have moved the ball

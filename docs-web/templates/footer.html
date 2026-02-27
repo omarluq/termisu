@@ -40,7 +40,7 @@
     }
   }
 
-  function scanIconify(target) {
+  function scanIconify(target = undefined) {
     if (globalThis.Iconify && typeof globalThis.Iconify.scan === 'function') {
       globalThis.Iconify.scan(target)
     }
@@ -356,6 +356,21 @@
     results.append(fragment)
   }
 
+  function setDialogOpen(panel, open) {
+    if (panel instanceof HTMLDialogElement) {
+      if (open) {
+        panel.hidden = false
+        if (!panel.open) panel.showModal()
+      } else {
+        if (panel.open) panel.close()
+        panel.hidden = true
+      }
+      return
+    }
+
+    panel.hidden = !open
+  }
+
   function setSearchOpen(open, root = document) {
     const { body, toggle, panel, overlay, input } = getSearchElements(root)
     if (!body || !panel || !overlay) return
@@ -363,7 +378,7 @@
     if (open) setSidebarOpen(false, root)
 
     body.classList.toggle('search-open', open)
-    panel.hidden = !open
+    setDialogOpen(panel, open)
     overlay.hidden = !open
 
     if (toggle) {
@@ -412,6 +427,10 @@
       if (!(target instanceof Element)) return
       const link = target.closest('a[href]')
       if (!link) return
+      setSearchOpen(false, root)
+    })
+
+    panel.addEventListener('close', () => {
       setSearchOpen(false, root)
     })
 
@@ -642,7 +661,9 @@
       if (!pre || pre.dataset.shikiDone === '1') continue
 
       const className = Array.from(code.classList).find((name) => name.startsWith('language-'))
-      const lang = className ? className.replaceAll('language-', '') : 'text'
+      const lang = className && className.startsWith('language-')
+        ? className.slice('language-'.length)
+        : (className || 'text')
       const source = code.textContent || ''
 
       try {

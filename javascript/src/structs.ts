@@ -21,7 +21,7 @@ function writeColor(view: DataView, offset: number, color?: CellStyle["fg"]): vo
 
   let index = -1;
   if (color && (color.mode === ColorMode.Ansi8 || color.mode === ColorMode.Ansi256)) {
-    index = color.index;
+    index = color.index ?? 0;
   }
   view.setInt32(offset + STRUCT.color.index, index, LITTLE_ENDIAN);
 

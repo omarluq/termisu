@@ -64,14 +64,14 @@ body::-webkit-scrollbar-track {
 
 html::-webkit-scrollbar-thumb,
 body::-webkit-scrollbar-thumb {
-  background: linear-gradient(180deg, var(--color-scroll-thumb-a), var(--color-scroll-thumb-b));
+  background: var(--color-scroll-thumb-b);
   border: var(--border-thick) solid var(--color-scroll-track);
   border-radius: var(--radius-pixel);
 }
 
 html::-webkit-scrollbar-thumb:hover,
 body::-webkit-scrollbar-thumb:hover {
-  background: linear-gradient(180deg, var(--color-scroll-thumb-hover-a), var(--color-scroll-thumb-hover-b));
+  background: var(--color-scroll-thumb-hover-b);
 }
 
 .docs-main,
