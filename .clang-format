@@ -1,0 +1,7 @@
+BasedOnStyle: LLVM
+IndentWidth: 2
+ContinuationIndentWidth: 2
+ColumnLimit: 100
+UseTab: Never
+PointerAlignment: Right
+SortIncludes: false
