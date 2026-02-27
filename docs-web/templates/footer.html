@@ -10,8 +10,28 @@
     </p>
   </div>
 </footer>
+<div class="search-overlay" data-search-overlay hidden></div>
+<section id="docs-search-panel" class="search-panel" data-search-panel role="dialog" aria-modal="true" aria-label="Search docs" hidden>
+  <div class="search-panel-head">
+    <span class="iconify" data-icon="pixelarticons:search"></span>
+    <input
+      type="search"
+      class="search-input"
+      data-search-input
+      placeholder="Search docs..."
+      autocomplete="off"
+      spellcheck="false"
+    >
+    <button type="button" class="search-close" data-search-close aria-label="Close search">
+      <span class="iconify" data-icon="pixelarticons:close"></span>
+    </button>
+  </div>
+  <p class="search-hint">Search titles and content. Press <kbd>/</kbd> to open and <kbd>Esc</kbd> to close.</p>
+  <ul class="search-results" data-search-results aria-live="polite"></ul>
+</section>
 <script src="https://code.iconify.design/3/3.1.1/iconify.min.js"></script>
 <script type="module">
+  import Fuse from 'https://esm.sh/fuse.js@7.1.0?bundle'
   import { codeToHtml } from 'https://esm.sh/shiki@3.0.0'
 
   function normalizePath(path) {
@@ -180,6 +200,252 @@
     }
 
     setSidebarOpen(false, root)
+  }
+
+  const searchState = {
+    items: [],
+    fuse: null,
+    loadPromise: null,
+  }
+
+  function isTypingContext(target) {
+    if (!(target instanceof HTMLElement)) return false
+    if (target.isContentEditable) return true
+    const tag = target.tagName
+    return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT'
+  }
+
+  function getSearchElements(root = document) {
+    return {
+      body: root.body || document.body,
+      toggle: root.querySelector('[data-search-toggle]'),
+      panel: root.querySelector('[data-search-panel]'),
+      overlay: root.querySelector('[data-search-overlay]'),
+      input: root.querySelector('[data-search-input]'),
+      close: root.querySelector('[data-search-close]'),
+      results: root.querySelector('[data-search-results]'),
+    }
+  }
+
+  function renderSearchStatus(message, root = document) {
+    const { results } = getSearchElements(root)
+    if (!results) return
+    results.replaceChildren()
+    const item = document.createElement('li')
+    item.className = 'search-empty'
+    item.textContent = message
+    results.append(item)
+  }
+
+  async function ensureSearchIndexLoaded() {
+    if (searchState.fuse) return searchState.fuse
+    if (searchState.loadPromise) return searchState.loadPromise
+
+    const url = new URL('/search.json', window.location.origin).href
+    searchState.loadPromise = fetch(url, { cache: 'force-cache' })
+      .then((response) => {
+        if (!response.ok) throw new Error(`Failed search index request: ${response.status}`)
+        return response.json()
+      })
+      .then((payload) => {
+        const items = Array.isArray(payload)
+          ? payload.filter((item) => item && typeof item.url === 'string' && typeof item.title === 'string')
+          : []
+
+        searchState.items = items
+        searchState.fuse = new Fuse(items, {
+          includeScore: true,
+          threshold: 0.34,
+          ignoreLocation: true,
+          minMatchCharLength: 2,
+          keys: [
+            { name: 'title', weight: 0.58 },
+            { name: 'content', weight: 0.37 },
+            { name: 'url', weight: 0.05 },
+          ],
+        })
+        return searchState.fuse
+      })
+      .catch((error) => {
+        searchState.loadPromise = null
+        throw error
+      })
+
+    return searchState.loadPromise
+  }
+
+  function buildSearchSnippet(item, query) {
+    const raw = typeof item.content === 'string' ? item.content : ''
+    const content = raw.replace(/\s+/g, ' ').trim()
+    const fallback = item.url || '/'
+    if (!content) return fallback
+
+    const maxLength = 120
+    if (!query) {
+      return content.length > maxLength ? `${content.slice(0, maxLength)}...` : content
+    }
+
+    const needle = query.toLowerCase()
+    const index = content.toLowerCase().indexOf(needle)
+    if (index < 0) {
+      return content.length > maxLength ? `${content.slice(0, maxLength)}...` : content
+    }
+
+    const start = Math.max(0, index - 34)
+    const end = Math.min(content.length, index + query.length + 70)
+    const prefix = start > 0 ? '... ' : ''
+    const suffix = end < content.length ? ' ...' : ''
+    return `${prefix}${content.slice(start, end)}${suffix}`
+  }
+
+  function renderSearchResults(query, root = document) {
+    const { results } = getSearchElements(root)
+    if (!results) return
+
+    const normalizedQuery = query.trim()
+    const matches = normalizedQuery
+      ? searchState.fuse.search(normalizedQuery, { limit: 12 }).map((entry) => entry.item)
+      : searchState.items.slice(0, 10)
+
+    results.replaceChildren()
+    if (!matches.length) {
+      const empty = document.createElement('li')
+      empty.className = 'search-empty'
+      empty.textContent = normalizedQuery ? `No matches for "${normalizedQuery}".` : 'Start typing to search docs.'
+      results.append(empty)
+      return
+    }
+
+    const fragment = document.createDocumentFragment()
+    for (const item of matches) {
+      const entry = document.createElement('li')
+      entry.className = 'search-result-item'
+
+      const link = document.createElement('a')
+      link.href = item.url
+
+      const title = document.createElement('span')
+      title.className = 'search-result-title'
+      title.textContent = item.title
+
+      const path = document.createElement('span')
+      path.className = 'search-result-url'
+      path.textContent = item.url
+
+      const snippet = document.createElement('span')
+      snippet.className = 'search-result-snippet'
+      snippet.textContent = buildSearchSnippet(item, normalizedQuery)
+
+      link.append(title, path, snippet)
+      entry.append(link)
+      fragment.append(entry)
+    }
+
+    results.append(fragment)
+  }
+
+  function setSearchOpen(open, root = document) {
+    const { body, toggle, panel, overlay, input } = getSearchElements(root)
+    if (!body || !panel || !overlay) return
+
+    if (open) setSidebarOpen(false, root)
+
+    body.classList.toggle('search-open', open)
+    panel.hidden = !open
+    overlay.hidden = !open
+
+    if (toggle) {
+      toggle.setAttribute('aria-expanded', open ? 'true' : 'false')
+      toggle.setAttribute('aria-label', open ? 'Close search' : 'Open search')
+    }
+
+    if (!open) return
+
+    ensureSearchIndexLoaded()
+      .then(() => {
+        const query = input && typeof input.value === 'string' ? input.value : ''
+        renderSearchResults(query, root)
+      })
+      .catch(() => {
+        renderSearchStatus('Search index is unavailable.', root)
+      })
+
+    if (input) {
+      window.requestAnimationFrame(() => {
+        input.focus()
+        input.select()
+      })
+    }
+  }
+
+  function initSearch(root = document) {
+    const { body, toggle, panel, overlay, input, close, results } = getSearchElements(root)
+    if (!toggle || !panel || !overlay || !input || !close || !results || !body) return
+    if (toggle.dataset.bound === '1') return
+
+    toggle.dataset.bound = '1'
+
+    toggle.addEventListener('click', () => {
+      const isOpen = body.classList.contains('search-open')
+      setSearchOpen(!isOpen, root)
+      if (window.Iconify && typeof window.Iconify.scan === 'function') window.Iconify.scan(toggle)
+    })
+
+    close.addEventListener('click', () => setSearchOpen(false, root))
+    overlay.addEventListener('click', () => setSearchOpen(false, root))
+
+    panel.addEventListener('click', (event) => {
+      const target = event.target
+      if (!(target instanceof Element)) return
+      const link = target.closest('a[href]')
+      if (!link) return
+      setSearchOpen(false, root)
+    })
+
+    let pendingInput = 0
+    input.addEventListener('input', () => {
+      window.clearTimeout(pendingInput)
+      pendingInput = window.setTimeout(async () => {
+        try {
+          await ensureSearchIndexLoaded()
+          renderSearchResults(input.value || '', root)
+        } catch (_error) {
+          renderSearchStatus('Search index is unavailable.', root)
+        }
+      }, 60)
+    })
+
+    document.addEventListener('keydown', (event) => {
+      if (event.defaultPrevented) return
+
+      const isOpen = body.classList.contains('search-open')
+      if (event.key === 'Escape' && isOpen) {
+        event.preventDefault()
+        setSearchOpen(false, root)
+        return
+      }
+
+      if (isTypingContext(event.target)) return
+
+      if (event.key === '/' && !event.ctrlKey && !event.metaKey && !event.altKey) {
+        event.preventDefault()
+        setSearchOpen(true, root)
+        return
+      }
+
+      if ((event.key === 'k' || event.key === 'K') && (event.ctrlKey || event.metaKey)) {
+        event.preventDefault()
+        setSearchOpen(true, root)
+      }
+    })
+
+    setSearchOpen(false, root)
+
+    if ('requestIdleCallback' in window) {
+      window.requestIdleCallback(() => ensureSearchIndexLoaded().catch(() => {}))
+    } else {
+      window.setTimeout(() => ensureSearchIndexLoaded().catch(() => {}), 400)
+    }
   }
 
   function createSpacer() {
@@ -379,6 +645,7 @@
     const activeTheme = hydrateTheme()
     syncFavicon(activeTheme)
     initThemeToggle(document)
+    initSearch(document)
     initSidebarToggle(document)
     markActiveLinks(document)
     renderPageToc(document)
