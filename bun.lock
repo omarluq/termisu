@@ -19,7 +19,7 @@
         "@microsoft/tui-test": "github:jacob314/tui-test#6ae2984",
       },
     },
-    "javascript": {
+    "javascript/core": {
       "name": "@termisu/core",
       "version": "0.1.0",
     },
@@ -92,7 +92,7 @@
 
     "@swc/types": ["@swc/types@0.1.25", "", { "dependencies": { "@swc/counter": "^0.1.3" } }, "sha512-iAoY/qRhNH8a/hBvm3zKj9qQ4oc2+3w1unPJa2XvTK3XjeLXtzcCingVPw/9e5mn1+0yPqxcBGp9Jf0pkfMb1g=="],
 
-    "@termisu/core": ["@termisu/core@workspace:javascript"],
+    "@termisu/core": ["@termisu/core@workspace:javascript/core"],
 
     "@types/istanbul-lib-coverage": ["@types/istanbul-lib-coverage@2.0.6", "", {}, "sha512-2QF/t/auWm0lsy8XtKVPG19v3sSOQlJe/YHZgfjb/KBBHOGSV+J2q/S671rcq9uTBrLAXmZpqJiaQbMT+zNU1w=="],
 

@@ -524,7 +524,7 @@ termisu_destroy(h);
 Package location:
 
 ```text
-javascript/
+javascript/core/
 ```
 
 Install dependencies from repo root:
