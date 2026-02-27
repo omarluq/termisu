@@ -45,6 +45,7 @@ typedef enum termisu_color_mode {
 
 typedef struct termisu_color {
   uint8_t mode;
+  uint8_t reserved[3];
   int32_t index;
   uint8_t r;
   uint8_t g;
@@ -94,6 +95,8 @@ typedef struct termisu_event {
 /* ABI layout guards (must match Crystal FFI structs and JS bindings) */
 TERMISU_STATIC_ASSERT(sizeof(termisu_color_t) == 12, "termisu_color_t size mismatch");
 TERMISU_STATIC_ASSERT(offsetof(termisu_color_t, mode) == 0, "termisu_color_t.mode offset mismatch");
+TERMISU_STATIC_ASSERT(offsetof(termisu_color_t, reserved) == 1,
+                      "termisu_color_t.reserved offset mismatch");
 TERMISU_STATIC_ASSERT(offsetof(termisu_color_t, index) == 4,
                       "termisu_color_t.index offset mismatch");
 TERMISU_STATIC_ASSERT(offsetof(termisu_color_t, r) == 8, "termisu_color_t.r offset mismatch");

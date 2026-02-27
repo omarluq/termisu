@@ -154,7 +154,7 @@ tasks:
     always_run: true
     commands: |
       bin/hace c:test:build
-      ./{{FFI_TEST_BIN}}
+      unbuffer ./{{FFI_TEST_BIN}}
   # ===========================================
   # Benchmarking Tasks
   # ===========================================

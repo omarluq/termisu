@@ -48,11 +48,21 @@ export interface NativeLibrary {
   path: string;
 }
 
+const MAX_SAFE_INTEGER_BIGINT = BigInt(Number.MAX_SAFE_INTEGER);
+const MIN_SAFE_INTEGER_BIGINT = BigInt(Number.MIN_SAFE_INTEGER);
+
+// Native integer symbols consumed as JS numbers must fit the safe-integer range.
 function asNumber(value: number | bigint | undefined): number {
   if (value === undefined) {
     throw new Error("Native symbol returned undefined");
   }
-  return typeof value === "number" ? value : Number(value);
+  if (typeof value === "number") {
+    return value;
+  }
+  if (value > MAX_SAFE_INTEGER_BIGINT || value < MIN_SAFE_INTEGER_BIGINT) {
+    throw new Error(`Native integer ${value} exceeds JS safe integer range`);
+  }
+  return Number(value);
 }
 
 function asBigInt(value: number | bigint | undefined): bigint {
