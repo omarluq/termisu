@@ -341,7 +341,7 @@ tasks:
     phony: true
     always_run: true
     commands: |
-      cd e2e && pnpm install
+      bun install
   e2e:build:
     description: Build Crystal binaries for E2E tests
     phony: true
@@ -358,37 +358,37 @@ tasks:
     phony: true
     always_run: true
     commands: |
-      cd e2e && pnpm test
+      bun run e2e:test
   e2e:test:trace:
     description: Run E2E tests with tracing enabled
     phony: true
     always_run: true
     commands: |
-      cd e2e && pnpm test:trace
+      bun run e2e:test:trace
   e2e:test:update:
     description: Update E2E test snapshots
     phony: true
     always_run: true
     commands: |
-      cd e2e && pnpm test:update
+      bun run e2e:test:update
   e2e:lint:
     description: Lint E2E test code with Biome
     phony: true
     always_run: true
     commands: |
-      cd e2e && pnpm lint
+      bun run e2e:lint
   e2e:lint:fix:
     description: Fix E2E lint issues with Biome
     phony: true
     always_run: true
     commands: |
-      cd e2e && pnpm lint:fix
+      bun run e2e:lint:fix
   e2e:format:
     description: Format E2E test code with Biome
     phony: true
     always_run: true
     commands: |
-      cd e2e && pnpm format
+      bun run e2e:format
   # ===========================================
   # JavaScript FFI Package Tasks
   # ===========================================
@@ -397,91 +397,91 @@ tasks:
     phony: true
     always_run: true
     commands: |
-      cd javascript && bun install
+      bun install
   js:typecheck:
     description: Typecheck @termisu/core package
     phony: true
     always_run: true
     commands: |
-      cd javascript && bun run typecheck
+      bun run js:typecheck
   js:build:
     description: Build @termisu/core package
     phony: true
     always_run: true
     commands: |
-      cd javascript && bun run build
+      bun run js:build
   js:dev:
     description: Run @termisu/core demo
     phony: true
     always_run: true
     commands: |
-      cd javascript && bun run dev
+      bun run js:dev
   js:test:
     description: Run @termisu/core tests
     phony: true
     always_run: true
     commands: |
-      export TERMISU_LIB_PATH="${TERMISU_LIB_PATH:-$(pwd)/bin/libtermisu.so}" && cd javascript && bun run test
+      export TERMISU_LIB_PATH="${TERMISU_LIB_PATH:-$(pwd)/bin/libtermisu.so}" && bun run js:test
   js:lint:
     description: Lint @termisu/core package with Biome
     phony: true
     always_run: true
     commands: |
-      cd javascript && bun run lint
+      bun run js:lint
   js:lint:fix:
     description: Fix @termisu/core lint issues with Biome
     phony: true
     always_run: true
     commands: |
-      cd javascript && bun run lint:fix
+      bun run js:lint:fix
   js:format:
     description: Format @termisu/core package with Biome
     phony: true
     always_run: true
     commands: |
-      cd javascript && bun run format
+      bun run js:format
   js:format:check:
     description: Check @termisu/core formatting with Biome
     phony: true
     always_run: true
     commands: |
-      cd javascript && bun run format:check
+      bun run js:format:check
   js:check:
     description: Run all Biome checks on @termisu/core
     phony: true
     always_run: true
     commands: |
-      cd javascript && bun run check
+      bun run js:check
   js:check:fix:
     description: Fix all Biome issues in @termisu/core
     phony: true
     always_run: true
     commands: |
-      cd javascript && bun run check:fix
+      bun run js:check:fix
   e2e:format:check:
     description: Check E2E code formatting
     phony: true
     always_run: true
     commands: |
-      cd e2e && pnpm format:check
+      bun run e2e:format:check
   e2e:check:
     description: Run all Biome checks on E2E code
     phony: true
     always_run: true
     commands: |
-      cd e2e && pnpm check
+      bun run e2e:check
   e2e:check:fix:
     description: Fix all Biome issues in E2E code
     phony: true
     always_run: true
     commands: |
-      cd e2e && pnpm check:fix
+      bun run e2e:check:fix
   e2e:typecheck:
     description: Type-check E2E tests with TypeScript
     phony: true
     always_run: true
     commands: |
-      cd e2e && pnpm typecheck
+      bun run e2e:typecheck
   e2e:all:
     description: Build binaries and run E2E tests
     phony: true

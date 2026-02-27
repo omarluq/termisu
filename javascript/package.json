@@ -39,11 +39,5 @@
     "terminal"
   ],
   "author": "Termisu Contributors",
-  "license": "MIT",
-  "devDependencies": {
-    "@biomejs/biome": "^2.4.4",
-    "bun-types": "^1.3.9",
-    "rimraf": "^6.0.1",
-    "typescript": "^5.9.2"
-  }
+  "license": "MIT"
 }
