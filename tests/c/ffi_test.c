@@ -8,6 +8,7 @@
 static void assert_abi_layout(void) {
   assert(sizeof(termisu_color_t) == 12);
   assert(offsetof(termisu_color_t, mode) == 0);
+  assert(offsetof(termisu_color_t, reserved) == 1);
   assert(offsetof(termisu_color_t, index) == 4);
   assert(offsetof(termisu_color_t, r) == 8);
   assert(offsetof(termisu_color_t, g) == 9);
@@ -60,13 +61,25 @@ static void read_last_error(char *buffer, size_t size) {
 int main(void) {
   char error[512] = {0};
   termisu_cell_style_t style = {
-    .fg = {.mode = TERMISU_COLOR_DEFAULT, .index = -1},
-    .bg = {.mode = TERMISU_COLOR_DEFAULT, .index = -1},
+    .fg = {.mode = TERMISU_COLOR_DEFAULT, .reserved = {0, 0, 0}, .index = -1},
+    .bg = {.mode = TERMISU_COLOR_DEFAULT, .reserved = {0, 0, 0}, .index = -1},
     .attr = 0,
   };
 
   assert(termisu_abi_version() == TERMISU_FFI_VERSION);
   assert_abi_layout();
+
+  termisu_clear_error();
+  termisu_handle_t handle = termisu_create(1);
+  if (handle == 0) {
+    read_last_error(error, sizeof(error));
+    fprintf(stderr, "termisu_create failed: %s\n", error);
+  }
+  assert(handle != 0);
+  assert(termisu_set_sync_updates(handle, 1) == TERMISU_STATUS_OK);
+  assert(termisu_sync_updates(handle) == 1);
+  assert(termisu_last_error_length() == 0);
+  assert(termisu_destroy(handle) == TERMISU_STATUS_OK);
 
   termisu_clear_error();
   assert(termisu_destroy(0) == TERMISU_STATUS_INVALID_HANDLE);

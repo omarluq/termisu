@@ -168,27 +168,39 @@ const colorObject: Partial<ColorApi> = {
   grayscale,
 };
 
+const namedColorCache: Record<string, TermisuColor> = {
+  default: makeAnsi8(-1),
+};
+
+for (const [name, index] of Object.entries(namedAnsi8)) {
+  namedColorCache[name] = makeAnsi8(index);
+}
+
+for (const [name, index] of Object.entries(namedBright)) {
+  namedColorCache[name] = makeAnsi256(index);
+}
+
 Object.defineProperty(colorObject, "default", {
   enumerable: true,
   get() {
-    return makeAnsi8(-1);
+    return namedColorCache.default;
   },
 });
 
-for (const [name, index] of Object.entries(namedAnsi8)) {
+for (const name of Object.keys(namedAnsi8)) {
   Object.defineProperty(colorObject, name, {
     enumerable: true,
     get() {
-      return makeAnsi8(index);
+      return namedColorCache[name];
     },
   });
 }
 
-for (const [name, index] of Object.entries(namedBright)) {
+for (const name of Object.keys(namedBright)) {
   Object.defineProperty(colorObject, name, {
     enumerable: true,
     get() {
-      return makeAnsi256(index);
+      return namedColorCache[name];
     },
   });
 }

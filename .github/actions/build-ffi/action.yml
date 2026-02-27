@@ -8,4 +8,11 @@ runs:
       run: |
         mkdir -p bin
         crystal build src/termisu.cr --release --cross-compile -o bin/libtermisu
-        cc -shared bin/libtermisu.o -o bin/libtermisu.so -L$(crystal env CRYSTAL_LIBRARY_PATH) -lgc -lpthread -ldl
+        if [[ "$RUNNER_OS" == "Linux" ]]; then
+          cc -shared bin/libtermisu.o -o bin/libtermisu.so -L$(crystal env CRYSTAL_LIBRARY_PATH) -lgc -lpthread -ldl
+        elif [[ "$RUNNER_OS" == "macOS" ]]; then
+          cc -dynamiclib bin/libtermisu.o -o bin/libtermisu.dylib -L$(crystal env CRYSTAL_LIBRARY_PATH) -lgc -lpthread
+        else
+          echo "Unsupported RUNNER_OS: $RUNNER_OS"
+          exit 1
+        fi

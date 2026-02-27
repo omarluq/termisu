@@ -110,8 +110,8 @@ module Termisu::FFI::Conversions
     out = blank_event
     out.event_type = Termisu::FFI::EventType::Tick.value
     out.tick_frame = event.frame
-    out.tick_elapsed_ns = event.elapsed.total_nanoseconds
-    out.tick_delta_ns = event.delta.total_nanoseconds
+    out.tick_elapsed_ns = event.elapsed.total_nanoseconds.to_i64
+    out.tick_delta_ns = event.delta.total_nanoseconds.to_i64
     out.tick_missed_ticks = event.missed_ticks
     out
   end
