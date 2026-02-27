@@ -31,6 +31,72 @@ dependencies:
 
 2. Run `shards install`
 
+## C ABI (Experimental)
+
+Termisu now exports a C ABI for non-Crystal callers (C/C++/Rust/Zig via FFI).
+
+Build the shared library:
+
+```bash
+bin/hace ffi:build
+```
+
+This generates `bin/libtermisu.so` (Linux).
+
+Header file:
+
+```text
+include/termisu/ffi.h
+```
+
+Build the C example:
+
+```bash
+bin/hace ffi:example:build
+```
+
+Run it interactively:
+
+```bash
+bin/hace ffi:example:run
+```
+
+Minimal C usage:
+
+```c
+#include "termisu/ffi.h"
+
+termisu_handle_t h = termisu_create(1); /* sync updates on */
+if (h == 0) { /* read termisu_last_error_* */ }
+
+termisu_set_cell(h, 0, 0, 'H', NULL);
+termisu_render(h);
+termisu_destroy(h);
+```
+
+## JavaScript Package (@termisu/core)
+
+`@termisu/core` is a Bun + TypeScript wrapper over the Termisu C ABI using `bun:ffi`.
+
+Package location:
+
+```text
+javascript/
+```
+
+Install/build/typecheck from repo root:
+
+```bash
+bin/hace js:install
+bin/hace js:typecheck
+bin/hace js:build
+```
+
+Runtime requirement:
+
+- Built native library (`bin/libtermisu.so`) via `bin/hace ffi:build`
+- Or set `TERMISU_LIB_PATH` to your `libtermisu.so` path
+
 ## Usage
 
 ```crystal
