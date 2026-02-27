@@ -7,9 +7,6 @@
     "javascript",
     "e2e"
   ],
-  "overrides": {
-    "@homebridge/node-pty-prebuilt-multiarch": "^0.13.1"
-  },
   "trustedDependencies": [
     "@homebridge/node-pty-prebuilt-multiarch"
   ],
