@@ -129,34 +129,10 @@ module Termisu::FFI::Conversions
 
   def self.blank_event : Termisu::FFI::ABI::Event
     event = uninitialized Termisu::FFI::ABI::Event
+    pointerof(event).as(UInt8*).clear(sizeof(Termisu::FFI::ABI::Event))
 
     event.event_type = Termisu::FFI::EventType::None.value
-    event.modifiers = 0_u8
-    event.reserved = 0_u16
-
-    event.key_code = 0
     event.key_char = -1
-
-    event.mouse_x = 0
-    event.mouse_y = 0
-    event.mouse_button = 0
-    event.mouse_motion = 0_u8
-
-    event.resize_width = 0
-    event.resize_height = 0
-    event.resize_old_width = 0
-    event.resize_old_height = 0
-    event.resize_has_old = 0_u8
-
-    event.tick_frame = 0_u64
-    event.tick_elapsed_ns = 0_i64
-    event.tick_delta_ns = 0_i64
-    event.tick_missed_ticks = 0_u64
-
-    event.mode_current = 0_u32
-    event.mode_previous = 0_u32
-    event.mode_has_previous = 0_u8
-
     event
   end
 end

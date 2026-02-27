@@ -11,7 +11,7 @@ export interface Size {
 export type TermisuColor =
   | {
       mode: ColorMode.Default;
-      index?: -1;
+      index?: undefined;
       r?: never;
       g?: never;
       b?: never;
