@@ -130,10 +130,10 @@ describe("struct helpers", () => {
     });
   });
 
-  it("returns a none event when the event type is unknown", () => {
+  it("returns a none event when the event type is out of range", () => {
     const buffer = createEventBuffer();
     const view = new DataView(buffer);
-    view.setUint8(STRUCT.event.eventType, EventType.None);
+    view.setUint8(STRUCT.event.eventType, 255);
     view.setUint8(STRUCT.event.modifiers, 9);
     expect(readEvent(buffer)).toEqual({ type: EventType.None, modifiers: 9 });
   });
