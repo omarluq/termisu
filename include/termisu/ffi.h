@@ -1,6 +1,7 @@
 #ifndef TERMISU_FFI_H
 #define TERMISU_FFI_H
 
+#include <stddef.h>
 #include <stdint.h>
 
 #ifdef __cplusplus
@@ -8,6 +9,12 @@ extern "C" {
 #endif
 
 #define TERMISU_FFI_VERSION 1u
+
+#if defined(__cplusplus)
+#define TERMISU_STATIC_ASSERT(expr, msg) static_assert((expr), msg)
+#else
+#define TERMISU_STATIC_ASSERT(expr, msg) _Static_assert((expr), msg)
+#endif
 
 typedef uint64_t termisu_handle_t;
 
@@ -84,6 +91,70 @@ typedef struct termisu_event {
   uint8_t mode_has_previous;
 } termisu_event_t;
 
+/* ABI layout guards (must match Crystal FFI structs and JS bindings) */
+TERMISU_STATIC_ASSERT(sizeof(termisu_color_t) == 12, "termisu_color_t size mismatch");
+TERMISU_STATIC_ASSERT(offsetof(termisu_color_t, mode) == 0, "termisu_color_t.mode offset mismatch");
+TERMISU_STATIC_ASSERT(offsetof(termisu_color_t, index) == 4,
+                      "termisu_color_t.index offset mismatch");
+TERMISU_STATIC_ASSERT(offsetof(termisu_color_t, r) == 8, "termisu_color_t.r offset mismatch");
+TERMISU_STATIC_ASSERT(offsetof(termisu_color_t, g) == 9, "termisu_color_t.g offset mismatch");
+TERMISU_STATIC_ASSERT(offsetof(termisu_color_t, b) == 10, "termisu_color_t.b offset mismatch");
+
+TERMISU_STATIC_ASSERT(sizeof(termisu_cell_style_t) == 28, "termisu_cell_style_t size mismatch");
+TERMISU_STATIC_ASSERT(offsetof(termisu_cell_style_t, fg) == 0,
+                      "termisu_cell_style_t.fg offset mismatch");
+TERMISU_STATIC_ASSERT(offsetof(termisu_cell_style_t, bg) == 12,
+                      "termisu_cell_style_t.bg offset mismatch");
+TERMISU_STATIC_ASSERT(offsetof(termisu_cell_style_t, attr) == 24,
+                      "termisu_cell_style_t.attr offset mismatch");
+
+TERMISU_STATIC_ASSERT(sizeof(termisu_size_t) == 8, "termisu_size_t size mismatch");
+TERMISU_STATIC_ASSERT(offsetof(termisu_size_t, width) == 0, "termisu_size_t.width offset mismatch");
+TERMISU_STATIC_ASSERT(offsetof(termisu_size_t, height) == 4,
+                      "termisu_size_t.height offset mismatch");
+
+TERMISU_STATIC_ASSERT(sizeof(termisu_event_t) == 96, "termisu_event_t size mismatch");
+TERMISU_STATIC_ASSERT(offsetof(termisu_event_t, event_type) == 0,
+                      "termisu_event_t.event_type offset mismatch");
+TERMISU_STATIC_ASSERT(offsetof(termisu_event_t, modifiers) == 1,
+                      "termisu_event_t.modifiers offset mismatch");
+TERMISU_STATIC_ASSERT(offsetof(termisu_event_t, key_code) == 4,
+                      "termisu_event_t.key_code offset mismatch");
+TERMISU_STATIC_ASSERT(offsetof(termisu_event_t, key_char) == 8,
+                      "termisu_event_t.key_char offset mismatch");
+TERMISU_STATIC_ASSERT(offsetof(termisu_event_t, mouse_x) == 12,
+                      "termisu_event_t.mouse_x offset mismatch");
+TERMISU_STATIC_ASSERT(offsetof(termisu_event_t, mouse_y) == 16,
+                      "termisu_event_t.mouse_y offset mismatch");
+TERMISU_STATIC_ASSERT(offsetof(termisu_event_t, mouse_button) == 20,
+                      "termisu_event_t.mouse_button offset mismatch");
+TERMISU_STATIC_ASSERT(offsetof(termisu_event_t, mouse_motion) == 24,
+                      "termisu_event_t.mouse_motion offset mismatch");
+TERMISU_STATIC_ASSERT(offsetof(termisu_event_t, resize_width) == 28,
+                      "termisu_event_t.resize_width offset mismatch");
+TERMISU_STATIC_ASSERT(offsetof(termisu_event_t, resize_height) == 32,
+                      "termisu_event_t.resize_height offset mismatch");
+TERMISU_STATIC_ASSERT(offsetof(termisu_event_t, resize_old_width) == 36,
+                      "termisu_event_t.resize_old_width offset mismatch");
+TERMISU_STATIC_ASSERT(offsetof(termisu_event_t, resize_old_height) == 40,
+                      "termisu_event_t.resize_old_height offset mismatch");
+TERMISU_STATIC_ASSERT(offsetof(termisu_event_t, resize_has_old) == 44,
+                      "termisu_event_t.resize_has_old offset mismatch");
+TERMISU_STATIC_ASSERT(offsetof(termisu_event_t, tick_frame) == 48,
+                      "termisu_event_t.tick_frame offset mismatch");
+TERMISU_STATIC_ASSERT(offsetof(termisu_event_t, tick_elapsed_ns) == 56,
+                      "termisu_event_t.tick_elapsed_ns offset mismatch");
+TERMISU_STATIC_ASSERT(offsetof(termisu_event_t, tick_delta_ns) == 64,
+                      "termisu_event_t.tick_delta_ns offset mismatch");
+TERMISU_STATIC_ASSERT(offsetof(termisu_event_t, tick_missed_ticks) == 72,
+                      "termisu_event_t.tick_missed_ticks offset mismatch");
+TERMISU_STATIC_ASSERT(offsetof(termisu_event_t, mode_current) == 80,
+                      "termisu_event_t.mode_current offset mismatch");
+TERMISU_STATIC_ASSERT(offsetof(termisu_event_t, mode_previous) == 84,
+                      "termisu_event_t.mode_previous offset mismatch");
+TERMISU_STATIC_ASSERT(offsetof(termisu_event_t, mode_has_previous) == 88,
+                      "termisu_event_t.mode_has_previous offset mismatch");
+
 /* Version and lifecycle */
 uint32_t termisu_abi_version(void);
 uint64_t termisu_layout_signature(void);
@@ -104,7 +175,7 @@ int32_t termisu_set_cursor(termisu_handle_t handle, int32_t x, int32_t y);
 int32_t termisu_hide_cursor(termisu_handle_t handle);
 int32_t termisu_show_cursor(termisu_handle_t handle);
 int32_t termisu_set_cell(termisu_handle_t handle, int32_t x, int32_t y, uint32_t codepoint,
-                         termisu_cell_style_t *style);
+                         const termisu_cell_style_t *style);
 
 /* Input and timer */
 int32_t termisu_enable_timer_ms(termisu_handle_t handle, int32_t interval_ms);
@@ -124,5 +195,7 @@ void termisu_clear_error(void);
 #ifdef __cplusplus
 }
 #endif
+
+#undef TERMISU_STATIC_ASSERT
 
 #endif

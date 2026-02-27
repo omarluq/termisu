@@ -16,7 +16,6 @@ function makeAnsi8(index: number): TermisuColor {
   if (index === -1) {
     return {
       mode: ColorMode.Default,
-      index: -1,
     };
   }
 

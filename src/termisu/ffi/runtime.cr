@@ -21,9 +21,8 @@ module Termisu::FFI::Runtime
         GC.init
         Crystal.init_runtime
 
-        argv = Pointer(UInt8*).malloc(1_u64)
-        argv[0] = "termisu-ffi".to_unsafe.as(UInt8*)
-        Crystal.main_user_code(1, argv)
+        argv = StaticArray(UInt8*, 1).new("termisu-ffi".to_unsafe.as(UInt8*))
+        Crystal.main_user_code(1, argv.to_unsafe)
         @@bootstrapped.set(true)
         return
       rescue ex

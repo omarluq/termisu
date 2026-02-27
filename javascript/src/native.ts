@@ -126,11 +126,8 @@ export function loadNative(explicitPath?: string): NativeLibrary {
   validateNativeLayout(path, loaded.symbols as unknown as SymbolMap);
 
   const close = () => {
-    try {
-      loaded.close();
-    } finally {
-      cache.delete(path);
-    }
+    loaded.close();
+    cache.delete(path);
   };
 
   const native: NativeLibrary = {
