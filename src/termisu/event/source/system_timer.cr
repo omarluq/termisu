@@ -46,6 +46,7 @@ class Termisu::Event::Source::SystemTimer < Termisu::Event::Source
   @start_time : MonotonicTime?
   @last_tick : MonotonicTime?
   @frame : UInt64
+  @run_token : Atomic(UInt64)
 
   # Creates a new system timer with the specified interval.
   #
@@ -53,6 +54,7 @@ class Termisu::Event::Source::SystemTimer < Termisu::Event::Source
   def initialize(@interval : Time::Span = DEFAULT_INTERVAL)
     @running = Atomic(Bool).new(false)
     @frame = 0_u64
+    @run_token = Atomic(UInt64).new(0_u64)
   end
 
   # Returns the current interval between ticks.
@@ -78,6 +80,8 @@ class Termisu::Event::Source::SystemTimer < Termisu::Event::Source
   def start(output : Channel(Event::Any)) : Nil
     return unless @running.compare_and_set(false, true)
 
+    run_token = advance_run_token
+
     @output = output
     @frame = 0_u64
     @start_time = monotonic_now
@@ -89,7 +93,7 @@ class Termisu::Event::Source::SystemTimer < Termisu::Event::Source
     @timer_handle = poller.add_timer(@interval, repeating: true)
 
     @fiber = spawn(name: "termisu-system-timer") do
-      run_loop
+      run_loop(run_token)
     end
 
     Log.debug { "SystemTimer started with interval=#{@interval} using #{poller.class.name}" }
@@ -98,6 +102,9 @@ class Termisu::Event::Source::SystemTimer < Termisu::Event::Source
   # Stops generating tick events and releases resources.
   def stop : Nil
     return unless @running.compare_and_set(true, false)
+
+    # Invalidate ownership for any in-flight waiters before closing poller fds.
+    advance_run_token
 
     @poller.try(&.close)
     @poller = nil
@@ -119,7 +126,7 @@ class Termisu::Event::Source::SystemTimer < Termisu::Event::Source
   # Main timer loop - waits on poller for timer events.
   #
   # Yields before each blocking poll wait to keep cooperative scheduling fair.
-  private def run_loop : Nil
+  private def run_loop(run_token : UInt64) : Nil
     output = @output
     poller = @poller
     start_time = @start_time
@@ -128,8 +135,11 @@ class Termisu::Event::Source::SystemTimer < Termisu::Event::Source
 
     current_last_tick = last_tick
     pending_missed = 0_u64
+    wait_token = run_token
 
     while @running.get
+      # Capture ownership immediately before the blocking wait.
+      wait_token = @run_token.get
       result = wait_for_poll_result(poller)
       break unless @running.get
 
@@ -149,8 +159,8 @@ class Termisu::Event::Source::SystemTimer < Termisu::Event::Source
   rescue ex : IO::Error
     # Expected shutdown race: stop closes poller fds while this fiber may still be
     # blocked in poller.wait (epoll_wait/kevent/poll), which can raise EBADF.
-    # If we're already stopping, treat this as graceful termination.
-    if @running.get
+    # Re-raise only if this fiber still owns the active run.
+    if @running.get && wait_token == @run_token.get
       raise ex
     end
     Log.debug { "SystemTimer stopped during poll wait (#{ex.message}), exiting" }
@@ -219,5 +229,14 @@ class Termisu::Event::Source::SystemTimer < Termisu::Event::Source
   private def missed_ticks_for(timer_expirations : UInt64, pending_missed : UInt64) : UInt64
     base_missed = timer_expirations > 0 ? timer_expirations - 1 : 0_u64
     base_missed + pending_missed
+  end
+
+  # Advances the run token and returns the new value.
+  private def advance_run_token : UInt64
+    loop do
+      current = @run_token.get
+      next_token = current &+ 1_u64
+      return next_token if @run_token.compare_and_set(current, next_token)
+    end
   end
 end

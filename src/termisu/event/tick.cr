@@ -15,7 +15,7 @@
 #       position += velocity * event.delta.total_seconds
 #       puts "Frame #{event.frame}, elapsed: #{event.elapsed}"
 #
-#       # Check for missed frames (SystemTimer only)
+#       # Check for missed frames/backpressure drops
 #       if event.missed_ticks > 0
 #         puts "Warning: #{event.missed_ticks} frame(s) dropped"
 #       end
