@@ -2,6 +2,8 @@ variables:
   BENCH_BIN: bin/bench
   PROFILE_BIN: bin/profile
   PROFILE_DIR: .profile
+  FFI_LIB: bin/libtermisu.so
+  FFI_EXAMPLE_BIN: bin/termisu-c-example
 tasks:
   # ===========================================
   # Core Development Tasks
@@ -84,7 +86,59 @@ tasks:
     phony: true
     always_run: true
     commands: |
-      bin/hace --parallel format ameba spec
+      bin/hace --parallel format ameba spec c:check js:check js:typecheck
+  # ===========================================
+  # C ABI Tasks
+  # ===========================================
+  ffi:build:
+    description: Build shared library exposing the Termisu C ABI
+    phony: true
+    always_run: true
+    commands: |
+      mkdir -p bin
+      crystal build src/termisu.cr --release --cross-compile -o bin/libtermisu
+      cc -shared bin/libtermisu.o -o {{FFI_LIB}} -L$(crystal env CRYSTAL_LIBRARY_PATH) -lgc -lpthread -ldl
+  ffi:example:build:
+    description: Build C example linked against Termisu C ABI library
+    phony: true
+    always_run: true
+    commands: |
+      bin/hace ffi:build
+      cc examples/c/basic.c -Iinclude -Lbin -ltermisu -Wl,-rpath,'$ORIGIN' -o {{FFI_EXAMPLE_BIN}}
+  ffi:example:run:
+    description: Run the C ABI example
+    phony: true
+    always_run: true
+    commands: |
+      bin/hace ffi:example:build
+      ./{{FFI_EXAMPLE_BIN}}
+  c:format:
+    description: Format C sources and headers with clang-format
+    phony: true
+    always_run: true
+    commands: |
+      command -v clang-format >/dev/null 2>&1 || { echo "clang-format is required"; exit 1; }
+      clang-format -i include/termisu/ffi.h examples/c/basic.c
+  c:format:check:
+    description: Check C formatting with clang-format
+    phony: true
+    always_run: true
+    commands: |
+      command -v clang-format >/dev/null 2>&1 || { echo "clang-format is required"; exit 1; }
+      clang-format --dry-run --Werror include/termisu/ffi.h examples/c/basic.c
+  c:lint:
+    description: Lint C example with clang-tidy
+    phony: true
+    always_run: true
+    commands: |
+      command -v clang-tidy >/dev/null 2>&1 || { echo "clang-tidy is required"; exit 1; }
+      clang-tidy -quiet examples/c/basic.c --config-file=.clang-tidy -- -std=c11 -Iinclude
+  c:check:
+    description: Run C formatting and lint checks
+    phony: true
+    always_run: true
+    commands: |
+      bin/hace --parallel c:format:check c:lint
   # ===========================================
   # Benchmarking Tasks
   # ===========================================
@@ -319,6 +373,69 @@ tasks:
     always_run: true
     commands: |
       cd e2e && pnpm format
+  # ===========================================
+  # JavaScript FFI Package Tasks
+  # ===========================================
+  js:install:
+    description: Install dependencies for @termisu/core package
+    phony: true
+    always_run: true
+    commands: |
+      cd javascript && bun install
+  js:typecheck:
+    description: Typecheck @termisu/core package
+    phony: true
+    always_run: true
+    commands: |
+      cd javascript && bun run typecheck
+  js:build:
+    description: Build @termisu/core package
+    phony: true
+    always_run: true
+    commands: |
+      cd javascript && bun run build
+  js:dev:
+    description: Run @termisu/core demo
+    phony: true
+    always_run: true
+    commands: |
+      cd javascript && bun run dev
+  js:lint:
+    description: Lint @termisu/core package with Biome
+    phony: true
+    always_run: true
+    commands: |
+      cd javascript && bun run lint
+  js:lint:fix:
+    description: Fix @termisu/core lint issues with Biome
+    phony: true
+    always_run: true
+    commands: |
+      cd javascript && bun run lint:fix
+  js:format:
+    description: Format @termisu/core package with Biome
+    phony: true
+    always_run: true
+    commands: |
+      cd javascript && bun run format
+  js:format:check:
+    description: Check @termisu/core formatting with Biome
+    phony: true
+    always_run: true
+    commands: |
+      cd javascript && bun run format:check
+  js:check:
+    description: Run all Biome checks on @termisu/core
+    phony: true
+    always_run: true
+    commands: |
+      cd javascript && bun run check
+  js:check:fix:
+    description: Fix all Biome issues in @termisu/core
+    phony: true
+    always_run: true
+    commands: |
+      cd javascript && bun run check:fix
   e2e:format:check:
     description: Check E2E code formatting
     phony: true
