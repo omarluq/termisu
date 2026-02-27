@@ -7,11 +7,15 @@ runs:
       shell: bash
       run: |
         mkdir -p bin
-        crystal build src/termisu.cr --release --cross-compile -o bin/libtermisu
+        crystal build src/termisu.cr --release --cross-compile --emit obj -o bin/libtermisu
         if [[ "$RUNNER_OS" == "Linux" ]]; then
           cc -shared bin/libtermisu.o -o bin/libtermisu.so -L$(crystal env CRYSTAL_LIBRARY_PATH) -lgc -lpthread -ldl
         elif [[ "$RUNNER_OS" == "macOS" ]]; then
-          cc -dynamiclib bin/libtermisu.o -o bin/libtermisu.dylib -L$(crystal env CRYSTAL_LIBRARY_PATH) -lgc -lpthread
+          SDKROOT="$(xcrun --sdk macosx --show-sdk-path)"
+          cc -dynamiclib bin/libtermisu.o -o bin/libtermisu.dylib \
+            -Wl,-install_name,@rpath/libtermisu.dylib \
+            -L$(crystal env CRYSTAL_LIBRARY_PATH) -lgc -lpthread \
+            "$SDKROOT/usr/lib/libiconv.tbd"
         else
           echo "Unsupported RUNNER_OS: $RUNNER_OS"
           exit 1
