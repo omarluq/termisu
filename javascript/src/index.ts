@@ -1,4 +1,3 @@
-export type { AttributeMask } from "./attribute";
 export { Attribute, attrs } from "./attribute";
 export { Color } from "./color";
 export { ColorMode, EventType, Status } from "./constants";
@@ -13,7 +12,6 @@ export type {
   ResizeEvent,
   Size,
   TermisuColor,
-  TermisuHandle,
   TermisuOptions,
   TickEvent,
   UnknownEvent,

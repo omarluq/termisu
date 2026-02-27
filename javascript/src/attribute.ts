@@ -12,9 +12,7 @@ export const Attribute = Object.freeze({
   Strikethrough: 128,
 } as const);
 
-export type AttributeMask = number;
-
-export function attrs(...flags: Array<number | undefined | null>): AttributeMask {
+export function attrs(...flags: Array<number | undefined | null>): number {
   let mask = 0;
   for (const flag of flags) {
     if (typeof flag === "number") {

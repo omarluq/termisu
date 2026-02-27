@@ -10,7 +10,7 @@ import {
   readEvent,
   readSize,
 } from "./structs";
-import type { AnyEvent, CellStyle, TermisuHandle, TermisuOptions } from "./types";
+import type { AnyEvent, CellStyle, TermisuOptions } from "./types";
 
 function asBigInt(value: number | bigint): bigint {
   return typeof value === "bigint" ? value : BigInt(value);
@@ -30,7 +30,7 @@ function firstCodepoint(input: string): number {
 
 export class Termisu {
   private readonly native: NativeLibrary;
-  private handle: TermisuHandle;
+  private handle: bigint;
 
   constructor(options: TermisuOptions = {}) {
     this.native = loadNative(options.libraryPath);

@@ -1,7 +1,4 @@
-import type { AttributeMask } from "./attribute";
 import type { ColorMode, EventType } from "./constants";
-
-export type TermisuHandle = bigint;
 
 export interface Size {
   width: number;
@@ -11,7 +8,6 @@ export interface Size {
 export type TermisuColor =
   | {
       mode: ColorMode.Default;
-      index?: undefined;
       r?: never;
       g?: never;
       b?: never;
@@ -41,7 +37,7 @@ export type TermisuColor =
 export interface CellStyle {
   fg?: TermisuColor;
   bg?: TermisuColor;
-  attr?: AttributeMask;
+  attr?: number;
 }
 
 interface BaseEvent {

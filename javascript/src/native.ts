@@ -1,4 +1,4 @@
-import { dlopen, ptr, suffix } from "bun:ffi";
+import { dlopen, suffix } from "bun:ffi";
 import { existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -150,4 +150,4 @@ export function loadNative(explicitPath?: string): NativeLibrary {
   return native;
 }
 
-export { ptr };
+export { ptr } from "bun:ffi";
