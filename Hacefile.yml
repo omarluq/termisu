@@ -4,6 +4,7 @@ variables:
   PROFILE_DIR: .profile
   FFI_LIB: bin/libtermisu.so
   FFI_EXAMPLE_BIN: bin/termisu-c-example
+  FFI_TEST_BIN: bin/termisu-c-test
 tasks:
   # ===========================================
   # Core Development Tasks
@@ -118,14 +119,14 @@ tasks:
     always_run: true
     commands: |
       command -v clang-format >/dev/null 2>&1 || { echo "clang-format is required"; exit 1; }
-      clang-format -i include/termisu/ffi.h examples/c/basic.c
+      clang-format -i include/termisu/ffi.h examples/c/basic.c tests/c/ffi_test.c
   c:format:check:
     description: Check C formatting with clang-format
     phony: true
     always_run: true
     commands: |
       command -v clang-format >/dev/null 2>&1 || { echo "clang-format is required"; exit 1; }
-      clang-format --dry-run --Werror include/termisu/ffi.h examples/c/basic.c
+      clang-format --dry-run --Werror include/termisu/ffi.h examples/c/basic.c tests/c/ffi_test.c
   c:lint:
     description: Lint C example with clang-tidy
     phony: true
@@ -133,12 +134,27 @@ tasks:
     commands: |
       command -v clang-tidy >/dev/null 2>&1 || { echo "clang-tidy is required"; exit 1; }
       clang-tidy -quiet examples/c/basic.c --config-file=.clang-tidy -- -std=c11 -Iinclude
+      clang-tidy -quiet tests/c/ffi_test.c --config-file=.clang-tidy -- -std=c11 -Iinclude
   c:check:
     description: Run C formatting and lint checks
     phony: true
     always_run: true
     commands: |
       bin/hace --parallel c:format:check c:lint
+  c:test:build:
+    description: Build C ABI test binary
+    phony: true
+    always_run: true
+    commands: |
+      bin/hace ffi:build
+      cc tests/c/ffi_test.c -Iinclude -Lbin -ltermisu -Wl,-rpath,'$ORIGIN' -o {{FFI_TEST_BIN}}
+  c:test:
+    description: Run C ABI tests
+    phony: true
+    always_run: true
+    commands: |
+      bin/hace c:test:build
+      ./{{FFI_TEST_BIN}}
   # ===========================================
   # Benchmarking Tasks
   # ===========================================
@@ -400,6 +416,12 @@ tasks:
     always_run: true
     commands: |
       cd javascript && bun run dev
+  js:test:
+    description: Run @termisu/core tests
+    phony: true
+    always_run: true
+    commands: |
+      TERMISU_LIB_PATH="${TERMISU_LIB_PATH:-$(pwd)/bin/libtermisu.so}" && cd javascript && bun run test
   js:lint:
     description: Lint @termisu/core package with Biome
     phony: true

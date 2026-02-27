@@ -99,13 +99,16 @@ fun termisu_poll_event(
 end
 
 fun termisu_last_error_length : UInt64
+  Termisu::FFI::Runtime.ensure_initialized
   Termisu::FFI.last_error_length
 end
 
 fun termisu_last_error_copy(buffer : UInt8*, buffer_len : UInt64) : UInt64
+  Termisu::FFI::Runtime.ensure_initialized
   Termisu::FFI.copy_last_error(buffer, buffer_len)
 end
 
 fun termisu_clear_error : Nil
+  Termisu::FFI::Runtime.ensure_initialized
   Termisu::FFI.clear_error_message
 end
