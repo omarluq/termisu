@@ -24,7 +24,7 @@
     "check:fix": "biome check --write .",
     "clean": "rimraf dist",
     "format": "biome format --write .",
-    "format:check": "biome format .",
+    "format:check": "biome check --formatter-enabled=true --linter-enabled=false --assist-enabled=false .",
     "lint": "biome lint .",
     "lint:fix": "biome lint --write .",
     "test": "bun run tests/ffi.test.ts",
