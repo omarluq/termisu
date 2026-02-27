@@ -41,7 +41,7 @@ Build the shared library:
 bin/hace ffi:build
 ```
 
-This generates `bin/libtermisu.so` (Linux).
+This generates `bin/libtermisu.so` on Linux. In macOS CI builds, the output is `bin/libtermisu.dylib`.
 
 Header file:
 
@@ -94,8 +94,8 @@ bin/hace js:build
 
 Runtime requirement:
 
-- Built native library (`bin/libtermisu.so`) via `bin/hace ffi:build`
-- Or set `TERMISU_LIB_PATH` to your `libtermisu.so` path
+- Built native library (`bin/libtermisu.so` on Linux, `bin/libtermisu.dylib` on macOS CI) via `bin/hace ffi:build`
+- Or set `TERMISU_LIB_PATH` to your full native library path
 
 ## Usage
 
