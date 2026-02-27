@@ -775,6 +775,16 @@ ul.section-list li::before {
   margin: 0;
 }
 
+.docs-footer a {
+  color: var(--accent);
+  text-decoration: none;
+  border-bottom: var(--border-thin) dotted transparent;
+}
+
+.docs-footer a:hover {
+  border-bottom-color: var(--accent);
+}
+
 .docs-footer .footer-copyright {
   font-size: 0.92em;
 }
