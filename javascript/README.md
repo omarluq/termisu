@@ -5,7 +5,10 @@ TypeScript bindings for Termisu using `bun:ffi`.
 ## Requirements
 
 - Bun `>= 1.3`
-- Built Termisu shared library (`libtermisu.so`)
+- Built Termisu shared library:
+  - Linux: `libtermisu.so`
+  - macOS: `libtermisu.dylib`
+  - Windows: `termisu.dll`
 
 Build native lib from the repository root:
 
@@ -13,8 +16,8 @@ Build native lib from the repository root:
 bin/hace ffi:build
 ```
 
-By default, this package looks for `./bin/libtermisu.so` from the current working directory.
-You can override with `TERMISU_LIB_PATH=/absolute/path/libtermisu.so`.
+By default, this package looks for `./bin/libtermisu.<ext>` from the current working directory.
+You can override with `TERMISU_LIB_PATH=/absolute/path/to/library`.
 
 ## Install
 

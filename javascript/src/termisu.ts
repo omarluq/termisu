@@ -54,8 +54,8 @@ export class Termisu {
   destroy(): void {
     if (this.handle === 0n) return;
     const status = asNumber(this.native.symbols.termisu_destroy(this.handle) as number | bigint);
-    this.handle = 0n;
     this.assertStatus(status, "termisu_destroy");
+    this.handle = 0n;
   }
 
   close(): void {

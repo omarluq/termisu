@@ -8,13 +8,35 @@ export interface Size {
   height: number;
 }
 
-export interface TermisuColor {
-  mode: ColorMode;
-  index?: number;
-  r?: number;
-  g?: number;
-  b?: number;
-}
+export type TermisuColor =
+  | {
+      mode: ColorMode.Default;
+      index?: -1;
+      r?: never;
+      g?: never;
+      b?: never;
+    }
+  | {
+      mode: ColorMode.Ansi8;
+      index: number;
+      r?: never;
+      g?: never;
+      b?: never;
+    }
+  | {
+      mode: ColorMode.Ansi256;
+      index: number;
+      r?: never;
+      g?: never;
+      b?: never;
+    }
+  | {
+      mode: ColorMode.Rgb;
+      index?: never;
+      r: number;
+      g: number;
+      b: number;
+    };
 
 export interface CellStyle {
   fg?: TermisuColor;

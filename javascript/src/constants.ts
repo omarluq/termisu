@@ -23,7 +23,9 @@ export enum ColorMode {
   Rgb = 3,
 }
 
-// Matches include/termisu/ffi.h (validated on x86_64 Linux)
+export const ABI_VERSION = 1;
+
+// Matches include/termisu/ffi.h (validated at load-time via layout signature)
 export const STRUCT = {
   color: {
     size: 12,
@@ -68,3 +70,53 @@ export const STRUCT = {
     modeHasPrevious: 88,
   },
 } as const;
+
+const FNV_OFFSET_BASIS = 0xcbf29ce484222325n;
+const FNV_PRIME = 0x100000001b3n;
+const U64_MASK = 0xffffffffffffffffn;
+
+function mixSignature(hash: bigint, value: number): bigint {
+  return ((hash ^ BigInt(value)) * FNV_PRIME) & U64_MASK;
+}
+
+const STRUCT_LAYOUT_VALUES = [
+  STRUCT.color.size,
+  STRUCT.color.mode,
+  STRUCT.color.index,
+  STRUCT.color.r,
+  STRUCT.color.g,
+  STRUCT.color.b,
+  STRUCT.cellStyle.size,
+  STRUCT.cellStyle.fg,
+  STRUCT.cellStyle.bg,
+  STRUCT.cellStyle.attr,
+  STRUCT.size.size,
+  STRUCT.size.width,
+  STRUCT.size.height,
+  STRUCT.event.size,
+  STRUCT.event.eventType,
+  STRUCT.event.modifiers,
+  STRUCT.event.keyCode,
+  STRUCT.event.keyChar,
+  STRUCT.event.mouseX,
+  STRUCT.event.mouseY,
+  STRUCT.event.mouseButton,
+  STRUCT.event.mouseMotion,
+  STRUCT.event.resizeWidth,
+  STRUCT.event.resizeHeight,
+  STRUCT.event.resizeOldWidth,
+  STRUCT.event.resizeOldHeight,
+  STRUCT.event.resizeHasOld,
+  STRUCT.event.tickFrame,
+  STRUCT.event.tickElapsedNs,
+  STRUCT.event.tickDeltaNs,
+  STRUCT.event.tickMissedTicks,
+  STRUCT.event.modeCurrent,
+  STRUCT.event.modePrevious,
+  STRUCT.event.modeHasPrevious,
+] as const;
+
+export const STRUCT_LAYOUT_SIGNATURE = STRUCT_LAYOUT_VALUES.reduce(
+  (hash, value) => mixSignature(hash, value),
+  FNV_OFFSET_BASIS
+);

@@ -1,0 +1,11 @@
+name: Build FFI Library
+description: Build the native libtermisu shared library for CI jobs
+runs:
+  using: composite
+  steps:
+    - name: Build native FFI library
+      shell: bash
+      run: |
+        mkdir -p bin
+        crystal build src/termisu.cr --release --cross-compile -o bin/libtermisu
+        cc -shared bin/libtermisu.o -o bin/libtermisu.so -L$(crystal env CRYSTAL_LIBRARY_PATH) -lgc -lpthread -ldl
