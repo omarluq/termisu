@@ -17,8 +17,12 @@
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
+    "@homebridge/node-pty-prebuilt-multiarch": "^0.13.1",
     "@microsoft/tui-test": "github:jacob314/tui-test#6ae2984"
   },
+  "trustedDependencies": [
+    "@homebridge/node-pty-prebuilt-multiarch"
+  ],
   "engines": {
     "node": ">=25.7.0"
   }

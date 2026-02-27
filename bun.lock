@@ -15,7 +15,8 @@
       "name": "termisu-e2e",
       "version": "1.0.0",
       "devDependencies": {
-        "@microsoft/tui-test": "github:jacob314/tui-test#node_24_support",
+        "@homebridge/node-pty-prebuilt-multiarch": "^0.13.1",
+        "@microsoft/tui-test": "github:jacob314/tui-test#6ae2984",
       },
     },
     "javascript": {
@@ -23,6 +24,9 @@
       "version": "0.1.0",
     },
   },
+  "trustedDependencies": [
+    "@homebridge/node-pty-prebuilt-multiarch",
+  ],
   "packages": {
     "@babel/code-frame": ["@babel/code-frame@7.29.0", "", { "dependencies": { "@babel/helper-validator-identifier": "^7.28.5", "js-tokens": "^4.0.0", "picocolors": "^1.1.1" } }, "sha512-9NhCeYjq9+3uxgdtp20LSiJXJvN0FeCtNGpJxuMFZ1Kv3cWUNb6DOhJwUvcVCzKGR66cw4njwM6hrJLqgOwbcw=="],
 
