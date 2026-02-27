@@ -170,14 +170,18 @@ describe("Termisu wrapper behavior", () => {
     const setCellCalls = calls.filter((entry) => entry.name === "termisu_set_cell");
     expect(setCellCalls).toHaveLength(2);
     expect(setCellCalls[0]?.args[3]).toBe(smileCodepoint);
-    expect((setCellCalls[0]?.args[4] as number) !== 0).toBe(true);
+    const stylePtr = setCellCalls[0]?.args[4];
+    expect(typeof stylePtr).toBe("number");
+    expect(stylePtr).not.toBe(0);
     expect(setCellCalls[1]?.args[3]).toBe(65);
     expect(setCellCalls[1]?.args[4]).toBe(0);
   });
 
   it("rejects empty string characters before native call", () => {
-    const { termisu } = buildMockTermisu();
+    const { termisu, calls } = buildMockTermisu();
     expect(() => termisu.setCell(0, 0, "")).toThrow("Character must not be empty");
+    const setCellCalls = calls.filter((entry) => entry.name === "termisu_set_cell");
+    expect(setCellCalls).toHaveLength(0);
   });
 
   it("returns null for timeout and none events in pollEvent", () => {
