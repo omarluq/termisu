@@ -5,9 +5,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "npx -y node@24 ./node_modules/@microsoft/tui-test/index.js",
-    "test:trace": "npx -y node@24 ./node_modules/@microsoft/tui-test/index.js --trace",
-    "test:update": "npx -y node@24 ./node_modules/@microsoft/tui-test/index.js --updateSnapshot",
+    "test": "npm exec --yes --package=node@24 -- node ./node_modules/@microsoft/tui-test/index.js",
+    "test:trace": "npm exec --yes --package=node@24 -- node ./node_modules/@microsoft/tui-test/index.js --trace",
+    "test:update": "npm exec --yes --package=node@24 -- node ./node_modules/@microsoft/tui-test/index.js --updateSnapshot",
     "lint": "biome lint .",
     "lint:fix": "biome lint --write .",
     "format": "biome format --write .",
