@@ -1,0 +1,47 @@
+{
+  "name": "@termisu/core",
+  "version": "0.1.0",
+  "description": "Bun FFI bindings for Termisu",
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "bun run clean && bun build src/index.ts --outdir dist --target bun --format esm && bun run build:types",
+    "build:types": "bunx tsc -p tsconfig.json --emitDeclarationOnly",
+    "check": "biome check .",
+    "check:fix": "biome check --write .",
+    "clean": "rm -rf dist",
+    "format": "biome format --write .",
+    "format:check": "biome format .",
+    "lint": "biome lint .",
+    "lint:fix": "biome lint --write .",
+    "typecheck": "bunx tsc -p tsconfig.json --noEmit",
+    "dev": "bun run examples/basic.ts"
+  },
+  "keywords": [
+    "termisu",
+    "bun",
+    "ffi",
+    "tui",
+    "terminal"
+  ],
+  "author": "Termisu Contributors",
+  "license": "MIT",
+  "devDependencies": {
+    "@biomejs/biome": "^2.3.8",
+    "bun-types": "^1.3.9",
+    "typescript": "^5.9.2"
+  }
+}
