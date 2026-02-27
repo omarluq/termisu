@@ -5,9 +5,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "npx -y node@24 ./node_modules/@microsoft/tui-test/index.js",
-    "test:trace": "npx -y node@24 ./node_modules/@microsoft/tui-test/index.js --trace",
-    "test:update": "npx -y node@24 ./node_modules/@microsoft/tui-test/index.js --updateSnapshot",
+    "test": "node ./node_modules/@microsoft/tui-test/index.js",
+    "test:trace": "node ./node_modules/@microsoft/tui-test/index.js --trace",
+    "test:update": "node ./node_modules/@microsoft/tui-test/index.js --updateSnapshot",
     "lint": "biome lint .",
     "lint:fix": "biome lint --write .",
     "format": "biome format --write .",
@@ -17,9 +17,9 @@
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
-    "@microsoft/tui-test": "github:jacob314/tui-test#node_24_support"
+    "@microsoft/tui-test": "github:jacob314/tui-test#6ae2984"
   },
   "engines": {
-    "node": ">=20.0.0"
+    "node": ">=25.7.0"
   }
 }
