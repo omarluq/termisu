@@ -1,16 +1,16 @@
-import assert from "node:assert/strict";
+import { describe, expect, it } from "bun:test";
 
 import { Status } from "../src/constants";
 import { loadNative, ptr } from "../src/native";
 import { createStyleBuffer } from "../src/structs";
 import { Termisu } from "../src/termisu";
 
-function toNumber(value: number | bigint): number {
+function asNumber(value: number | bigint): number {
   return typeof value === "number" ? value : Number(value);
 }
 
 function readLastError(native: ReturnType<typeof loadNative>): string {
-  const len = toNumber(native.symbols.termisu_last_error_length() as number | bigint);
+  const len = asNumber(native.symbols.termisu_last_error_length() as number | bigint);
   if (len <= 0) return "";
 
   const bytes = new Uint8Array(len + 1);
@@ -19,40 +19,42 @@ function readLastError(native: ReturnType<typeof loadNative>): string {
   return new TextDecoder().decode(nul >= 0 ? bytes.subarray(0, nul) : bytes);
 }
 
-function run(): void {
-  assert.equal(Termisu.abiVersion(), 1);
+describe("FFI integration", () => {
+  it("exposes ABI version through Termisu wrapper", () => {
+    expect(Termisu.abiVersion()).toBe(1);
+  });
 
-  const native = loadNative();
+  it("returns InvalidHandle and a readable error for destroy(0)", () => {
+    const native = loadNative();
+    native.symbols.termisu_clear_error();
 
-  native.symbols.termisu_clear_error();
-  assert.equal(
-    toNumber(native.symbols.termisu_destroy(0n) as number | bigint),
-    Status.InvalidHandle
-  );
-  assert.match(readLastError(native), /Invalid handle/);
+    const status = asNumber(native.symbols.termisu_destroy(0n) as number | bigint);
+    expect(status).toBe(Status.InvalidHandle);
+    expect(readLastError(native)).toMatch(/Invalid handle/);
+  });
 
-  native.symbols.termisu_clear_error();
-  assert.equal(
-    toNumber(native.symbols.termisu_poll_event(0n, 0, 0) as number | bigint),
-    Status.InvalidArgument
-  );
-  assert.match(readLastError(native), /out_event is null/);
+  it("returns InvalidArgument for poll_event with null output pointer", () => {
+    const native = loadNative();
+    native.symbols.termisu_clear_error();
 
-  native.symbols.termisu_clear_error();
-  const style = createStyleBuffer();
-  const codepoint = "A".codePointAt(0);
-  assert.notEqual(codepoint, undefined);
-  assert.equal(
-    toNumber(
-      native.symbols.termisu_set_cell(9999n, 0, 0, codepoint ?? 65, ptr(new Uint8Array(style))) as
+    const status = asNumber(native.symbols.termisu_poll_event(0n, 0, 0) as number | bigint);
+    expect(status).toBe(Status.InvalidArgument);
+    expect(readLastError(native)).toMatch(/out_event is null/);
+  });
+
+  it("returns InvalidHandle for set_cell on unknown handle", () => {
+    const native = loadNative();
+    native.symbols.termisu_clear_error();
+
+    const style = createStyleBuffer();
+    const codepoint = "A".codePointAt(0) ?? 65;
+    const status = asNumber(
+      native.symbols.termisu_set_cell(9999n, 0, 0, codepoint, ptr(new Uint8Array(style))) as
         | number
         | bigint
-    ),
-    Status.InvalidHandle
-  );
-  assert.match(readLastError(native), /Invalid handle/);
+    );
 
-  console.log("TypeScript FFI tests passed");
-}
-
-run();
+    expect(status).toBe(Status.InvalidHandle);
+    expect(readLastError(native)).toMatch(/Invalid handle/);
+  });
+});
