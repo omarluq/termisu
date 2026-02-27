@@ -31,9 +31,17 @@
 class Termisu::Event::Source::Input < Termisu::Event::Source
   Log = Termisu::Logs::Event
 
-  # Polling interval for input checking.
-  # 10ms provides responsive input without excessive CPU usage.
-  POLL_INTERVAL_MS = 10
+  # Idle sleep when no input is available.
+  #
+  # Keeps CPU usage low without introducing long blocking waits that
+  # can starve high-frequency timers.
+  IDLE_SLEEP = 1.millisecond
+
+  # Maximum events drained per loop iteration.
+  #
+  # Prevents a continuous input stream from monopolizing the scheduler
+  # while still allowing bursty input to be processed quickly.
+  MAX_DRAIN_PER_CYCLE = 64
 
   @reader : Termisu::Reader
   @parser : Termisu::Input::Parser
@@ -51,8 +59,8 @@ class Termisu::Event::Source::Input < Termisu::Event::Source
 
   # Starts polling for input events and sending them to the output channel.
   #
-  # Spawns a fiber that polls for input at `POLL_INTERVAL_MS` intervals
-  # and sends parsed events to the channel.
+  # Spawns a fiber that drains available input events without blocking
+  # and sends them to the channel.
   #
   # Prevents double-start with `compare_and_set`.
   def start(output : Channel(Event::Any)) : Nil
@@ -93,11 +101,25 @@ class Termisu::Event::Source::Input < Termisu::Event::Source
     return unless output
 
     while @running.get
-      if event = @parser.poll_event(POLL_INTERVAL_MS)
+      emitted = false
+      drained = 0
+
+      while @running.get && drained < MAX_DRAIN_PER_CYCLE
+        event = @parser.poll_event(0)
+        break unless event
+
         output.send(event)
+        emitted = true
+        drained += 1
       end
 
-      Fiber.yield
+      break unless @running.get
+
+      if emitted
+        Fiber.yield
+      else
+        sleep IDLE_SLEEP
+      end
     end
   rescue Channel::ClosedError
     # Channel closed during shutdown - exit gracefully

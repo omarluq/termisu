@@ -38,8 +38,10 @@ struct Termisu::Event::Tick
   getter frame : UInt64
 
   # Number of missed timer ticks since last event.
-  # Non-zero indicates frame drops. Only available with SystemTimer;
-  # sleep-based Timer always reports 0.
+  # Non-zero indicates frame drops or backpressure drops.
+  # SystemTimer reports kernel-level missed expirations and also
+  # channel-backpressure drops. Sleep-based Timer reports
+  # channel-backpressure drops.
   getter missed_ticks : UInt64
 
   def initialize(
