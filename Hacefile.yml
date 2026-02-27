@@ -421,7 +421,7 @@ tasks:
     phony: true
     always_run: true
     commands: |
-      export TERMISU_LIB_PATH="${TERMISU_LIB_PATH:-$(pwd)/bin/libtermisu.so}" && bun run js:test
+      export TERMISU_LIB_PATH="${TERMISU_LIB_PATH:-$(pwd)/bin/libtermisu.$([ \"$(uname -s)\" = \"Darwin\" ] && echo dylib || echo so)}" && bun run js:test
   js:lint:
     description: Lint @termisu/core package with Biome
     phony: true
