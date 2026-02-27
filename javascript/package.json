@@ -27,6 +27,7 @@
     "format:check": "biome format .",
     "lint": "biome lint .",
     "lint:fix": "biome lint --write .",
+    "test": "bun run tests/ffi.test.ts",
     "typecheck": "bunx tsc -p tsconfig.json --noEmit",
     "dev": "bun run examples/basic.ts"
   },

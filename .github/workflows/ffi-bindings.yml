@@ -1,0 +1,76 @@
+name: FFI Bindings
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/termisu/ffi.cr"
+      - "src/termisu/ffi/**/*.cr"
+      - "include/termisu/ffi.h"
+      - "examples/c/**/*.c"
+      - "tests/c/**/*.c"
+      - "javascript/**"
+      - ".clang-format"
+      - ".clang-tidy"
+      - "Hacefile.yml"
+      - ".github/workflows/ffi-bindings.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "src/termisu/ffi.cr"
+      - "src/termisu/ffi/**/*.cr"
+      - "include/termisu/ffi.h"
+      - "examples/c/**/*.c"
+      - "tests/c/**/*.c"
+      - "javascript/**"
+      - ".clang-format"
+      - ".clang-tidy"
+      - "Hacefile.yml"
+      - ".github/workflows/ffi-bindings.yml"
+  workflow_dispatch:
+jobs:
+  c-abi:
+    name: C ABI (lint, format, test)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+      - name: Setup Crystal
+        uses: ./.github/actions/setup-crystal
+        with:
+          crystal-version: "1.19.1"
+      - name: Run C lint and format checks
+        run: bin/hace c:check
+      - name: Run C ABI tests
+        run: bin/hace c:test
+  ts-ffi:
+    name: TypeScript FFI (lint, format, typecheck, test)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+      - name: Setup Crystal
+        uses: ./.github/actions/setup-crystal
+        with:
+          crystal-version: "1.19.1"
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.9"
+      - name: Build native FFI library
+        run: bin/hace ffi:build
+      - name: Install JavaScript dependencies
+        run: bin/hace js:install
+      - name: Run TypeScript lint
+        run: bin/hace js:lint
+      - name: Run TypeScript format check
+        run: bin/hace js:format:check
+      - name: Run TypeScript typecheck
+        run: bin/hace js:typecheck
+      - name: Run TypeScript tests
+        env:
+          TERMISU_LIB_PATH: ${{ github.workspace }}/bin/libtermisu.so
+        run: bin/hace js:test
