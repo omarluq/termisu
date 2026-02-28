@@ -1,0 +1,6 @@
+{
+  "target": "native-darwin-arm64",
+  "os": "darwin",
+  "cpu": "arm64",
+  "libc": "n/a"
+}

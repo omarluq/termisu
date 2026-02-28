@@ -1,0 +1,6 @@
+{
+  "target": "native-linux-x64-musl",
+  "os": "linux",
+  "cpu": "x64",
+  "libc": "musl"
+}

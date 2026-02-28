@@ -1,0 +1,26 @@
+{
+  "name": "@termisu/nuxt-starter",
+  "version": "0.0.0",
+  "description": "Starter template package: nuxt-starter",
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": ["dist", "README.md"],
+  "scripts": {
+    "build": "bun run clean && bun build src/index.ts --outdir dist --target node --format esm && bun run build:types",
+    "build:types": "bunx tsc -p tsconfig.json --emitDeclarationOnly",
+    "clean": "rimraf dist",
+    "typecheck": "bunx tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@termisu/vue": "workspace:*"
+  },
+  "license": "MIT"
+}
