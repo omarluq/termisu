@@ -1,0 +1,6 @@
+{
+  "target": "native-linux-arm64-gnu",
+  "os": "linux",
+  "cpu": "arm64",
+  "libc": "glibc"
+}

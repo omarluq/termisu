@@ -1,0 +1,33 @@
+{
+  "name": "@termisu/platform",
+  "version": "0.0.0",
+  "description": "Platform resolver for Termisu native targets",
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": ["dist", "README.md"],
+  "scripts": {
+    "build": "bun run clean && bun build src/index.ts --outdir dist --target node --format esm && bun run build:types",
+    "build:types": "bunx tsc -p tsconfig.json --emitDeclarationOnly",
+    "clean": "rimraf dist",
+    "typecheck": "bunx tsc -p tsconfig.json --noEmit"
+  },
+  "optionalDependencies": {
+    "@termisu/native-darwin-arm64": "workspace:*",
+    "@termisu/native-darwin-x64": "workspace:*",
+    "@termisu/native-freebsd-arm64": "workspace:*",
+    "@termisu/native-freebsd-x64": "workspace:*",
+    "@termisu/native-linux-arm64-gnu": "workspace:*",
+    "@termisu/native-linux-arm64-musl": "workspace:*",
+    "@termisu/native-linux-x64-gnu": "workspace:*",
+    "@termisu/native-linux-x64-musl": "workspace:*"
+  },
+  "license": "MIT"
+}
