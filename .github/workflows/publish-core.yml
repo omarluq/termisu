@@ -59,7 +59,7 @@ jobs:
           echo "Preparing publish for version $VERSION with tag $TAG"
       - name: Publish @termisu/core
         id: publish
-        uses: JS-DevTools/npm-publish@v3
+        uses: JS-DevTools/npm-publish@v4
         with:
           package: javascript/core/package.json
           access: public
