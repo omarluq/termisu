@@ -1,0 +1,15 @@
+{
+  "name": "@termisu/native-linux-arm64-musl",
+  "version": "0.0.0",
+  "description": "Prebuilt native Termisu library for native-linux-arm64-musl",
+  "type": "module",
+  "private": false,
+  "os": ["linux"],
+  "cpu": ["arm64"],
+  "libc": ["musl"],
+  "files": ["README.md", "manifest.json"],
+  "exports": {
+    "./manifest": "./manifest.json"
+  },
+  "license": "MIT"
+}

@@ -1,0 +1,14 @@
+{
+  "name": "@termisu/native-darwin-x64",
+  "version": "0.0.0",
+  "description": "Prebuilt native Termisu library for native-darwin-x64",
+  "type": "module",
+  "private": false,
+  "os": ["darwin"],
+  "cpu": ["x64"],
+  "files": ["README.md", "manifest.json"],
+  "exports": {
+    "./manifest": "./manifest.json"
+  },
+  "license": "MIT"
+}

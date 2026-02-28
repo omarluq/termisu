@@ -15,6 +15,132 @@
       "name": "@termisu/core",
       "version": "0.0.0",
     },
+    "javascript/create-tui": {
+      "name": "@termisu/create-tui",
+      "version": "0.0.0",
+      "bin": {
+        "create-termisu": "./dist/cli.js",
+      },
+      "dependencies": {
+        "@termisu/next-starter": "workspace:*",
+        "@termisu/nuxt-starter": "workspace:*",
+        "@termisu/sveltekit-starter": "workspace:*",
+      },
+    },
+    "javascript/framework/react": {
+      "name": "@termisu/react",
+      "version": "0.0.0",
+      "dependencies": {
+        "@termisu/reconciler": "workspace:*",
+        "@termisu/runtime": "workspace:*",
+      },
+    },
+    "javascript/framework/solid": {
+      "name": "@termisu/solid",
+      "version": "0.0.0",
+      "dependencies": {
+        "@termisu/reconciler": "workspace:*",
+        "@termisu/runtime": "workspace:*",
+      },
+    },
+    "javascript/framework/svelte": {
+      "name": "@termisu/svelte",
+      "version": "0.0.0",
+      "dependencies": {
+        "@termisu/reconciler": "workspace:*",
+        "@termisu/runtime": "workspace:*",
+      },
+    },
+    "javascript/framework/vue": {
+      "name": "@termisu/vue",
+      "version": "0.0.0",
+      "dependencies": {
+        "@termisu/reconciler": "workspace:*",
+        "@termisu/runtime": "workspace:*",
+      },
+    },
+    "javascript/native/darwin/arm64": {
+      "name": "@termisu/native-darwin-arm64",
+      "version": "0.0.0",
+    },
+    "javascript/native/darwin/x64": {
+      "name": "@termisu/native-darwin-x64",
+      "version": "0.0.0",
+    },
+    "javascript/native/freebsd/arm64": {
+      "name": "@termisu/native-freebsd-arm64",
+      "version": "0.0.0",
+    },
+    "javascript/native/freebsd/x64": {
+      "name": "@termisu/native-freebsd-x64",
+      "version": "0.0.0",
+    },
+    "javascript/native/linux/arm64/gnu": {
+      "name": "@termisu/native-linux-arm64-gnu",
+      "version": "0.0.0",
+    },
+    "javascript/native/linux/arm64/musl": {
+      "name": "@termisu/native-linux-arm64-musl",
+      "version": "0.0.0",
+    },
+    "javascript/native/linux/x64/gnu": {
+      "name": "@termisu/native-linux-x64-gnu",
+      "version": "0.0.0",
+    },
+    "javascript/native/linux/x64/musl": {
+      "name": "@termisu/native-linux-x64-musl",
+      "version": "0.0.0",
+    },
+    "javascript/platform": {
+      "name": "@termisu/platform",
+      "version": "0.0.0",
+      "optionalDependencies": {
+        "@termisu/native-darwin-arm64": "workspace:*",
+        "@termisu/native-darwin-x64": "workspace:*",
+        "@termisu/native-freebsd-arm64": "workspace:*",
+        "@termisu/native-freebsd-x64": "workspace:*",
+        "@termisu/native-linux-arm64-gnu": "workspace:*",
+        "@termisu/native-linux-arm64-musl": "workspace:*",
+        "@termisu/native-linux-x64-gnu": "workspace:*",
+        "@termisu/native-linux-x64-musl": "workspace:*",
+      },
+    },
+    "javascript/reconciler": {
+      "name": "@termisu/reconciler",
+      "version": "0.0.0",
+      "dependencies": {
+        "@termisu/runtime": "workspace:*",
+      },
+    },
+    "javascript/runtime": {
+      "name": "@termisu/runtime",
+      "version": "0.0.0",
+      "dependencies": {
+        "@termisu/core": "workspace:*",
+        "@termisu/platform": "workspace:*",
+      },
+    },
+    "javascript/starter/next": {
+      "name": "@termisu/next-starter",
+      "version": "0.0.0",
+      "dependencies": {
+        "@termisu/react": "workspace:*",
+      },
+    },
+    "javascript/starter/nuxt": {
+      "name": "@termisu/nuxt-starter",
+      "version": "0.0.0",
+      "dependencies": {
+        "@termisu/vue": "workspace:*",
+      },
+    },
+    "javascript/starter/sveltekit": {
+      "name": "@termisu/sveltekit-starter",
+      "version": "0.0.0",
+      "dependencies": {
+        "@termisu/svelte": "workspace:*",
+      },
+    },
   },
   "packages": {
     "@biomejs/biome": ["@biomejs/biome@2.4.4", "", { "optionalDependencies": { "@biomejs/cli-darwin-arm64": "2.4.4", "@biomejs/cli-darwin-x64": "2.4.4", "@biomejs/cli-linux-arm64": "2.4.4", "@biomejs/cli-linux-arm64-musl": "2.4.4", "@biomejs/cli-linux-x64": "2.4.4", "@biomejs/cli-linux-x64-musl": "2.4.4", "@biomejs/cli-win32-arm64": "2.4.4", "@biomejs/cli-win32-x64": "2.4.4" }, "bin": { "biome": "bin/biome" } }, "sha512-tigwWS5KfJf0cABVd52NVaXyAVv4qpUXOWJ1rxFL8xF1RVoeS2q/LK+FHgYoKMclJCuRoCWAPy1IXaN9/mS61Q=="],
