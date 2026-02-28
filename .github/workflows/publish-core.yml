@@ -1,0 +1,72 @@
+name: Publish @termisu/core
+on:
+  push:
+    branches: [main]
+    paths:
+      - "javascript/core/package.json"
+      - ".github/workflows/publish-core.yml"
+  workflow_dispatch:
+concurrency:
+  group: publish-core
+  cancel-in-progress: false
+jobs:
+  publish:
+    name: Publish @termisu/core
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.10"
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: "25.7.0"
+          registry-url: "https://registry.npmjs.org"
+      - name: Setup Crystal
+        uses: ./.github/actions/setup-crystal
+        with:
+          crystal-version: "1.19.1"
+      - name: Build native FFI library
+        uses: ./.github/actions/build-ffi
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - name: Set native library path
+        run: echo "TERMISU_LIB_PATH=${GITHUB_WORKSPACE}/bin/libtermisu.so" >> "$GITHUB_ENV"
+      - name: Typecheck @termisu/core
+        run: bun run js:typecheck
+      - name: Test @termisu/core
+        run: bun run js:test
+      - name: Build @termisu/core
+        run: bun run js:build
+      - name: Resolve npm dist-tag
+        id: release_tag
+        shell: bash
+        run: |
+          VERSION=$(node -p "require('./javascript/core/package.json').version")
+          if [[ "$VERSION" == *-* ]]; then
+            TAG="beta"
+          else
+            TAG="latest"
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Preparing publish for version $VERSION with tag $TAG"
+      - name: Publish @termisu/core
+        id: publish
+        uses: JS-DevTools/npm-publish@v3
+        with:
+          package: javascript/core/package.json
+          access: public
+          provenance: true
+          tag: ${{ steps.release_tag.outputs.tag }}
+      - name: Publish summary
+        run: |
+          echo "published=${{ steps.publish.outputs.type }}"
+          echo "version=${{ steps.release_tag.outputs.version }}"
+          echo "tag=${{ steps.release_tag.outputs.tag }}"
