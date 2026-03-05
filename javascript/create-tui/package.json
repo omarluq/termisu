@@ -1,0 +1,31 @@
+{
+  "name": "@termisu/create-tui",
+  "version": "0.0.0",
+  "description": "Starter scaffolder for Termisu apps",
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "create-termisu": "./dist/cli.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": ["dist", "README.md"],
+  "scripts": {
+    "build": "bun run clean && bun build src/index.ts src/cli.ts --outdir dist --target node --format esm && bun run build:types",
+    "build:types": "bunx tsc -p tsconfig.json --emitDeclarationOnly",
+    "clean": "rimraf dist",
+    "typecheck": "bunx tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@termisu/next-starter": "workspace:*",
+    "@termisu/nuxt-starter": "workspace:*",
+    "@termisu/sveltekit-starter": "workspace:*"
+  },
+  "license": "MIT"
+}
