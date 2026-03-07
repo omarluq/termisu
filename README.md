@@ -15,9 +15,10 @@
 
 Termisu _(/ˌtɛr.mɪˈsuː/ — like tiramisu, but for terminals)_ is a library that provides a sweet and minimalistic API for writing text-based user interfaces in pure Crystal. It offers an abstraction layer over terminal capabilities through cell-based rendering with double buffering, allowing efficient and flicker-free TUI development. The API is intentionally small and focused, making it easy to learn, test, and maintain. Inspired by termbox, Termisu brings similar simplicity and elegance to the Crystal ecosystem.
 
-> [!WARNING]
-> Termisu is still in development and is considered unstable. The API is subject to change, and you may encounter bugs or incomplete features.
-> Use it at your own risk, and contribute by reporting issues or suggesting improvements!
+> [!IMPORTANT]
+> While the API is fairly stable at this point this is still pre 1.0 software and is not battle tested, you might encounter some bugs, please help improve termisu by reporting them.
+
+<a href="https://sonarcloud.io/summary/new_code?id=omarluq_termisu"><img src="https://sonarcloud.io/images/project_badges/sonarcloud-dark.svg" alt="SonarCloud Quality Gate"/></a>
 
 ## Installation
 
