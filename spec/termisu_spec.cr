@@ -41,26 +41,22 @@ describe Termisu do
 
   describe "resize event handling" do
     it "wires resize side effects through the resize source callback" do
-      if !File.exists?("/dev/tty")
-        true.should be_true
-      else
-        termisu = Termisu.new(sync_updates: false)
+      termisu = Termisu.new(sync_updates: false)
 
-        begin
-          initial_width, initial_height = termisu.size
-          new_width = initial_width + 1
-          new_height = initial_height + 1
-          target_x = new_width - 1
-          target_y = new_height - 1
+      begin
+        initial_width, initial_height = termisu.size
+        new_width = initial_width + 1
+        new_height = initial_height + 1
+        target_x = new_width - 1
+        target_y = new_height - 1
 
-          termisu.set_cell(target_x, target_y, 'X').should be_false
+        termisu.set_cell(target_x, target_y, 'X').should be_false
 
-          termisu.__test_run_resize_callback(new_width, new_height)
+        termisu.__test_run_resize_callback(new_width, new_height)
 
-          termisu.set_cell(target_x, target_y, 'X').should be_true
-        ensure
-          termisu.try &.close
-        end
+        termisu.set_cell(target_x, target_y, 'X').should be_true
+      ensure
+        termisu.try &.close
       end
     end
   end
