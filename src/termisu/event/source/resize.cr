@@ -7,8 +7,17 @@
 # ## Usage
 #
 # ```
-# # Create with a size provider (typically backend.size)
+# # Create from a terminal to keep the backing buffer in sync automatically
+# resize = Termisu::Event::Source::Resize.new(terminal)
+#
+# # Or create with a custom size provider
 # resize = Termisu::Event::Source::Resize.new(-> { backend.size })
+#
+# # Optionally apply custom side effects before the resize event is emitted
+# resize = Termisu::Event::Source::Resize.new(
+#   -> { backend.size },
+#   on_resize: ->(width : Int32, height : Int32) { terminal.resize_buffer(width, height) }
+# )
 #
 # loop = Termisu::Event::Loop.new
 # loop.add_source(resize)
@@ -65,19 +74,35 @@ class Termisu::Event::Source::Resize < Termisu::Event::Source
   @generation : Atomic(Int32)
   @poll_interval : Time::Span
   @size_provider : SizeProvider
+  @on_resize : Proc(Int32, Int32, Nil)?
   @output : Channel(Event::Any)?
   @fiber : Fiber?
   @last_width : Int32?
   @last_height : Int32?
 
+  # Creates a resize source backed by a terminal.
+  #
+  # This is the default Termisu integration path. The source queries
+  # terminal size via `terminal.size` and automatically resizes the
+  # terminal's internal buffer before emitting the resize event.
+  def initialize(terminal : Termisu::Terminal, @poll_interval : Time::Span = DEFAULT_POLL_INTERVAL)
+    @size_provider = -> { terminal.size }
+    @on_resize = ->(width : Int32, height : Int32) { terminal.resize_buffer(width, height) }
+    @running = Atomic(Bool).new(false)
+    @signal_received = Atomic(Bool).new(false)
+    @generation = Atomic(Int32).new(0)
+  end
+
   # Creates a new resize source.
   #
   # - `size_provider` - Proc that returns current terminal size as {width, height}
   # - `poll_interval` - Time between size checks (default: 100ms)
+  # - `on_resize` - Optional callback invoked with the new width and height
+  #   before the resize event is emitted
   #
   # Example:
   # ```
-  # # Using terminal backend
+  # # Using a custom terminal size provider
   # resize = Termisu::Event::Source::Resize.new(-> { backend.size })
   #
   # # Custom poll interval for more responsive detection
@@ -85,8 +110,18 @@ class Termisu::Event::Source::Resize < Termisu::Event::Source
   #   -> { backend.size },
   #   poll_interval: 50.milliseconds
   # )
+  #
+  # # Keep dependent state in sync before consumers handle the resize event
+  # resize = Termisu::Event::Source::Resize.new(
+  #   -> { backend.size },
+  #   on_resize: ->(width : Int32, height : Int32) { terminal.resize_buffer(width, height) }
+  # )
   # ```
-  def initialize(@size_provider : SizeProvider, @poll_interval : Time::Span = DEFAULT_POLL_INTERVAL)
+  def initialize(
+    @size_provider : SizeProvider,
+    @poll_interval : Time::Span = DEFAULT_POLL_INTERVAL,
+    @on_resize : Proc(Int32, Int32, Nil)? = nil,
+  )
     @running = Atomic(Bool).new(false)
     @signal_received = Atomic(Bool).new(false)
     @generation = Atomic(Int32).new(0)
@@ -233,6 +268,11 @@ class Termisu::Event::Source::Resize < Termisu::Event::Source
       # even if the channel send blocks briefly
       @last_width = new_width
       @last_height = new_height
+
+      # Keep any dependent state synchronized before consumers receive
+      # the resize event. This ensures user code can draw to the new bounds
+      # immediately after poll_event returns.
+      @on_resize.try &.call(new_width, new_height)
 
       output.send(resize_event)
       Log.debug { "Resize detected: #{old_width}x#{old_height} -> #{new_width}x#{new_height}" }

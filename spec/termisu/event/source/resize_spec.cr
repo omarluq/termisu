@@ -41,6 +41,41 @@ describe Termisu::Event::Source::Resize do
     end
   end
 
+  describe "on_resize callback" do
+    it "runs before the resize event is emitted" do
+      size = MutableSize.new(80, 24)
+      provider = -> { size.to_tuple }
+      callback_sizes = [] of {Int32, Int32}
+
+      source = Termisu::Event::Source::Resize.new(
+        provider,
+        poll_interval: 10.milliseconds,
+        on_resize: ->(width : Int32, height : Int32) { callback_sizes << {width, height} },
+      )
+      channel = Channel(Termisu::Event::Any).new(10)
+
+      source.start(channel)
+
+      size.width = 100
+      size.height = 50
+
+      select
+      when event = channel.receive
+        event.should be_a(Termisu::Event::Resize)
+        callback_sizes.should eq([{100, 50}])
+
+        resize = event.as(Termisu::Event::Resize)
+        resize.width.should eq(100)
+        resize.height.should eq(50)
+      when timeout(200.milliseconds)
+        fail "Timeout waiting for resize event"
+      end
+
+      source.stop
+      channel.close
+    end
+  end
+
   describe "#start" do
     it "sets running to true" do
       provider = -> { {80, 24} }

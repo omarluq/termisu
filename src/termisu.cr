@@ -50,7 +50,7 @@ class Termisu
 
     # Create async event sources
     @input_source = Event::Source::Input.new(@reader, @input_parser)
-    @resize_source = Event::Source::Resize.new(-> { @terminal.size })
+    @resize_source = Event::Source::Resize.new(@terminal)
 
     # Timer source is optional (nil by default)
     # Can be either sleep-based Timer or kernel-level SystemTimer
@@ -212,7 +212,7 @@ class Termisu
   # end
   # ```
   def poll_event : Event::Any
-    prepare_event(@event_loop.output.receive)
+    @event_loop.output.receive
   end
 
   # Polls for an event with timeout.
@@ -233,7 +233,7 @@ class Termisu
   def poll_event(timeout : Time::Span) : Event::Any?
     select
     when event = @event_loop.output.receive
-      prepare_event(event)
+      event
     when timeout(timeout)
       nil
     end
@@ -274,21 +274,10 @@ class Termisu
   def try_poll_event : Event::Any?
     select
     when event = @event_loop.output.receive
-      prepare_event(event)
+      event
     else
       nil
     end
-  end
-
-  # Keep terminal-backed state synchronized with incoming events before
-  # user code sees them. Resize events must update the internal cell buffer
-  # immediately so subsequent set_cell calls can address the new dimensions.
-  private def prepare_event(event : Event::Any) : Event::Any
-    if resize = event.as?(Event::Resize)
-      @terminal.resize_buffer(resize.width, resize.height)
-    end
-
-    event
   end
 
   # Waits for and returns the next event (blocking).
