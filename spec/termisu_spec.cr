@@ -27,6 +27,46 @@ describe Termisu do
     end
   end
 
+  describe "resize event handling" do
+    it "resizes the internal buffer before returning a resize event" do
+      termisu = Termisu.new(sync_updates: false)
+
+      begin
+        initial_width, initial_height = termisu.size
+        new_width = initial_width + 1
+        new_height = initial_height + 1
+        target_x = new_width - 1
+        target_y = new_height - 1
+
+        termisu.set_cell(target_x, target_y, 'X').should be_false
+
+        resize_event = Termisu::Event::Resize.new(
+          new_width,
+          new_height,
+          initial_width,
+          initial_height,
+        )
+        resize_events = [resize_event] of Termisu::Event::Any
+        resize_source = MockSource.new("test-resize", resize_events)
+        termisu.add_event_source(resize_source)
+
+        event = termisu.poll_event(100.milliseconds)
+        event.should_not be_nil
+        event.should be_a(Termisu::Event::Resize)
+
+        resize = event.as(Termisu::Event::Resize)
+        resize.width.should eq(new_width)
+        resize.height.should eq(new_height)
+        resize.old_width.should eq(initial_width)
+        resize.old_height.should eq(initial_height)
+
+        termisu.set_cell(target_x, target_y, 'X').should be_true
+      ensure
+        termisu.try &.close
+      end
+    end
+  end
+
   # Note: Phase 4 TASK-015 Event::Loop integration tests are below
   # in "Termisu Event::Loop Integration" since full Termisu init requires TTY
 end

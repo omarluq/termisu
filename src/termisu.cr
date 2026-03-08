@@ -203,6 +203,7 @@ class Termisu
   #   when Termisu::Event::Key
   #     break if event.ctrl_c? || event.key.escape?
   #   when Termisu::Event::Resize
+  #     # Buffer size is already updated to match the new terminal size.
   #     termisu.sync # Redraw after resize
   #   when Termisu::Event::Tick
   #     # Animation frame
@@ -211,7 +212,7 @@ class Termisu
   # end
   # ```
   def poll_event : Event::Any
-    @event_loop.output.receive
+    prepare_event(@event_loop.output.receive)
   end
 
   # Polls for an event with timeout.
@@ -232,7 +233,7 @@ class Termisu
   def poll_event(timeout : Time::Span) : Event::Any?
     select
     when event = @event_loop.output.receive
-      event
+      prepare_event(event)
     when timeout(timeout)
       nil
     end
@@ -273,10 +274,21 @@ class Termisu
   def try_poll_event : Event::Any?
     select
     when event = @event_loop.output.receive
-      event
+      prepare_event(event)
     else
       nil
     end
+  end
+
+  # Keep terminal-backed state synchronized with incoming events before
+  # user code sees them. Resize events must update the internal cell buffer
+  # immediately so subsequent set_cell calls can address the new dimensions.
+  private def prepare_event(event : Event::Any) : Event::Any
+    if resize = event.as?(Event::Resize)
+      @terminal.resize_buffer(resize.width, resize.height)
+    end
+
+    event
   end
 
   # Waits for and returns the next event (blocking).
