@@ -47,6 +47,20 @@ struct Termisu::Cell
   property bg : Color
   property attr : Attribute
 
+  # default empty cell (space with default colors, width 1, not continuation).
+  class_getter default = Cell.new
+
+  # Continuation cells represent the trailing column occupied by a wide character.
+  # They have empty grapheme, width 0, and are never rendered directly.
+  #
+  # ```
+  # trail = Termisu::Cell.continuation
+  # trail.continuation? # => true
+  # trail.width         # => 0
+  # trail.grapheme      # => ""
+  # ```
+  class_getter continuation = Cell.new(continuation: true)
+
   # Creates a new Cell with the specified grapheme and colors.
   #
   # Parameters:
@@ -91,26 +105,6 @@ struct Termisu::Cell
       @grapheme = first
       @width = UnicodeWidth.grapheme_width(@grapheme)
     end
-  end
-
-  # Creates a default empty cell (space with default colors, width 1, not continuation).
-  def self.default : Cell
-    Cell.new
-  end
-
-  # Creates a continuation cell for wide graphemes.
-  #
-  # Continuation cells represent the trailing column occupied by a wide character.
-  # They have empty grapheme, width 0, and are never rendered directly.
-  #
-  # ```
-  # trail = Termisu::Cell.continuation
-  # trail.continuation? # => true
-  # trail.width         # => 0
-  # trail.grapheme      # => ""
-  # ```
-  def self.continuation : Cell
-    Cell.new("", continuation: true)
   end
 
   # Returns true when this cell is the canonical default blank cell.
