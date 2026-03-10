@@ -86,7 +86,7 @@ struct Termisu::Cell
       # Extract first grapheme cluster to ensure single-grapheme invariant
       first = grapheme.each_grapheme.first.to_s
       if first.bytesize < grapheme.bytesize
-        Termisu::Logs::Buffer.debug { "Cell: multi-grapheme input truncated (#{grapheme.size} graphemes, kept first)" }
+        Termisu::Logs::Buffer.debug { "Cell: multi-grapheme input truncated (#{grapheme.grapheme_size} graphemes, kept first)" }
       end
       @grapheme = first
       @width = UnicodeWidth.grapheme_width(@grapheme)
