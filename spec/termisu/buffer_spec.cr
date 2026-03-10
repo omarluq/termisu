@@ -19,6 +19,15 @@ describe Termisu::Buffer do
   end
 
   describe "#set_cell" do
+    it "accepts a multi-codepoint grapheme string" do
+      buffer = Termisu::Buffer.new(10, 5)
+      buffer.set_cell(0, 0, "❤️").should be_true
+
+      cell = buffer.get_cell(0, 0)
+      cell.should_not be_nil
+      cell.as(Termisu::Cell).grapheme.should eq("❤️")
+    end
+
     it "sets a cell at valid coordinates" do
       buffer = Termisu::Buffer.new(10, 5)
       result = buffer.set_cell(5, 2, 'A', fg: Termisu::Color.green, bg: Termisu::Color.red)
