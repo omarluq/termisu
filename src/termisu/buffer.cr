@@ -76,7 +76,8 @@ class Termisu::Buffer
     attr : Attribute = Attribute::None,
   ) : Bool
     return false if out_of_bounds?(x, y)
-    return false if grapheme.grapheme_size > 1
+    return false unless grapheme.grapheme_size == 1
+    return false if control_char?(grapheme[0])
 
     # Create cell to determine width
     cell = Cell.new(grapheme, fg: fg, bg: bg, attr: attr)
@@ -103,8 +104,6 @@ class Termisu::Buffer
     bg : Color = Color.default,
     attr : Attribute = Attribute::None,
   ) : Bool
-    return false if control_char?(ch)
-
     set_cell(x, y, ch.to_s, fg, bg, attr)
   end
 
