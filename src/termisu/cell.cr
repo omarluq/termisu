@@ -40,19 +40,12 @@
 # continuation.ch # => ' ' (space for continuation cells)
 # ```
 struct Termisu::Cell
-  getter grapheme : String
-  getter width : UInt8
+  getter grapheme : String = ""
+  getter width : UInt8 = 0
   getter? continuation : Bool
   property fg : Color
   property bg : Color
   property attr : Attribute
-
-  # Shared immutable templates for common cell states.
-  #
-  # Returning these from `default`/`continuation` avoids rebuilding equivalent
-  # structs on hot paths (clear, overlap clearing, resize).
-  @@default_cell = Cell.new(" ", continuation: false, fg: Color.white, bg: Color.default, attr: Attribute::None)
-  @@continuation_cell = Cell.new("", continuation: true, fg: Color.white, bg: Color.default, attr: Attribute::None)
 
   # Creates a new Cell with the specified grapheme and colors.
   #
@@ -74,20 +67,21 @@ struct Termisu::Cell
   # - Multi-grapheme strings: only first grapheme is stored; debug log warns of truncation
   def initialize(
     grapheme : String = " ",
-    continuation : Bool = false,
+    @continuation : Bool = false,
     @fg : Color = Color.white,
     @bg : Color = Color.default,
     @attr : Attribute = Attribute::None,
   )
-    # Normalize state to enforce occupancy invariants
-    if continuation
+    self.grapheme = grapheme
+  end
+
+  def grapheme=(@grapheme)
+    if @continuation
       @grapheme = ""
       @width = 0u8
-      @continuation = true
     elsif grapheme.empty?
       @grapheme = " "
       @width = 1u8
-      @continuation = false
     else
       # Extract first grapheme cluster to ensure single-grapheme invariant
       first = grapheme.each_grapheme.first.to_s
@@ -96,26 +90,12 @@ struct Termisu::Cell
       end
       @grapheme = first
       @width = UnicodeWidth.grapheme_width(@grapheme)
-      @continuation = false
     end
-  end
-
-  # Creates a Cell from a single character (compatibility constructor).
-  #
-  # This constructor maintains backward compatibility with the Char-based API.
-  # Width is auto-calculated from the character's codepoint.
-  #
-  # Note: Control characters (C0/C1) produce width 0 non-continuation cells.
-  # This is permitted for internal sentinel usage (e.g., Buffer#invalidate uses
-  # NUL cells as invalid markers). The public write path (Buffer#set_cell) guards
-  # against control characters before reaching this constructor.
-  def self.new(ch : Char, fg : Color = Color.white, bg : Color = Color.default, attr : Attribute = Attribute::None) : self
-    new(ch.to_s, fg: fg, bg: bg, attr: attr)
   end
 
   # Creates a default empty cell (space with default colors, width 1, not continuation).
   def self.default : Cell
-    @@default_cell
+    Cell.new
   end
 
   # Creates a continuation cell for wide graphemes.
@@ -130,53 +110,7 @@ struct Termisu::Cell
   # trail.grapheme      # => ""
   # ```
   def self.continuation : Cell
-    @@continuation_cell
-  end
-
-  # Checks if this cell equals another cell.
-  #
-  # Two cells are equal if all fields match: grapheme, width, continuation, fg, bg, attr.
-  def ==(other : Cell) : Bool
-    @grapheme == other.grapheme &&
-      @width == other.width &&
-      @continuation == other.continuation? &&
-      @fg == other.fg &&
-      @bg == other.bg &&
-      @attr == other.attr
-  end
-
-  # Resets the cell to default state (space, white on default background, no attributes, width 1, not continuation).
-  def reset
-    @grapheme = " "
-    @width = 1u8
-    @continuation = false
-    @fg = Color.white
-    @bg = Color.default
-    @attr = Attribute::None
-  end
-
-  # Gets the first character of the grapheme (compatibility property).
-  #
-  # Returns:
-  # - First codepoint of grapheme for leading cells
-  # - Space (' ') for continuation cells or empty grapheme
-  #
-  # This provides backward compatibility with Char-based API.
-  def ch : Char
-    return ' ' if @continuation || @grapheme.empty?
-    @grapheme.chars.first || ' '
-  end
-
-  # Sets the cell to a single character (compatibility setter).
-  #
-  # This rewrites the cell to narrow grapheme mode with width calculated
-  # from the character's codepoint.
-  #
-  # Provides backward compatibility with Char-based API.
-  def ch=(value : Char)
-    @grapheme = value.to_s
-    @width = UnicodeWidth.codepoint_width(value.ord)
-    @continuation = false
+    Cell.new("", continuation: true)
   end
 
   # Returns true when this cell is the canonical default blank cell.

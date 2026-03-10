@@ -129,7 +129,7 @@ class Termisu
   # Parameters:
   # - x: Column position (0-based)
   # - y: Row position (0-based)
-  # - ch: Character to display
+  # - grapheme: Character to display
   # - fg: Foreground color (default: white)
   # - bg: Background color (default: default terminal color)
   # - attr: Text attributes (default: None)

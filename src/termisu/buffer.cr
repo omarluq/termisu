@@ -59,7 +59,7 @@ class Termisu::Buffer
   # Parameters:
   # - x: Column position (0-based)
   # - y: Row position (0-based)
-  # - ch: Character to display
+  # - grapheme: Character to display
   # - fg: Foreground color (default: white)
   # - bg: Background color (default: default terminal color)
   # - attr: Text attributes (default: None)
@@ -71,16 +71,15 @@ class Termisu::Buffer
   def set_cell(
     x : Int32,
     y : Int32,
-    ch : Char,
+    grapheme : String,
     fg : Color = Color.white,
     bg : Color = Color.default,
     attr : Attribute = Attribute::None,
   ) : Bool
     return false if out_of_bounds?(x, y)
-    return false if control_char?(ch)
 
     # Create cell to determine width
-    cell = Cell.new(ch, fg, bg, attr)
+    cell = Cell.new(grapheme, fg: fg, bg: bg, attr: attr)
     width = cell.width
 
     # Reject wide writes that cannot fit
@@ -94,6 +93,19 @@ class Termisu::Buffer
 
     set_cell_internal(x, y, cell, width)
     true
+  end
+
+  def set_cell(
+    x : Int32,
+    y : Int32,
+    ch : Char,
+    fg : Color = Color.white,
+    bg : Color = Color.default,
+    attr : Attribute = Attribute::None,
+  ) : Bool
+    return false if control_char?(ch)
+
+    set_cell(x, y, ch.to_s, fg, bg, attr)
   end
 
   # Internal cell writer that handles occupancy invariants and overlap clearing.
@@ -198,7 +210,7 @@ class Termisu::Buffer
     # Fill front buffer with invalid marker cells that won't match any real content.
     # Using NUL character as the marker since it's never used in normal rendering.
     # Note: This intentionally creates width 0 non-continuation cells as sentinels.
-    invalid_cell = Cell.new('\u0000', Color.default, Color.default, Attribute::None)
+    invalid_cell = Cell.new("\u0000", fg: Color.default, bg: Color.default, attr: Attribute::None)
     @front.size.times do |index|
       @front[index] = invalid_cell
     end
