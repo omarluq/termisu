@@ -33,8 +33,8 @@
 #
 # The `grapheme` property provides backward-compatible access:
 # ```
-# cell = Termisu::Cell.new("A")
-# cell.grapheme # => "A" (first codepoint of grapheme)
+# cell = Termisu::Cell.new("ABC")
+# cell.grapheme # => "A" (first grapheme of input-String is stored)
 #
 # continuation = Termisu::Cell.continuation
 # continuation.grapheme # => "" (empty for continuation cells)
@@ -112,11 +112,6 @@ struct Termisu::Cell
   # Used by Buffer hot paths (clear/dirtiness accounting) to avoid
   # expensive full-buffer work when rows are already blank.
   def default_state? : Bool
-    !@continuation &&
-      @width == 1_u8 &&
-      @grapheme == " " &&
-      @fg == Color.white &&
-      @bg == Color.default &&
-      @attr == Attribute::None
+    self == Cell.default
   end
 end

@@ -76,6 +76,7 @@ class Termisu::Buffer
     attr : Attribute = Attribute::None,
   ) : Bool
     return false if out_of_bounds?(x, y)
+    return false if grapheme.grapheme_size > 1
 
     # Create cell to determine width
     cell = Cell.new(grapheme, fg: fg, bg: bg, attr: attr)
@@ -173,7 +174,6 @@ class Termisu::Buffer
 
   # Clears the back buffer (fills with default cells).
   def clear
-
     @height.times do |row|
       # Skip rows that are already fully default.
       next if @row_non_default_counts[row] == 0
