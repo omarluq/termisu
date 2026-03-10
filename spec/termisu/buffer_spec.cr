@@ -12,7 +12,7 @@ describe Termisu::Buffer do
       buffer = Termisu::Buffer.new(10, 5)
       cell = buffer.get_cell(0, 0)
       cell.should_not be_nil
-      cell.as(Termisu::Cell).ch.should eq(' ')
+      cell.as(Termisu::Cell).grapheme.should eq(" ")
       cell.as(Termisu::Cell).fg.should eq(Termisu::Color.white)
       cell.as(Termisu::Cell).bg.should eq(Termisu::Color.default)
     end
@@ -26,7 +26,7 @@ describe Termisu::Buffer do
 
       cell = buffer.get_cell(5, 2)
       cell.should_not be_nil
-      cell.as(Termisu::Cell).ch.should eq('A')
+      cell.as(Termisu::Cell).grapheme.should eq("A")
       cell.as(Termisu::Cell).fg.should eq(Termisu::Color.green)
       cell.as(Termisu::Cell).bg.should eq(Termisu::Color.red)
     end
@@ -78,15 +78,15 @@ describe Termisu::Buffer do
       # Adjacent cells should remain intact
       cell0 = buffer.get_cell(0, 0)
       cell1 = buffer.get_cell(1, 0)
-      cell0.as(Termisu::Cell).ch.should eq('A')
-      cell1.as(Termisu::Cell).ch.should eq('B')
+      cell0.as(Termisu::Cell).grapheme.should eq("A")
+      cell1.as(Termisu::Cell).grapheme.should eq("B")
     end
 
     it "returns true for space (0x20)" do
       buffer = Termisu::Buffer.new(10, 5)
       buffer.set_cell(0, 0, ' ').should be_true
       cell = buffer.get_cell(0, 0)
-      cell.as(Termisu::Cell).ch.should eq(' ')
+      cell.as(Termisu::Cell).grapheme.should eq(" ")
     end
 
     it "returns true for printable characters above 0x20" do
@@ -111,7 +111,7 @@ describe Termisu::Buffer do
       buffer.set_cell(4, 2, 'X')
       cell = buffer.get_cell(4, 2)
       cell.should_not be_nil
-      cell.as(Termisu::Cell).ch.should eq('X')
+      cell.as(Termisu::Cell).grapheme.should eq("X")
     end
 
     it "returns nil for out of bounds" do
@@ -130,7 +130,7 @@ describe Termisu::Buffer do
       buffer.clear
 
       cell = buffer.get_cell(3, 2)
-      cell.as(Termisu::Cell).ch.should eq(' ')
+      cell.as(Termisu::Cell).grapheme.should eq(" ")
       cell.as(Termisu::Cell).fg.should eq(Termisu::Color.white)
       cell.as(Termisu::Cell).bg.should eq(Termisu::Color.default)
     end
@@ -454,11 +454,11 @@ describe Termisu::Buffer do
 
       # Old content preserved
       cell = buffer.get_cell(2, 1)
-      cell.as(Termisu::Cell).ch.should eq('A')
+      cell.as(Termisu::Cell).grapheme.should eq("A")
 
       # New area has default cells
       new_cell = buffer.get_cell(8, 4)
-      new_cell.as(Termisu::Cell).ch.should eq(' ')
+      new_cell.as(Termisu::Cell).grapheme.should eq(" ")
     end
 
     it "preserves existing content when shrinking" do
@@ -473,7 +473,7 @@ describe Termisu::Buffer do
 
       # Content within new bounds preserved
       cell = buffer.get_cell(2, 1)
-      cell.as(Termisu::Cell).ch.should eq('B')
+      cell.as(Termisu::Cell).grapheme.should eq("B")
 
       # Content outside new bounds inaccessible
       buffer.get_cell(8, 4).should be_nil
@@ -489,7 +489,7 @@ describe Termisu::Buffer do
       buffer.height.should eq(5)
 
       cell = buffer.get_cell(3, 2)
-      cell.as(Termisu::Cell).ch.should eq('C')
+      cell.as(Termisu::Cell).grapheme.should eq("C")
     end
 
     it "clamps cursor position when shrinking" do
@@ -631,7 +631,7 @@ describe Termisu::Buffer do
 
       # Column should remain default
       cell = buffer.get_cell(9, 0)
-      cell.as(Termisu::Cell).ch.should eq(' ')
+      cell.as(Termisu::Cell).grapheme.should eq(" ")
     end
 
     it "rejects wide character at column width-1" do
@@ -665,7 +665,7 @@ describe Termisu::Buffer do
 
       cell = buffer.get_cell(6, 0)
       cell.as(Termisu::Cell).continuation?.should be_false
-      cell.as(Termisu::Cell).ch.should eq(' ')
+      cell.as(Termisu::Cell).grapheme.should eq(" ")
     end
 
     it "clears owner when writing into continuation cell" do
@@ -677,7 +677,7 @@ describe Termisu::Buffer do
 
       # Leading cell should be cleared
       lead = buffer.get_cell(5, 0)
-      lead.as(Termisu::Cell).ch.should eq(' ')
+      lead.as(Termisu::Cell).grapheme.should eq(" ")
       lead.as(Termisu::Cell).width.should eq(1u8)
     end
 
@@ -693,8 +693,8 @@ describe Termisu::Buffer do
       lead = buffer.get_cell(5, 0)
       trail = buffer.get_cell(6, 0)
 
-      lead.as(Termisu::Cell).ch.should eq(' ')
-      trail.as(Termisu::Cell).ch.should eq('B')
+      lead.as(Termisu::Cell).grapheme.should eq(" ")
+      trail.as(Termisu::Cell).grapheme.should eq("B")
     end
 
     it "clears orphan continuation when wide-over-wide overwrite overlaps leading cell (BUG-008)" do
@@ -709,7 +709,7 @@ describe Termisu::Buffer do
 
       # Position 5 should be new wide char leading
       lead5 = buffer.get_cell(5, 0)
-      lead5.as(Termisu::Cell).ch.should eq('日')
+      lead5.as(Termisu::Cell).grapheme.should eq("日")
       lead5.as(Termisu::Cell).width.should eq(2u8)
 
       # Position 6 should be continuation of new wide char
@@ -718,7 +718,7 @@ describe Termisu::Buffer do
 
       # Position 7 should NOT be orphan continuation (must be default)
       cell7 = buffer.get_cell(7, 0)
-      cell7.as(Termisu::Cell).ch.should eq(' ')
+      cell7.as(Termisu::Cell).grapheme.should eq(" ")
       cell7.as(Termisu::Cell).continuation?.should be_false
       cell7.as(Termisu::Cell).width.should eq(1u8)
     end
@@ -738,12 +738,12 @@ describe Termisu::Buffer do
 
       # Position 5 (old wide lead) should be cleared
       cell5 = buffer.get_cell(5, 0)
-      cell5.as(Termisu::Cell).ch.should eq(' ')
+      cell5.as(Termisu::Cell).grapheme.should eq(" ")
       cell5.as(Termisu::Cell).width.should eq(1u8)
 
       # Position 6 should be new wide char leading
       lead6 = buffer.get_cell(6, 0)
-      lead6.as(Termisu::Cell).ch.should eq('日')
+      lead6.as(Termisu::Cell).grapheme.should eq("日")
       lead6.as(Termisu::Cell).width.should eq(2u8)
 
       # Position 7 should be continuation of new wide char
@@ -762,7 +762,7 @@ describe Termisu::Buffer do
 
       10.times do |i|
         cell = buffer.get_cell(i, 0)
-        cell.as(Termisu::Cell).ch.should eq(' ')
+        cell.as(Termisu::Cell).grapheme.should eq(" ")
         cell.as(Termisu::Cell).width.should eq(1u8)
         cell.as(Termisu::Cell).continuation?.should be_false
       end
@@ -794,7 +794,7 @@ describe Termisu::Buffer do
       # Continuation at position 9 is gone (out of bounds)
       # Leading cell at 8 should be default (cannot be wide without continuation)
       cell = buffer.get_cell(7, 0) # Column 7 was originally position 8
-      cell.as(Termisu::Cell).ch.should eq(' ')
+      cell.as(Termisu::Cell).grapheme.should eq(" ")
     end
 
     it "removes wide cells at new last column" do
@@ -807,7 +807,7 @@ describe Termisu::Buffer do
       # Should be replaced with default
       cell = buffer.get_cell(8, 0)
       cell.as(Termisu::Cell).width.should eq(1u8)
-      cell.as(Termisu::Cell).ch.should eq(' ')
+      cell.as(Termisu::Cell).grapheme.should eq(" ")
     end
 
     it "preserves valid wide cells when growing" do

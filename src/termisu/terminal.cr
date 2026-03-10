@@ -508,23 +508,14 @@ class Termisu::Terminal < Termisu::Renderer
   # Parameters:
   # - x: Column position (0-based)
   # - y: Row position (0-based)
-  # - ch: Character to display
+  # - grapheme: Character to display
   # - fg: Foreground color (default: white)
   # - bg: Background color (default: default terminal color)
   # - attr: Text attributes (default: None)
   #
   # Returns false if coordinates are out of bounds.
   # Call render() to display changes on screen.
-  def set_cell(
-    x : Int32,
-    y : Int32,
-    ch : Char,
-    fg : Color = Color.white,
-    bg : Color = Color.default,
-    attr : Attribute = Attribute::None,
-  ) : Bool
-    @buffer.set_cell(x, y, ch, fg, bg, attr)
-  end
+  delegate set_cell, to: @buffer
 
   # Gets a cell at the specified position from the buffer.
   #
