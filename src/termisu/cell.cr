@@ -31,13 +31,13 @@
 #
 # ## Compatibility (Public API)
 #
-# The `ch` property provides backward-compatible access:
+# The `grapheme` property provides backward-compatible access:
 # ```
-# cell = Termisu::Cell.new('A')
-# cell.ch # => 'A' (first codepoint of grapheme)
+# cell = Termisu::Cell.new("A")
+# cell.grapheme # => "A" (first codepoint of grapheme)
 #
 # continuation = Termisu::Cell.continuation
-# continuation.ch # => ' ' (space for continuation cells)
+# continuation.grapheme # => "" (empty for continuation cells)
 # ```
 struct Termisu::Cell
   getter grapheme : String = ""
