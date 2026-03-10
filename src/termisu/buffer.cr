@@ -41,9 +41,8 @@ class Termisu::Buffer
   # - height: Number of rows
   def initialize(@width : Int32, @height : Int32)
     size = @width * @height
-    default_cell = Cell.default
-    @front = Array(Cell).new(size, default_cell)
-    @back = Array(Cell).new(size, default_cell)
+    @front = Array(Cell).new(size, Cell.default)
+    @back = Array(Cell).new(size, Cell.default)
     @cursor = Cursor.new # Hidden by default
     @render_state = RenderState.new
     @batch_buffer = IO::Memory.new(@width) # Pre-sized for typical row batches
@@ -118,8 +117,6 @@ class Termisu::Buffer
   # Assumes caller has validated bounds and fit constraints.
   private def set_cell_internal(x : Int32, y : Int32, cell : Cell, width : UInt8) : Nil
     row_start = y * @width
-    default_cell = Cell.default
-    continuation_cell = Cell.continuation
 
     # Clear overlap: if writing into a continuation cell, clear its owner first
     if @back[row_start + x].continuation?
@@ -131,21 +128,21 @@ class Termisu::Buffer
       # If x+1 is a wide leading cell, clear its continuation at x+2 first
       # to prevent orphan continuation cells (BUG-008)
       if x + 2 < @width && @back[row_start + x + 1].width == 2
-        assign_back_cell(row_start + x + 2, y, default_cell)
+        assign_back_cell(row_start + x + 2, y, Cell.default)
       end
 
       # Pre-clear both target positions
-      assign_back_cell(row_start + x, y, default_cell)
-      assign_back_cell(row_start + x + 1, y, default_cell)
+      assign_back_cell(row_start + x, y, Cell.default)
+      assign_back_cell(row_start + x + 1, y, Cell.default)
 
       # Write leading cell
       assign_back_cell(row_start + x, y, cell)
       # Write continuation cell
-      assign_back_cell(row_start + x + 1, y, continuation_cell)
+      assign_back_cell(row_start + x + 1, y, Cell.continuation)
     else
       # Narrow write: clear any wide cell that overlaps next position
       if x + 1 < @width && @back[row_start + x].width == 2
-        assign_back_cell(row_start + x + 1, y, default_cell)
+        assign_back_cell(row_start + x + 1, y, Cell.default)
       end
       assign_back_cell(row_start + x, y, cell)
     end
@@ -176,7 +173,6 @@ class Termisu::Buffer
 
   # Clears the back buffer (fills with default cells).
   def clear
-    default_cell = Cell.default
 
     @height.times do |row|
       # Skip rows that are already fully default.
@@ -186,7 +182,7 @@ class Termisu::Buffer
       row_end = row_start + @width
       idx = row_start
       while idx < row_end
-        @back[idx] = default_cell
+        @back[idx] = Cell.default
         idx += 1
       end
 
@@ -301,9 +297,8 @@ class Termisu::Buffer
     return if new_width == @width && new_height == @height
 
     new_size = new_width * new_height
-    default_cell = Cell.default
-    new_back = Array(Cell).new(new_size, default_cell)
-    new_front = Array(Cell).new(new_size, default_cell)
+    new_back = Array(Cell).new(new_size, Cell.default)
+    new_front = Array(Cell).new(new_size, Cell.default)
 
     # Copy existing content (up to new dimensions)
     min_height = Math.min(@height, new_height)
