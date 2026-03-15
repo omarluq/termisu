@@ -35,13 +35,13 @@ enum Termisu::Input::Modifier : UInt8
   # So we subtract 1 to get the raw flags.
   def self.from_xterm_code(code : Int32) : Modifier
     return None if code <= 1
-    raw = code - 1
-    mod = None
-    mod |= Shift if (raw & ModifierBits::XTERM_SHIFT) != 0
-    mod |= Alt if (raw & ModifierBits::XTERM_ALT) != 0
-    mod |= Ctrl if (raw & ModifierBits::XTERM_CTRL) != 0
-    mod |= Meta if (raw & ModifierBits::XTERM_META) != 0
-    mod
+    from_bits(
+      code - 1,
+      shift_bit: ModifierBits::XTERM_SHIFT,
+      alt_bit: ModifierBits::XTERM_ALT,
+      ctrl_bit: ModifierBits::XTERM_CTRL,
+      meta_bit: ModifierBits::XTERM_META,
+    )
   end
 
   # Decodes mouse button modifiers from the Cb byte.
@@ -51,10 +51,27 @@ enum Termisu::Input::Modifier : UInt8
   # - Bit 3 (8) = Meta/Alt
   # - Bit 4 (16) = Control
   def self.from_mouse_cb(cb : Int32) : Modifier
+    from_bits(
+      cb,
+      shift_bit: ModifierBits::MOUSE_SHIFT,
+      alt_bit: ModifierBits::MOUSE_ALT,
+      ctrl_bit: ModifierBits::MOUSE_CTRL,
+    )
+  end
+
+  private def self.from_bits(
+    value : Int32,
+    *,
+    shift_bit : Int32,
+    alt_bit : Int32,
+    ctrl_bit : Int32,
+    meta_bit : Int32? = nil,
+  ) : Modifier
     mod = None
-    mod |= Shift if (cb & ModifierBits::MOUSE_SHIFT) != 0
-    mod |= Alt if (cb & ModifierBits::MOUSE_ALT) != 0
-    mod |= Ctrl if (cb & ModifierBits::MOUSE_CTRL) != 0
+    mod |= Shift if (value & shift_bit) != 0
+    mod |= Alt if (value & alt_bit) != 0
+    mod |= Ctrl if (value & ctrl_bit) != 0
+    mod |= Meta if meta_bit && (value & meta_bit) != 0
     mod
   end
 end
