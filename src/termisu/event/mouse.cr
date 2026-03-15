@@ -76,9 +76,11 @@ struct Termisu::Event::Mouse
     # - 66 = Wheel Left
     # - 67 = Wheel Right
     def self.from_cb(cb : Int32) : Button
+      button = base_button(cb)
+
       # Check for wheel events first (bit 6 set)
       if (cb & Protocol::WHEEL_BIT) != 0
-        case cb & Protocol::BUTTON_MASK
+        case button
         when 0 then WheelUp
         when 1 then WheelDown
         when 2 then WheelLeft
@@ -87,7 +89,7 @@ struct Termisu::Event::Mouse
         end
       else
         # Regular button
-        case cb & Protocol::BUTTON_MASK
+        case button
         when 0 then Left
         when 1 then Middle
         when 2 then Right
@@ -95,6 +97,10 @@ struct Termisu::Event::Mouse
         else        None
         end
       end
+    end
+
+    private def self.base_button(cb : Int32) : Int32
+      cb & Protocol::BUTTON_MASK
     end
   end
 

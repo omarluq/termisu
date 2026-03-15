@@ -45,26 +45,30 @@ struct Termisu::Event::Key
 
   # Returns true if this is Ctrl+C.
   def ctrl_c? : Bool
-    key.lower_c? && ctrl? && !alt? && !shift?
+    ctrl_plain_key?(&.lower_c?)
   end
 
   # Returns true if this is Ctrl+D.
   def ctrl_d? : Bool
-    key.lower_d? && ctrl? && !alt? && !shift?
+    ctrl_plain_key?(&.lower_d?)
   end
 
   # Returns true if this is Ctrl+Z.
   def ctrl_z? : Bool
-    key.lower_z? && ctrl? && !alt? && !shift?
+    ctrl_plain_key?(&.lower_z?)
   end
 
   # Returns true if this is Ctrl+Q.
   def ctrl_q? : Bool
-    key.lower_q? && ctrl? && !alt? && !shift?
+    ctrl_plain_key?(&.lower_q?)
   end
 
   # Returns the character for this key, if printable.
   def char : Char?
     key.to_char
+  end
+
+  private def ctrl_plain_key?(& : Input::Key -> Bool) : Bool
+    yield(key) && ctrl? && !alt? && !shift?
   end
 end
