@@ -122,8 +122,7 @@ class Termisu::Terminal::Backend
 
   # Sets terminal to specific mode using Terminal::Mode flags.
   #
-  # Updates raw_mode_enabled tracking based on whether mode is raw
-  # (none? means no flags set = raw mode).
+  # Updates raw_mode_enabled tracking based on whether mode is raw.
   #
   # Parameters:
   # - mode: Terminal::Mode flags specifying desired behavior
@@ -136,7 +135,7 @@ class Termisu::Terminal::Backend
   # ameba:disable Naming/AccessorMethodName
   def set_mode(mode : Terminal::Mode)
     @termios.set_mode(mode)
-    # Raw mode = no flags set (value 0). Can't use none? due to @[Flags] semantics.
+    # Raw mode is represented by the zero-value flags state.
     @raw_mode_enabled = mode.value == 0
   end
 
