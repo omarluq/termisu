@@ -138,8 +138,7 @@ class Termisu::Reader
       pollfd.revents = 0_i16
 
       # Compute remaining timeout from original start to avoid drift
-      elapsed_ms = (monotonic_now - start).total_milliseconds.to_i
-      remaining_ms = {original_timeout_ms - elapsed_ms, 0}.max
+      remaining_ms = remaining_timeout_ms(original_timeout_ms, start)
 
       result = LibC.poll(pointerof(pollfd), LibC::NfdsT.new(1), remaining_ms)
 
@@ -165,8 +164,7 @@ class Termisu::Reader
         end
 
         # Check if timeout has expired during retries
-        elapsed_ms = (monotonic_now - start).total_milliseconds.to_i
-        if elapsed_ms >= original_timeout_ms
+        if remaining_timeout_ms(original_timeout_ms, start) == 0
           return false
         end
 
@@ -212,9 +210,7 @@ class Termisu::Reader
         end
 
         # Recompute remaining timeout
-        elapsed = monotonic_now - start
-        elapsed_usec = (elapsed.total_milliseconds * 1000).to_i64
-        remaining_usec = {original_total_usec - elapsed_usec, 0_i64}.max
+        remaining_usec = remaining_timeout_usec(original_total_usec, start)
 
         if remaining_usec == 0
           # Timeout expired during retry attempts
@@ -298,6 +294,22 @@ class Termisu::Reader
       Termisu::Logs::Reader.error { "fill_buffer: read error #{errno}" }
       raise Termisu::IOError.read_failed(errno)
     end
+  end
+
+  private def remaining_timeout_ms(original_timeout_ms : Int32, start : MonotonicTime) : Int32
+    {original_timeout_ms - elapsed_milliseconds(start), 0}.max
+  end
+
+  private def remaining_timeout_usec(original_timeout_usec : Int64, start : MonotonicTime) : Int64
+    {original_timeout_usec - elapsed_microseconds(start), 0_i64}.max
+  end
+
+  private def elapsed_milliseconds(start : MonotonicTime) : Int32
+    (monotonic_now - start).total_milliseconds.to_i
+  end
+
+  private def elapsed_microseconds(start : MonotonicTime) : Int64
+    elapsed_milliseconds(start).to_i64 * 1000
   end
 end
 
