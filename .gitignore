@@ -32,20 +32,16 @@
 /e2e/test-results/
 
 /docs-web/public
-
-
-.claude/tsc-cache/
-
 # Dolt database files (added by bd init)
 .dolt/
-.beads
-.opencode
-.claude
-.omx
-.ocx
-.planning
-.tmp
-AutoRunDocs
+.beads/
+.opencode/
+.claude/
+.omx/
+.ocx/
+.planning/
+.tmp/
+AutoRunDocs/
 
 # bv (beads viewer) local config and caches
 .bv/

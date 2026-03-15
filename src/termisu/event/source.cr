@@ -79,7 +79,7 @@ abstract class Termisu::Event::Source
   # Examples: "input", "resize", "timer", "custom-network"
   abstract def name : String
 
-  protected def send_nonblocking(output : Channel(Event::Any), event : Event::Tick) : Bool
+  protected def send_nonblocking(output : Channel(Event::Any), event : Event::Any) : Bool
     select
     when output.send(event)
       true
