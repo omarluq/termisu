@@ -9,14 +9,14 @@ Guidance for coding agents working in the Termisu repository.
 - Prefer changing the smallest surface area that solves the task.
 - Follow existing architecture and naming before introducing new abstractions.
 - Read `CLAUDE.md` first for architecture, command aliases, and project-specific patterns.
-- Use `.claude/INDEX.md` as the directory for local skills, rules, and specialist agents.
+- Check `CLAUDE.md` for any repo-shipped agent guidance beyond this file.
 - Check `PROJECT_INDEX.md` for a compact project overview.
 - Look at `spec/` and `examples/` before inventing new APIs or behaviors.
 
 ## Instruction Files Present
 
 - `CLAUDE.md` exists at the repo root and contains repo-specific guidance.
-- `.claude/INDEX.md` and `.claude/rules/*.md` contain additional conventions worth following.
+- No repo-local `.claude/` instruction directory was found in this branch.
 - No `.cursor/rules/` directory was found.
 - No `.cursorrules` file was found.
 - No `.github/copilot-instructions.md` file was found.

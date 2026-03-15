@@ -206,13 +206,13 @@ class Termisu::Event::Source::SystemTimer < Termisu::Event::Source
     @last_tick = now
     @frame += 1
 
-    next_pending_missed = next_pending_missed(send_nonblocking(output, tick), missed)
+    pending_missed_next = next_pending_missed(send_nonblocking(output, tick), missed)
 
     if missed > 0
       Log.warn { "SystemTimer missed #{missed} tick(s) at frame #{frame}" }
     end
 
-    {now, next_pending_missed}
+    {now, pending_missed_next}
   end
 
   # Expirations > 1 means kernel observed dropped intervals.
