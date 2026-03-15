@@ -45,7 +45,6 @@ lib LibC
   fun poll(fds : Pollfd*, nfds : NfdsT, timeout : Int32) : Int32
 
   POLLIN   = 0x0001_i16
-  POLLPRI  = 0x0002_i16
   POLLOUT  = 0x0004_i16
   POLLERR  = 0x0008_i16
   POLLHUP  = 0x0010_i16

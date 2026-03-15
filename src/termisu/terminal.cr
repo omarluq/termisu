@@ -648,7 +648,6 @@ class Termisu::Terminal < Termisu::Renderer
   #         8=report_all_keys, 16=report_text
   KITTY_KEYBOARD_ENABLE  = "\e[>1u" # Enable with disambiguate flag
   KITTY_KEYBOARD_DISABLE = "\e[<u"  # Pop keyboard mode
-  KITTY_KEYBOARD_QUERY   = "\e[?u"  # Query current mode
 
   # modifyOtherKeys (xterm, widely supported):
   #   Mode 2 reports modified keys as CSI 27 ; modifier ; keycode ~
