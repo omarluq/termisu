@@ -78,4 +78,17 @@ abstract class Termisu::Event::Source
   # Used for logging, debugging, and identifying sources in the Event::Loop.
   # Examples: "input", "resize", "timer", "custom-network"
   abstract def name : String
+
+  protected def send_nonblocking(output : Channel(Event::Any), event : Event::Tick) : Bool
+    select
+    when output.send(event)
+      true
+    else
+      false
+    end
+  end
+
+  protected def next_pending_missed(delivered : Bool, missed : UInt64) : UInt64
+    delivered ? 0_u64 : missed + 1_u64
+  end
 end

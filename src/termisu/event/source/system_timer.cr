@@ -166,16 +166,6 @@ class Termisu::Event::Source::SystemTimer < Termisu::Event::Source
     Log.debug { "SystemTimer stopped during poll wait (#{ex.message}), exiting" }
   end
 
-  # Sends without blocking. Returns true on success, false when channel is full.
-  private def send_nonblocking(output : Channel(Event::Any), event : Event::Tick) : Bool
-    select
-    when output.send(event)
-      true
-    else
-      false
-    end
-  end
-
   # Yields before blocking on poller.wait to keep other fibers responsive.
   private def wait_for_poll_result(poller : Event::Poller) : Event::Poller::PollResult?
     Fiber.yield
@@ -216,7 +206,7 @@ class Termisu::Event::Source::SystemTimer < Termisu::Event::Source
     @last_tick = now
     @frame += 1
 
-    next_pending_missed = send_nonblocking(output, tick) ? 0_u64 : missed + 1_u64
+    next_pending_missed = next_pending_missed(send_nonblocking(output, tick), missed)
 
     if missed > 0
       Log.warn { "SystemTimer missed #{missed} tick(s) at frame #{frame}" }
