@@ -141,9 +141,7 @@ class Termisu::Terminfo
   # Coordinates are 0-based and will be converted to 1-based by the %i
   # operation in the capability string.
   def cursor_position_seq(row : Int32, col : Int32) : String
-    cap = @cached_cup || get_cap("cup")
-    return "" if cap.empty?
-    Tparm.process(cap, row.to_i64, col.to_i64)
+    process_param_cap(@cached_cup, "cup", row, col)
   end
 
   # Returns the raw setaf capability string (parametrized foreground color).
@@ -162,18 +160,14 @@ class Termisu::Terminfo
   #
   # Uses the terminfo `setaf` capability with tparm processing.
   def foreground_color_seq(color_index : Int32) : String
-    cap = @cached_setaf || get_cap("setaf")
-    return "" if cap.empty?
-    Tparm.process(cap, color_index.to_i64)
+    process_param_cap(@cached_setaf, "setaf", color_index)
   end
 
   # Returns escape sequence to set background color.
   #
   # Uses the terminfo `setab` capability with tparm processing.
   def background_color_seq(color_index : Int32) : String
-    cap = @cached_setab || get_cap("setab")
-    return "" if cap.empty?
-    Tparm.process(cap, color_index.to_i64)
+    process_param_cap(@cached_setab, "setab", color_index)
   end
 
   # --- Cursor Movement Sequences (Parametrized) ---
@@ -230,6 +224,13 @@ class Termisu::Terminfo
     cap = cached || get_cap(name)
     return "" if cap.empty?
     Tparm.process(cap, param.to_i64)
+  end
+
+  # Processes a two-parameter capability with tparm.
+  private def process_param_cap(cached : String?, name : String, first : Int32, second : Int32) : String
+    cap = cached || get_cap(name)
+    return "" if cap.empty?
+    Tparm.process(cap, first.to_i64, second.to_i64)
   end
 
   # --- Text Attribute Sequences ---
