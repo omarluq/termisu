@@ -43,18 +43,6 @@ struct Termisu::Color
     RGB     # 24-bit true color
   end
 
-  # Named ANSI colors for convenience.
-  enum Name
-    Black
-    Red
-    Green
-    Yellow
-    Blue
-    Magenta
-    Cyan
-    White
-  end
-
   getter mode : Mode
 
   # ANSI color index (0-255) for ANSI8 and ANSI256 modes.
