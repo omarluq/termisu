@@ -128,9 +128,9 @@ class Termisu::Event::Source::Resize < Termisu::Event::Source
     # Install SIGWINCH handler
     install_signal_handler
 
-    gen = @generation.add(1) &+ 1
+    generation = @generation.add(1) &+ 1
     @fiber = spawn(name: "termisu-resize") do
-      run_loop(gen)
+      run_loop(generation)
     end
 
     Log.debug { "Resize source started, initial size: #{initial_width}x#{initial_height}" }
@@ -181,9 +181,9 @@ class Termisu::Event::Source::Resize < Termisu::Event::Source
   # Main resize monitoring loop - runs in a spawned fiber.
   #
   # Checks the `@signal_received` atomic flag each iteration. If SIGWINCH
-  # was received, processes the resize immediately (skipping sleep). Otherwise
-  # sleeps for `@poll_interval` before checking for size changes.
-  private def run_loop(my_generation : Int32) : Nil
+  # was received, it skips the sleep and checks for a resize immediately.
+  # Otherwise it sleeps for `@poll_interval` before checking again.
+  private def run_loop(generation : Int32) : Nil
     output = @output
     return unless output
 
@@ -197,7 +197,7 @@ class Termisu::Event::Source::Resize < Termisu::Event::Source
 
       # Check generation after sleep — if it changed, a stop+start cycle
       # occurred and a new fiber owns this generation. Self-terminate.
-      break unless @generation.get == my_generation
+      break unless @generation.get == generation
       break unless @running.get
 
       check_and_emit_resize(output)
@@ -211,9 +211,8 @@ class Termisu::Event::Source::Resize < Termisu::Event::Source
   # and sends it to the output channel. Updates last known size for the
   # next comparison.
   #
-  # NOTE: If the output channel is closed (e.g., during shutdown), the
-  # `output.send` call will raise Channel::ClosedError, which propagates
-  # up through run_loop and terminates the fiber.
+  # If the output channel is closed during shutdown, `output.send` raises
+  # `Channel::ClosedError` and the fiber exits.
   private def check_and_emit_resize(output : Channel(Event::Any)) : Nil
     new_width, new_height = @size_provider.call
 

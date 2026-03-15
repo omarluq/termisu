@@ -34,20 +34,12 @@ struct Termisu::RenderState
   property cursor_y : Int32?
 
   def initialize
-    @fg = nil
-    @bg = nil
-    @attr = Attribute::None
-    @cursor_x = nil
-    @cursor_y = nil
+    @fg, @bg, @attr, @cursor_x, @cursor_y = default_state
   end
 
   # Resets state to unknown (forces next render to emit all sequences).
   def reset
-    @fg = nil
-    @bg = nil
-    @attr = Attribute::None
-    @cursor_x = nil
-    @cursor_y = nil
+    @fg, @bg, @attr, @cursor_x, @cursor_y = default_state
   end
 
   # Applies style to renderer, only emitting changes.
@@ -110,6 +102,10 @@ struct Termisu::RenderState
   # Checks if cursor is at the expected position for a horizontal write.
   def cursor_at?(x : Int32, y : Int32) : Bool
     @cursor_x == x && @cursor_y == y
+  end
+
+  private def default_state : Tuple(Color?, Color?, Attribute, Int32?, Int32?)
+    {nil, nil, Attribute::None, nil, nil}
   end
 
   private def apply_attribute_change(renderer : Renderer, new_attr : Attribute)
