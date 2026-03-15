@@ -24,6 +24,7 @@
 
 # E2E test artifacts
 /node_modules/
+/javascript/**/node_modules/
 /javascript/node_modules/
 /e2e/node_modules/
 /e2e/.tui-test/
@@ -37,4 +38,14 @@
 
 # Dolt database files (added by bd init)
 .dolt/
-*.db
+.beads
+.opencode
+.claude
+.omx
+.ocx
+.planning
+.tmp
+AutoRunDocs
+
+# bv (beads viewer) local config and caches
+.bv/
