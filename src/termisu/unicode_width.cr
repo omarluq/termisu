@@ -79,30 +79,6 @@ module Termisu::UnicodeWidth
     raw_width > 2 ? 2u8 : raw_width.to_u8
   end
 
-  # Returns the display width of a string (multiple grapheme clusters).
-  #
-  # Uses Crystal's grapheme segmentation and sums grapheme widths.
-  #
-  # Parameters:
-  # - `text`: Any String
-  #
-  # Returns total column width.
-  #
-  # ```
-  # UnicodeWidth.string_width("Hello") # => 5
-  # UnicodeWidth.string_width("你好")    # => 4
-  # UnicodeWidth.string_width("café")  # => 4
-  # ```
-  def self.string_width(text : String) : Int32
-    return 0 if text.empty?
-
-    width = 0
-    text.each_grapheme do |grapheme|
-      width += grapheme_width(grapheme.to_s)
-    end
-    width
-  end
-
   # :nodoc:
   private def self.zero_width_codepoint?(cp : Int32) : Bool
     # Non-printable and control characters
