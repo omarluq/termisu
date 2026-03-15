@@ -44,49 +44,33 @@ class Termisu::Terminfo::Database
   # Raises an exception if no database is found in any location.
   def load : Bytes
     Log.trace { "Searching for terminfo database: #{@name}" }
-    try_terminfo_env ||
-      try_home_terminfo ||
-      try_terminfo_dirs ||
-      try_lib_terminfo ||
-      try_usr_local_share ||
-      try_usr_share ||
-      raise "Could not find terminfo database for #{@name}"
-  end
-
-  private def try_terminfo_env : Bytes?
-    if terminfo = ENV["TERMINFO"]?
-      try_path(terminfo)
-    end
-  end
-
-  private def try_home_terminfo : Bytes?
-    if home = ENV["HOME"]?
-      try_path("#{home}/.terminfo")
-    end
-  end
-
-  private def try_terminfo_dirs : Bytes?
-    if dirs = ENV["TERMINFO_DIRS"]?
-      dirs.split(":").each do |dir|
-        dir = "/usr/share/terminfo" if dir.empty?
-        if data = try_path(dir)
-          return data
-        end
+    each_search_path do |base|
+      if data = try_path(base)
+        return data
       end
     end
-    nil
+
+    raise "Could not find terminfo database for #{@name}"
   end
 
-  private def try_lib_terminfo : Bytes?
-    try_path("/lib/terminfo")
-  end
+  private def each_search_path(& : String ->) : Nil
+    if terminfo = ENV["TERMINFO"]?
+      yield terminfo
+    end
 
-  private def try_usr_local_share : Bytes?
-    try_path("/usr/local/share/terminfo")
-  end
+    if home = ENV["HOME"]?
+      yield "#{home}/.terminfo"
+    end
 
-  private def try_usr_share : Bytes?
-    try_path("/usr/share/terminfo")
+    if dirs = ENV["TERMINFO_DIRS"]?
+      dirs.split(":").each do |dir|
+        yield dir.empty? ? "/usr/share/terminfo" : dir
+      end
+    end
+
+    yield "/lib/terminfo"
+    yield "/usr/local/share/terminfo"
+    yield "/usr/share/terminfo"
   end
 
   private def try_path(base : String) : Bytes?
