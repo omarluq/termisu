@@ -30,7 +30,7 @@ class CaptureRenderer < Termisu::Renderer
 
   # --- Core I/O ---
 
-  def write(data : String)
+  def write(data : String, columns_advanced = 0)
     @writes << data
   end
 
@@ -50,13 +50,13 @@ class CaptureRenderer < Termisu::Renderer
     write("\e[#{y + 1};#{x + 1}H")
   end
 
-  def write_show_cursor
+  def show_cursor
     return if @cached_cursor_visible
     @cached_cursor_visible = true
     write("\e[?25h")
   end
 
-  def write_hide_cursor
+  def hide_cursor
     cached = @cached_cursor_visible
     return if cached.is_a?(Bool) && !cached
     @cached_cursor_visible = false

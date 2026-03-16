@@ -13,6 +13,7 @@
 class CaptureTerminal < Termisu::Terminal
   property writes : Array(String) = [] of String
   property captured_flush_count : Int32 = 0
+  property size = {80, 24}
 
   def initialize(*, sync_updates : Bool = true)
     super(sync_updates: sync_updates)

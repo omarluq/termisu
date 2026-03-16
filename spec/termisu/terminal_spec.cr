@@ -525,5 +525,87 @@ describe Termisu::Terminal do
         terminal.try &.close
       end
     end
+
+    describe "#hide_cursor" do
+      it "hides the cursor" do
+        terminal = Termisu::Terminal.new
+        terminal.hide_cursor
+        terminal.cursor.visible?.should be_false
+        terminal.show_cursor
+        terminal.hide_cursor
+        terminal.cursor.visible?.should be_false
+      end
+    end
+
+    describe "#show_cursor" do
+      it "shows the cursor" do
+        terminal = Termisu::Terminal.new
+        terminal.show_cursor
+        terminal.cursor.visible?.should be_true
+        terminal.hide_cursor
+        terminal.show_cursor
+        terminal.cursor.visible?.should be_true
+      end
+    end
+
+    describe "#move_cursor" do
+      terminal = CaptureTerminal.new
+
+      it "defaults at 0, 0" do
+        terminal.cursor.x.should eq 0
+        terminal.cursor.y.should eq 0
+      end
+
+      it "does not move when no arguments" do
+        terminal.move_cursor
+        terminal.cursor.x.should eq 0
+        terminal.cursor.y.should eq 0
+      end
+
+      it "moves the cursor to the specified position" do
+        terminal.move_cursor(10, 10)
+        terminal.cursor.x.should eq 10
+        terminal.cursor.y.should eq 10
+      end
+
+      it "does not move when no arguments" do
+        terminal.move_cursor
+        terminal.cursor.x.should eq 10
+        terminal.cursor.y.should eq 10
+      end
+
+      it "does not move beyond the terminal's size" do
+        terminal.move_cursor(100, 100)
+        terminal.cursor.x.should eq 79
+        terminal.cursor.y.should eq 23
+      end
+
+      it "moves the cursor into bounds after resize" do
+        terminal.size = {10, 10}
+        terminal.move_cursor
+        terminal.cursor.x.should eq 9
+        terminal.cursor.y.should eq 9
+      end
+
+      it "does not move the cursor after size increase" do
+        terminal.size = {100, 100}
+        terminal.move_cursor
+        terminal.cursor.x.should eq 9
+        terminal.cursor.y.should eq 9
+      end
+
+      it "moves the cursor to the specified position" do
+        terminal.move_cursor(50, 50)
+        terminal.cursor.x.should eq 50
+        terminal.cursor.y.should eq 50
+      end
+
+      it "does not move beyond the terminal's size" do
+        terminal.size = {10, 10}
+        terminal.move_cursor(50, 50)
+        terminal.cursor.x.should eq 9
+        terminal.cursor.y.should eq 9
+      end
+    end
   end
 end

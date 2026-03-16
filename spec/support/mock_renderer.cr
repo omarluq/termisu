@@ -38,7 +38,7 @@ class MockRenderer < Termisu::Renderer
 
   # --- Core I/O ---
 
-  def write(data : String)
+  def write(data : String, columns_advanced = 0)
     @write_calls << data
   end
 
@@ -60,11 +60,11 @@ class MockRenderer < Termisu::Renderer
     @move_calls << {x, y}
   end
 
-  def write_show_cursor
+  def show_cursor
     @show_cursor_count += 1
   end
 
-  def write_hide_cursor
+  def hide_cursor
     @hide_cursor_count += 1
   end
 
