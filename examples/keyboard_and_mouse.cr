@@ -412,7 +412,5 @@ begin
   end
 ensure
   Termisu::Log.info { "Keyboard & Mouse demo closing" }
-  termisu.disable_enhanced_keyboard
-  termisu.disable_mouse
   termisu.close
 end

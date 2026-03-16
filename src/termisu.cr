@@ -88,8 +88,6 @@ class Termisu
     @event_loop.stop
     Log.debug { "Event loop stopped" }
 
-    @terminal.exit_alternate_screen
-    @terminal.disable_raw_mode
     @reader.close
     @terminal.close
 

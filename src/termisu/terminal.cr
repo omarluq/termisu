@@ -17,7 +17,6 @@
 # terminal.set_cursor(12, 5)
 # terminal.render
 #
-# terminal.exit_alternate_screen
 # terminal.close
 # ```
 class Termisu::Terminal < Termisu::Renderer
@@ -498,6 +497,10 @@ class Termisu::Terminal < Termisu::Renderer
   # Closes the terminal and underlying backend.
   def close
     Log.debug { "Closing terminal" }
+    disable_mouse
+    disable_enhanced_keyboard
+    exit_alternate_screen
+    disable_raw_mode
     @backend.close
   end
 
