@@ -29,6 +29,7 @@ class Termisu::Terminal < Termisu::Renderer
   @enhanced_keyboard : Bool = false
   @sync_updates : Bool = true
   getter cursor : Cursor = Cursor.new
+  getter title : String = ""
 
   # Cached render state for direct API optimization.
   # Prevents redundant escape sequences when the same style is set repeatedly.
@@ -683,6 +684,12 @@ class Termisu::Terminal < Termisu::Renderer
       @enhanced_keyboard = true
       disable_enhanced_keyboard
     end
+  end
+
+  def title=(title : String)
+    return title if title == @title
+    write(@terminfo.to_status_line_seq + title + @terminfo.from_status_line_seq)
+    @title = title
   end
 end
 

@@ -790,6 +790,9 @@ class Termisu
   # termisu.disable_enhanced_keyboard
   # ```
   delegate enable_enhanced_keyboard, disable_enhanced_keyboard, enhanced_keyboard?, to: @terminal
+
+  # The title assigned to the Terminal's window
+  delegate title, :title=, to: @terminal
 end
 
 require "./termisu/*"

@@ -182,7 +182,7 @@ begin
   end
 
   # Draw title
-  title = "⌨ KEYBOARD & MOUSE DEMO ⌨"
+  termisu.title = title = "⌨ KEYBOARD & MOUSE DEMO ⌨"
   title_x = [(width - title.size) // 2, 0].max
   draw_text.call(title_x, start_y - 2, title, Termisu::Color.cyan, nil)
 
