@@ -383,7 +383,10 @@ begin
         termisu.set_cursor(
           mouse_x - 1,
           mouse_y - 1,
-          blink: mouse_event.ctrl? || mouse_event.shift? || mouse_event.alt?
+          blink: mouse_event.ctrl? || mouse_event.shift? || mouse_event.alt?,
+          shape: {1 => Termisu::Terminal::Cursor::Shape::Block,
+                  2 => Termisu::Terminal::Cursor::Shape::Underline,
+                  3 => Termisu::Terminal::Cursor::Shape::Bar}[mouse_event.button.value]?
         )
         termisu.render
       when Termisu::Event::Resize

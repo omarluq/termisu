@@ -4,8 +4,15 @@ class Termisu::Terminal
     property y : Int32 = 0
     property? visible : Bool
     property? blink : Bool = false
+    property shape : Shape = Shape::Block
 
     def initialize(@visible = false)
+    end
+
+    enum Shape
+      Block     = 1
+      Underline = 3
+      Bar       = 5
     end
   end
 
@@ -48,9 +55,16 @@ class Termisu::Terminal
     write_cursor
   end
 
+  def cursor_shape=(shape : Cursor::Shape)
+    return shape if @cursor.shape == shape
+    @cursor.shape = shape
+    write_cursor
+    shape
+  end
+
   private def write_cursor
     return unless @cursor.visible?
-    write("\e[#{@cursor.blink? ? 1 : 2} q")
+    write("\e[#{@cursor.shape.value + (@cursor.blink? ? 0 : 1)} q")
     write(@terminfo.blink_cursor_seq) if @cursor.blink?
   end
 
