@@ -28,13 +28,13 @@ class Termisu::Terminal < Termisu::Renderer
   @mouse_enabled : Bool = false
   @enhanced_keyboard : Bool = false
   @sync_updates : Bool = true
+  getter cursor : Cursor = Cursor.new
 
   # Cached render state for direct API optimization.
   # Prevents redundant escape sequences when the same style is set repeatedly.
   @cached_fg : Color?
   @cached_bg : Color?
   @cached_attr : Attribute = Attribute::None
-  @cached_cursor_visible : Bool?
 
   # Creates a new terminal.
   #
@@ -65,8 +65,7 @@ class Termisu::Terminal < Termisu::Renderer
     write(@terminfo.clear_screen_seq)
     write(@terminfo.enter_keypad_seq)
     reset_render_state
-    @cached_cursor_visible = false # We're about to hide it
-    write(@terminfo.hide_cursor_seq)
+    apply_cursor_state
     flush
     @alternate_screen = true
   end
@@ -79,8 +78,8 @@ class Termisu::Terminal < Termisu::Renderer
   def exit_alternate_screen
     return unless @alternate_screen
     Log.debug { "Exiting alternate screen" }
-    @cached_cursor_visible = true # We're about to show it
-    write(@terminfo.show_cursor_seq)
+    @cursor = Cursor.new visible: true
+    apply_cursor_state
     write(@terminfo.exit_keypad_seq)
     write(@terminfo.exit_ca_seq)
     reset_render_state
@@ -120,27 +119,6 @@ class Termisu::Terminal < Termisu::Renderer
     @cached_fg = nil
     @cached_bg = nil
     @cached_attr = Attribute::None
-    @cached_cursor_visible = nil
-  end
-
-  # Moves cursor to the specified position.
-  #
-  # Uses the terminfo `cup` capability with tparm processing for proper
-  # terminal-specific cursor addressing. The cup capability handles the
-  # 0-to-1 based coordinate conversion via the %i operation.
-  #
-  # Parameters:
-  # - x: Column position (0-based)
-  # - y: Row position (0-based)
-  def move_cursor(x : Int32, y : Int32)
-    # Note: cup uses (row, col) order, so y comes first
-    seq = @terminfo.cursor_position_seq(y, x)
-    if seq.empty?
-      # Fallback to hardcoded ANSI if cup unavailable
-      write("\e[#{y + 1};#{x + 1}H")
-    else
-      write(seq)
-    end
   end
 
   # Sets the foreground color with full ANSI-8, ANSI-256, and RGB support.
@@ -185,30 +163,6 @@ class Termisu::Terminal < Termisu::Renderer
         write("\e[48;2;#{color.r};#{color.g};#{color.b}m")
       end
     end
-  end
-
-  # Writes show cursor escape sequence immediately.
-  #
-  # Caches visibility state to avoid redundant escape sequences.
-  # Note: This is part of the Renderer interface, called by Buffer.
-  # For buffer-based cursor control, use show_cursor instead.
-  def write_show_cursor
-    return if @cached_cursor_visible
-    @cached_cursor_visible = true
-    write(@terminfo.show_cursor_seq)
-  end
-
-  # Writes hide cursor escape sequence immediately.
-  #
-  # Caches visibility state to avoid redundant escape sequences.
-  # Note: This is part of the Renderer interface, called by Buffer.
-  # For buffer-based cursor control, use hide_cursor instead.
-  def write_hide_cursor
-    # Skip if cursor is already hidden (false). Don't skip if nil (unknown).
-    cached = @cached_cursor_visible
-    return if cached.is_a?(Bool) && !cached
-    @cached_cursor_visible = false
-    write(@terminfo.hide_cursor_seq)
   end
 
   # Resets all attributes to default.
@@ -291,11 +245,6 @@ class Termisu::Terminal < Termisu::Renderer
     return if @cached_attr.strikethrough?
     @cached_attr |= Attribute::Strikethrough
     write(@terminfo.strikethrough_seq)
-  end
-
-  # Delegates write to backend.
-  def write(data : String)
-    @backend.write(data)
   end
 
   # Delegates flush to backend.
@@ -394,22 +343,25 @@ class Termisu::Terminal < Termisu::Renderer
 
     # Track state to restore
     was_in_alternate = @alternate_screen
-    previous_cursor_visible = @cached_cursor_visible
+
+    backup_cursor = @cursor
+    @cursor = Cursor.new visible: true
+    apply_cursor_state
 
     # For canonical/echo modes, exit alternate screen unless preserving
     exit_alternate_screen if !preserve_screen && user_interactive && was_in_alternate
-
-    # Show cursor for user-interactive modes
-    prepare_cursor_for_mode(user_interactive)
 
     # Switch mode via backend (handles termios and tracking)
     @backend.with_mode(mode) { yield }
   ensure
     Log.debug { "Exiting with_mode, restoring state" }
-    restore_cursor_state(previous_cursor_visible, user_interactive)
     if was_in_alternate && !@alternate_screen
       enter_alternate_screen
     end
+
+    @cursor = backup_cursor unless backup_cursor.nil?
+    apply_cursor_state
+    apply_terminal_state
     # Always invalidate after non-raw modes - screen content is
     # unpredictable after puts/print/gets during the mode block
     invalidate_buffer unless mode.none?
@@ -418,22 +370,6 @@ class Termisu::Terminal < Termisu::Renderer
     # styling, making our cached fg/bg/attr assumptions stale.
     reset_render_state
     flush
-  end
-
-  # Prepares cursor visibility for mode transition.
-  private def prepare_cursor_for_mode(user_interactive : Bool)
-    return unless user_interactive
-    write_show_cursor
-    flush
-  end
-
-  # Restores cursor visibility after mode transition.
-  private def restore_cursor_state(previous_visible : Bool?, user_interactive : Bool?)
-    if previous_visible == false || !user_interactive
-      write_hide_cursor
-    elsif previous_visible == true
-      write_show_cursor
-    end
   end
 
   # Executes a block with cooked (shell-like) mode.
@@ -544,7 +480,9 @@ class Termisu::Terminal < Termisu::Renderer
   def render
     begin_sync_update
     begin
-      @buffer.render_to(self, auto_flush: !@sync_updates)
+      with_ephemeral_cursor do
+        @buffer.render_to(self, auto_flush: !@sync_updates)
+      end
     ensure
       end_sync_update
     end
@@ -559,7 +497,9 @@ class Termisu::Terminal < Termisu::Renderer
   def sync
     begin_sync_update
     begin
-      @buffer.sync_to(self, auto_flush: !@sync_updates)
+      with_ephemeral_cursor do
+        @buffer.sync_to(self, auto_flush: !@sync_updates)
+      end
     ensure
       end_sync_update
     end
@@ -586,29 +526,12 @@ class Termisu::Terminal < Termisu::Renderer
     @buffer.invalidate
   end
 
-  # Sets cursor position in the buffer and makes it visible.
-  #
-  # Coordinates are clamped to buffer bounds.
-  # Call render() to display the cursor on screen.
-  def set_cursor(x : Int32, y : Int32)
-    @buffer.set_cursor(x, y)
-  end
-
-  # Hides the cursor (rendered on next render()).
-  def hide_cursor
-    @buffer.hide_cursor
-  end
-
-  # Shows the cursor at current position (rendered on next render()).
-  def show_cursor
-    @buffer.show_cursor
-  end
-
   # Resizes the buffer to new dimensions.
   #
   # Preserves existing content where possible.
-  def resize_buffer(width : Int32, height : Int32)
+  def resize(width : Int32, height : Int32)
     @buffer.resize(width, height)
+    move_cursor
   end
 
   # --- Synchronized Updates (DEC Private Mode 2026) ---
@@ -742,6 +665,24 @@ class Termisu::Terminal < Termisu::Renderer
   # Returns whether enhanced keyboard protocol is enabled.
   def enhanced_keyboard? : Bool
     @enhanced_keyboard
+  end
+
+  private def apply_terminal_state
+    if @mouse_enabled
+      @mouse_enabled = false
+      enable_mouse
+    else
+      @mouse_enabled = true
+      disable_mouse
+    end
+
+    if @enhanced_keyboard
+      @enhanced_keyboard = false
+      enable_enhanced_keyboard
+    else
+      @enhanced_keyboard = true
+      disable_enhanced_keyboard
+    end
   end
 end
 

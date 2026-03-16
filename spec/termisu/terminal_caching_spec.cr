@@ -153,48 +153,48 @@ describe "Terminal State Caching" do
   describe "cursor visibility caching" do
     it "writes show cursor on first call" do
       terminal = CaptureRenderer.new
-      terminal.write_show_cursor
+      terminal.show_cursor
       terminal.writes.should contain("\e[?25h")
     end
 
     it "skips redundant show cursor" do
       terminal = CaptureRenderer.new
-      terminal.write_show_cursor
+      terminal.show_cursor
       initial_count = terminal.write_count
 
-      terminal.write_show_cursor
-      terminal.write_show_cursor
+      terminal.show_cursor
+      terminal.show_cursor
 
       terminal.write_count.should eq(initial_count)
     end
 
     it "writes hide cursor on first call" do
       terminal = CaptureRenderer.new
-      terminal.write_hide_cursor
+      terminal.hide_cursor
       terminal.writes.should contain("\e[?25l")
     end
 
     it "skips redundant hide cursor" do
       terminal = CaptureRenderer.new
-      terminal.write_hide_cursor
+      terminal.hide_cursor
       initial_count = terminal.write_count
 
-      terminal.write_hide_cursor
-      terminal.write_hide_cursor
+      terminal.hide_cursor
+      terminal.hide_cursor
 
       terminal.write_count.should eq(initial_count)
     end
 
     it "writes when toggling visibility" do
       terminal = CaptureRenderer.new
-      terminal.write_show_cursor
+      terminal.show_cursor
       terminal.clear_writes
 
-      terminal.write_hide_cursor
+      terminal.hide_cursor
       terminal.writes.should contain("\e[?25l")
 
       terminal.clear_writes
-      terminal.write_show_cursor
+      terminal.show_cursor
       terminal.writes.should contain("\e[?25h")
     end
   end
@@ -207,14 +207,14 @@ describe "Terminal State Caching" do
       terminal.foreground = Termisu::Color.red
       terminal.background = Termisu::Color.blue
       terminal.enable_bold
-      terminal.write_show_cursor
+      terminal.show_cursor
       terminal.clear_writes
 
       # Verify caching works
       terminal.foreground = Termisu::Color.red
       terminal.background = Termisu::Color.blue
       terminal.enable_bold
-      terminal.write_show_cursor
+      terminal.show_cursor
       terminal.writes.should be_empty
 
       # Reset and verify new calls emit sequences
@@ -222,7 +222,7 @@ describe "Terminal State Caching" do
       terminal.foreground = Termisu::Color.red
       terminal.background = Termisu::Color.blue
       terminal.enable_bold
-      terminal.write_show_cursor
+      terminal.show_cursor
 
       terminal.writes.size.should be > 0
       terminal.writes.should contain("\e[31m")

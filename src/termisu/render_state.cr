@@ -27,19 +27,13 @@ struct Termisu::RenderState
   # Current text attributes
   property attr : Attribute
 
-  # Current cursor X position (nil = unknown)
-  property cursor_x : Int32?
-
-  # Current cursor Y position (nil = unknown)
-  property cursor_y : Int32?
-
   def initialize
-    @fg, @bg, @attr, @cursor_x, @cursor_y = default_state
+    @fg, @bg, @attr = default_state
   end
 
   # Resets state to unknown (forces next render to emit all sequences).
   def reset
-    @fg, @bg, @attr, @cursor_x, @cursor_y = default_state
+    @fg, @bg, @attr = default_state
   end
 
   # Applies style to renderer, only emitting changes.
@@ -76,36 +70,8 @@ struct Termisu::RenderState
     changed
   end
 
-  # Moves cursor only if position changed.
-  #
-  # Returns true if cursor was moved.
-  def move_cursor(renderer : Renderer, x : Int32, y : Int32) : Bool
-    if x != @cursor_x || y != @cursor_y
-      renderer.move_cursor(x, y)
-      @cursor_x = x
-      @cursor_y = y
-      true
-    else
-      false
-    end
-  end
-
-  # Advances cursor X position without emitting escape sequence.
-  # Used when writing characters (cursor moves automatically).
-  # For wide characters, pass columns = 2.
-  def advance_cursor(columns : Int32 = 1)
-    if current_x = @cursor_x
-      @cursor_x = current_x + columns
-    end
-  end
-
-  # Checks if cursor is at the expected position for a horizontal write.
-  def cursor_at?(x : Int32, y : Int32) : Bool
-    @cursor_x == x && @cursor_y == y
-  end
-
-  private def default_state : Tuple(Color?, Color?, Attribute, Int32?, Int32?)
-    {nil, nil, Attribute::None, nil, nil}
+  private def default_state : Tuple(Color?, Color?, Attribute)
+    {nil, nil, Attribute::None}
   end
 
   private def apply_attribute_change(renderer : Renderer, new_attr : Attribute)

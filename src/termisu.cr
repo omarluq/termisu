@@ -162,9 +162,16 @@ class Termisu
   # --- Cursor Control ---
 
   # Sets cursor position and makes it visible.
-  # Hides the cursor (rendered on next render()).
-  # Shows the cursor (rendered on next render()).
-  delegate set_cursor, hide_cursor, show_cursor, to: @terminal
+  def set_cursor(x : Int32, y : Int32, visible : Bool? = true)
+    @terminal.move_cursor(x, y)
+    visible ? show_cursor : hide_cursor unless visible.nil?
+  end
+
+  # Hides the cursor.
+  delegate hide_cursor, to: @terminal
+
+  # Shows the cursor.
+  delegate show_cursor, to: @terminal
 
   # --- Input Operations ---
 
@@ -283,7 +290,7 @@ class Termisu
   # immediately so subsequent set_cell calls can address the new dimensions.
   private def prepare_event(event : Event::Any) : Event::Any
     if resize = event.as?(Event::Resize)
-      @terminal.resize_buffer(resize.width, resize.height)
+      @terminal.resize(resize.width, resize.height)
     end
 
     event
