@@ -1,4 +1,4 @@
 [tools]
 crystal = "1.19.1"
-node = "25.8.1"
+node = "25.8.2"
 bun = "1.3.10"
