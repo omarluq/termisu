@@ -182,7 +182,7 @@ begin
   end
 
   # Draw title
-  title = "⌨ KEYBOARD & MOUSE DEMO ⌨"
+  termisu.title = title = "⌨ KEYBOARD & MOUSE DEMO ⌨"
   title_x = [(width - title.size) // 2, 0].max
   draw_text.call(title_x, start_y - 2, title, Termisu::Color.cyan, nil)
 
@@ -380,6 +380,14 @@ begin
         # Redraw
         draw_mouse_panel.call(mouse_x, mouse_y, mouse_button)
         draw_event_log.call(last_event_text)
+        termisu.set_cursor(
+          mouse_x - 1,
+          mouse_y - 1,
+          blink: mouse_event.ctrl? || mouse_event.shift? || mouse_event.alt?,
+          shape: {1 => Termisu::Terminal::Cursor::Shape::Block,
+                  2 => Termisu::Terminal::Cursor::Shape::Underline,
+                  3 => Termisu::Terminal::Cursor::Shape::Bar}[mouse_event.button.value]?
+        )
         termisu.render
       when Termisu::Event::Resize
         resize_event = event.as(Termisu::Event::Resize)
@@ -412,7 +420,5 @@ begin
   end
 ensure
   Termisu::Log.info { "Keyboard & Mouse demo closing" }
-  termisu.disable_enhanced_keyboard
-  termisu.disable_mouse
   termisu.close
 end

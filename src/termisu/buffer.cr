@@ -23,7 +23,6 @@ class Termisu::Buffer
   Log = Termisu::Logs::Buffer
   getter width : Int32
   getter height : Int32
-  getter cursor : Cursor
 
   @front : Array(Cell)                   # Currently displayed buffer
   @back : Array(Cell)                    # Buffer being written to
@@ -43,7 +42,6 @@ class Termisu::Buffer
     size = @width * @height
     @front = Array(Cell).new(size, Cell.default)
     @back = Array(Cell).new(size, Cell.default)
-    @cursor = Cursor.new # Hidden by default
     @render_state = RenderState.new
     @batch_buffer = IO::Memory.new(@width) # Pre-sized for typical row batches
     @row_non_default_counts = Array(Int32).new(@height, 0)
@@ -213,26 +211,6 @@ class Termisu::Buffer
     mark_all_rows_dirty
   end
 
-  # Sets cursor position and makes it visible.
-  #
-  # Coordinates are clamped to buffer bounds. Negative values are clamped to 0.
-  # Values exceeding buffer dimensions are clamped to max valid position.
-  def set_cursor(x : Int32, y : Int32)
-    clamped_x = x.clamp(0, @width - 1)
-    clamped_y = y.clamp(0, @height - 1)
-    @cursor.set_position(clamped_x, clamped_y)
-  end
-
-  # Hides the cursor.
-  def hide_cursor
-    @cursor.hide
-  end
-
-  # Shows the cursor at current position (or 0,0 if never positioned).
-  def show_cursor
-    @cursor.show
-  end
-
   # Renders changes to the renderer by diffing front and back buffers.
   #
   # Only cells that have changed are redrawn. After rendering,
@@ -258,9 +236,6 @@ class Termisu::Buffer
       @any_dirty = false
     end
 
-    # Render cursor
-    render_cursor(renderer)
-
     renderer.flush if auto_flush
   end
 
@@ -281,9 +256,6 @@ class Termisu::Buffer
     end
 
     reset_dirty_rows
-
-    # Render cursor
-    render_cursor(renderer)
 
     renderer.flush if auto_flush
   end
@@ -343,9 +315,6 @@ class Termisu::Buffer
     @dirty_rows = Array(Bool).new(@height, true)
     @dirty_row_list = Array(Int32).new(@height) { |row| row }
     @any_dirty = @height > 0
-
-    # Clamp cursor position to new bounds
-    @cursor.clamp(@width, @height)
   end
 
   # Checks if coordinates are within buffer bounds.
@@ -416,16 +385,6 @@ class Termisu::Buffer
     end
 
     @row_non_default_counts = counts
-  end
-
-  # Renders cursor position and visibility to the renderer.
-  private def render_cursor(renderer : Renderer)
-    if @cursor.visible?
-      renderer.move_cursor(@cursor.x, @cursor.y)
-      renderer.write_show_cursor
-    else
-      renderer.write_hide_cursor
-    end
   end
 
   # Renders a row using diff-based rendering (only changed cells).
@@ -538,20 +497,11 @@ class Termisu::Buffer
   )
     return if chars.empty?
 
-    # Move cursor only if needed
-    @render_state.move_cursor(renderer, x, y)
+    renderer.move_cursor(x, y)
 
     # Apply style only if changed
     @render_state.apply_style(renderer, fg, bg, attr)
 
-    # Write all characters in the batch
-    renderer.write(chars)
-
-    # Update cursor position in render state.
-    # Cursor advancement is based on rendered cell widths (columns_advanced),
-    # not codepoint count. Wide characters (CJK, emoji) advance by 2 columns,
-    # combining marks advance by 0. This keeps render-state cursor tracking
-    # in sync with the terminal's actual cursor position.
-    @render_state.advance_cursor(columns_advanced)
+    renderer.write(chars, columns_advanced)
   end
 end

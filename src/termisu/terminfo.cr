@@ -115,6 +115,16 @@ class Termisu::Terminfo
     get_cap("clear")
   end
 
+  # Returns escape sequence to status line (tsl).
+  def to_status_line_seq : String
+    "\033]0;" # tsl and fsl apparently tend to be missing, so we're hardcoding them
+  end
+
+  # Returns escape sequence for from status line (fsl).
+  def from_status_line_seq : String
+    "\007"
+  end
+
   # --- Cursor Control Sequences ---
 
   # Returns escape sequence to show cursor (cnorm).
@@ -125,6 +135,11 @@ class Termisu::Terminfo
   # Returns escape sequence to hide cursor (civis).
   def hide_cursor_seq : String
     get_cap("civis")
+  end
+
+  # Returns escape sequence to make cursor blink/very visible (cvvis).
+  def blink_cursor_seq : String
+    get_cap("cvvis")
   end
 
   # Returns the raw cup capability string (parametrized).

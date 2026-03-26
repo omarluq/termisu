@@ -7,8 +7,6 @@ describe Termisu::RenderState do
       state.fg.should be_nil
       state.bg.should be_nil
       state.attr.should eq(Termisu::Attribute::None)
-      state.cursor_x.should be_nil
-      state.cursor_y.should be_nil
     end
   end
 
@@ -18,16 +16,12 @@ describe Termisu::RenderState do
       state.fg = Termisu::Color.red
       state.bg = Termisu::Color.blue
       state.attr = Termisu::Attribute::Bold
-      state.cursor_x = 10
-      state.cursor_y = 5
 
       state.reset
 
       state.fg.should be_nil
       state.bg.should be_nil
       state.attr.should eq(Termisu::Attribute::None)
-      state.cursor_x.should be_nil
-      state.cursor_y.should be_nil
     end
   end
 
@@ -166,99 +160,6 @@ describe Termisu::RenderState do
       # Colors should be re-emitted because reset clears them
       renderer.fg_calls.should eq([Termisu::Color.green])
       renderer.bg_calls.should eq([Termisu::Color.blue])
-    end
-  end
-
-  describe "#move_cursor" do
-    it "emits move when cursor position is unknown" do
-      renderer = MockRenderer.new
-      state = Termisu::RenderState.new
-
-      moved = state.move_cursor(renderer, 10, 5)
-
-      moved.should be_true
-      renderer.move_calls.should eq([{10, 5}])
-    end
-
-    it "skips move when cursor already at position" do
-      renderer = MockRenderer.new
-      state = Termisu::RenderState.new
-
-      state.move_cursor(renderer, 10, 5)
-      renderer.move_calls.clear
-
-      moved = state.move_cursor(renderer, 10, 5)
-
-      moved.should be_false
-      renderer.move_calls.should be_empty
-    end
-
-    it "emits move when cursor moves to new position" do
-      renderer = MockRenderer.new
-      state = Termisu::RenderState.new
-
-      state.move_cursor(renderer, 10, 5)
-      renderer.move_calls.clear
-
-      moved = state.move_cursor(renderer, 20, 10)
-
-      moved.should be_true
-      renderer.move_calls.should eq([{20, 10}])
-    end
-
-    it "updates internal state" do
-      renderer = MockRenderer.new
-      state = Termisu::RenderState.new
-
-      state.move_cursor(renderer, 10, 5)
-
-      state.cursor_x.should eq(10)
-      state.cursor_y.should eq(5)
-    end
-  end
-
-  describe "#advance_cursor" do
-    it "increments cursor x position" do
-      state = Termisu::RenderState.new
-      state.cursor_x = 10
-      state.cursor_y = 5
-
-      state.advance_cursor
-
-      state.cursor_x.should eq(11)
-      state.cursor_y.should eq(5)
-    end
-
-    it "does nothing when cursor position unknown" do
-      state = Termisu::RenderState.new
-
-      state.advance_cursor
-
-      state.cursor_x.should be_nil
-    end
-  end
-
-  describe "#cursor_at?" do
-    it "returns true when cursor at position" do
-      state = Termisu::RenderState.new
-      state.cursor_x = 10
-      state.cursor_y = 5
-
-      state.cursor_at?(10, 5).should be_true
-    end
-
-    it "returns false when cursor at different position" do
-      state = Termisu::RenderState.new
-      state.cursor_x = 10
-      state.cursor_y = 5
-
-      state.cursor_at?(20, 10).should be_false
-    end
-
-    it "returns false when cursor position unknown" do
-      state = Termisu::RenderState.new
-
-      state.cursor_at?(10, 5).should be_false
     end
   end
 

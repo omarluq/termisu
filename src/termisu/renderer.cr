@@ -12,7 +12,7 @@ abstract class Termisu::Renderer
   # --- Core I/O ---
 
   # Writes data to the renderer.
-  abstract def write(data : String)
+  abstract def write(data : String, columns_advanced = 0)
 
   # Flushes any buffered output.
   abstract def flush
@@ -29,10 +29,10 @@ abstract class Termisu::Renderer
   abstract def move_cursor(x : Int32, y : Int32)
 
   # Writes show cursor escape sequence.
-  abstract def write_show_cursor
+  abstract def show_cursor
 
   # Writes hide cursor escape sequence.
-  abstract def write_hide_cursor
+  abstract def hide_cursor
 
   # --- Color Control ---
 
