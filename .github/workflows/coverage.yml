@@ -42,7 +42,7 @@ jobs:
       - name: Run tests with coverage
         run: TERM=xterm-256color unbuffer kcov --clean --include-path=./src ./coverage ./bin/run_specs
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v6
         with:
           directory: ./coverage
           fail_ci_if_error: true
