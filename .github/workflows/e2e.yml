@@ -30,7 +30,7 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest]
-        crystal: ["1.18.2", "1.19.1"]
+        crystal: ["1.17.0", "1.18.2", "1.19.1"]
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout
@@ -51,7 +51,7 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest]
         shell: [bash, zsh, fish]
-        crystal: ["1.18.2", "1.19.1"]
+        crystal: ["1.17.0", "1.18.2", "1.19.1"]
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout
