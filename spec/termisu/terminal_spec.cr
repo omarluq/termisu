@@ -534,6 +534,8 @@ describe Termisu::Terminal do
         terminal.show_cursor
         terminal.hide_cursor
         terminal.cursor.visible?.should be_false
+      ensure
+        terminal.try &.close
       end
     end
 
@@ -545,66 +547,112 @@ describe Termisu::Terminal do
         terminal.hide_cursor
         terminal.show_cursor
         terminal.cursor.visible?.should be_true
+      ensure
+        terminal.try &.close
       end
     end
 
     describe "#move_cursor" do
-      terminal = CaptureTerminal.new
-
       it "defaults at 0, 0" do
+        terminal = CaptureTerminal.new
         terminal.cursor.x.should eq 0
         terminal.cursor.y.should eq 0
+      ensure
+        terminal.try &.close
       end
 
       it "does not move when no arguments" do
+        terminal = CaptureTerminal.new
         terminal.move_cursor
         terminal.cursor.x.should eq 0
         terminal.cursor.y.should eq 0
+      ensure
+        terminal.try &.close
       end
 
       it "moves the cursor to the specified position" do
+        terminal = CaptureTerminal.new
         terminal.move_cursor(10, 10)
         terminal.cursor.x.should eq 10
         terminal.cursor.y.should eq 10
+      ensure
+        terminal.try &.close
       end
 
-      it "does not move when no arguments" do
+      it "keeps the current position when called without arguments" do
+        terminal = CaptureTerminal.new
+        terminal.move_cursor(10, 10)
         terminal.move_cursor
         terminal.cursor.x.should eq 10
         terminal.cursor.y.should eq 10
+      ensure
+        terminal.try &.close
       end
 
       it "does not move beyond the terminal's size" do
+        terminal = CaptureTerminal.new
         terminal.move_cursor(100, 100)
         terminal.cursor.x.should eq 79
         terminal.cursor.y.should eq 23
+      ensure
+        terminal.try &.close
       end
 
       it "moves the cursor into bounds after resize" do
+        terminal = CaptureTerminal.new
+        terminal.move_cursor(100, 100)
         terminal.size = {10, 10}
         terminal.move_cursor
         terminal.cursor.x.should eq 9
         terminal.cursor.y.should eq 9
+      ensure
+        terminal.try &.close
       end
 
       it "does not move the cursor after size increase" do
+        terminal = CaptureTerminal.new
+        terminal.move_cursor(100, 100)
+        terminal.size = {10, 10}
+        terminal.move_cursor
         terminal.size = {100, 100}
         terminal.move_cursor
         terminal.cursor.x.should eq 9
         terminal.cursor.y.should eq 9
+      ensure
+        terminal.try &.close
       end
 
       it "moves the cursor to the specified position" do
+        terminal = CaptureTerminal.new
+        terminal.size = {100, 100}
         terminal.move_cursor(50, 50)
         terminal.cursor.x.should eq 50
         terminal.cursor.y.should eq 50
+      ensure
+        terminal.try &.close
       end
 
       it "does not move beyond the terminal's size" do
+        terminal = CaptureTerminal.new
         terminal.size = {10, 10}
         terminal.move_cursor(50, 50)
         terminal.cursor.x.should eq 9
         terminal.cursor.y.should eq 9
+      ensure
+        terminal.try &.close
+      end
+
+      it "preserves logical cursor position when terminal size is zero" do
+        terminal = CaptureTerminal.new
+        terminal.move_cursor(10, 10)
+        terminal.size = {0, 0}
+
+        terminal.move_cursor
+
+        terminal.cursor.x.should eq 10
+        terminal.cursor.y.should eq 10
+      ensure
+        terminal.try &.close
       end
     end
   end
