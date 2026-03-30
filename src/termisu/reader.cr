@@ -20,6 +20,7 @@
 # reader.close
 # ```
 require "./time_compat"
+require "./system/poll"
 
 class Termisu::Reader
   Log = Termisu::Logs::Reader
@@ -132,24 +133,24 @@ class Termisu::Reader
     retries = 0
 
     loop do
-      pollfd = uninitialized LibC::Pollfd
+      pollfd = uninitialized Termisu::System::Poll::Pollfd
       pollfd.fd = @fd
-      pollfd.events = LibC::POLLIN
+      pollfd.events = Termisu::System::Poll::POLLIN
       pollfd.revents = 0_i16
 
       # Compute remaining timeout from original start to avoid drift
       remaining_ms = remaining_timeout_ms(original_timeout_ms, start)
 
-      result = LibC.poll(pointerof(pollfd), LibC::NfdsT.new(1), remaining_ms)
+      result = Termisu::System::Poll.poll(pointerof(pollfd), Termisu::System::Poll::NfdsT.new(1), remaining_ms)
 
       if result > 0
         revents = pollfd.revents
         # POLLERR/POLLNVAL indicate fd errors - raise rather than silently returning false
-        if (revents & LibC::POLLERR) != 0 || (revents & LibC::POLLNVAL) != 0
+        if (revents & Termisu::System::Poll::POLLERR) != 0 || (revents & Termisu::System::Poll::POLLNVAL) != 0
           raise Termisu::IOError.select_failed(Errno.value)
         end
         # POLLIN or POLLHUP means data may be readable (HUP can have trailing data)
-        return (revents & LibC::POLLIN) != 0 || (revents & LibC::POLLHUP) != 0
+        return (revents & Termisu::System::Poll::POLLIN) != 0 || (revents & Termisu::System::Poll::POLLHUP) != 0
       elsif result == 0
         return false
       end
@@ -330,31 +331,4 @@ lib LibC
 
   fun select(nfds : Int32, readfds : FdSet*, writefds : FdSet*, errorfds : FdSet*, timeout : Timeval*) : Int32
 
-  # Poll bindings for fd >= FD_SETSIZE fallback
-  {% unless LibC.has_constant?(:Pollfd) %}
-    struct Pollfd
-      fd : Int32
-      events : Short
-      revents : Short
-    end
-  {% end %}
-
-  {% unless LibC.has_constant?(:POLLIN) %}
-    POLLIN   = 0x0001_i16
-    POLLERR  = 0x0008_i16
-    POLLHUP  = 0x0010_i16
-    POLLNVAL = 0x0020_i16
-  {% end %}
-
-  # nfds_t is unsigned long on Linux (64-bit on x86_64) but unsigned int
-  # on Darwin/BSD. Use a platform-conditional alias for ABI correctness.
-  {% unless LibC.has_constant?(:NfdsT) %}
-    {% if flag?(:linux) %}
-      alias NfdsT = UInt64
-    {% else %}
-      alias NfdsT = UInt32
-    {% end %}
-  {% end %}
-
-  fun poll(fds : Pollfd*, nfds : NfdsT, timeout : Int32) : Int32
 end

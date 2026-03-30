@@ -3,6 +3,7 @@
 # Provides portable event handling using the POSIX poll() syscall
 # with software-based timer implementation using monotonic clock.
 require "../../time_compat"
+require "../../system/poll"
 
 #
 # ## Features
@@ -26,31 +27,6 @@ require "../../time_compat"
 #
 # Use Linux or Kqueue backends when available.
 
-# LibC poll bindings (not always provided by Crystal stdlib)
-lib LibC
-  struct Pollfd
-    fd : Int32
-    events : Short
-    revents : Short
-  end
-
-  # nfds_t is unsigned long on Linux (64-bit on x86_64) but unsigned int
-  # on Darwin/BSD. Use a platform-conditional alias for ABI correctness.
-  {% if flag?(:linux) %}
-    alias NfdsT = UInt64
-  {% else %}
-    alias NfdsT = UInt32
-  {% end %}
-
-  fun poll(fds : Pollfd*, nfds : NfdsT, timeout : Int32) : Int32
-
-  POLLIN   = 0x0001_i16
-  POLLOUT  = 0x0004_i16
-  POLLERR  = 0x0008_i16
-  POLLHUP  = 0x0010_i16
-  POLLNVAL = 0x0020_i16
-end
-
 class Termisu::Event::Poller::Poll < Termisu::Event::Poller
   Log = Termisu::Logs::Event
 
@@ -70,13 +46,13 @@ class Termisu::Event::Poller::Poll < Termisu::Event::Poller
     end
   end
 
-  @fds : Array(LibC::Pollfd)
+  @fds : Array(Termisu::System::Poll::Pollfd)
   @timers : Hash(UInt64, TimerState)
   @next_timer_id : UInt64
   @closed : Bool
 
   def initialize
-    @fds = [] of LibC::Pollfd
+    @fds = [] of Termisu::System::Poll::Pollfd
     @timers = {} of UInt64 => TimerState
     @next_timer_id = 0_u64
     @closed = false
@@ -94,7 +70,7 @@ class Termisu::Event::Poller::Poll < Termisu::Event::Poller
       updated.events = events_to_poll(events)
       @fds[existing_idx] = updated
     else
-      pollfd = LibC::Pollfd.new
+      pollfd = Termisu::System::Poll::Pollfd.new
       pollfd.fd = fd
       pollfd.events = events_to_poll(events)
       pollfd.revents = 0
@@ -308,7 +284,7 @@ class Termisu::Event::Poller::Poll < Termisu::Event::Poller
     remaining = timeout_ms
     loop do
       start = monotonic_now
-      result = LibC.poll(@fds.to_unsafe, LibC::NfdsT.new(@fds.size), remaining)
+      result = Termisu::System::Poll.poll(@fds.to_unsafe, Termisu::System::Poll::NfdsT.new(@fds.size), remaining)
       if result < 0 && Errno.value == Errno::EINTR
         if remaining >= 0 # finite timeout — subtract elapsed time
           elapsed = (monotonic_now - start).total_milliseconds.to_i
@@ -324,21 +300,21 @@ class Termisu::Event::Poller::Poll < Termisu::Event::Poller
   # Converts FDEvents to poll event mask
   private def events_to_poll(events : FDEvents) : Int16
     result = 0_i16
-    result |= LibC::POLLIN if events.read?
-    result |= LibC::POLLOUT if events.write?
+    result |= Termisu::System::Poll::POLLIN if events.read?
+    result |= Termisu::System::Poll::POLLOUT if events.write?
     result
   end
 
   # Converts poll revents to PollResult::Type
   private def poll_to_result_type(revents : Int16) : PollResult::Type
-    if (revents & (LibC::POLLERR | LibC::POLLNVAL)) != 0
+    if (revents & (Termisu::System::Poll::POLLERR | Termisu::System::Poll::POLLNVAL)) != 0
       PollResult::Type::FDError
-    elsif (revents & LibC::POLLHUP) != 0
+    elsif (revents & Termisu::System::Poll::POLLHUP) != 0
       # Hangup - treat as error for consistency
       PollResult::Type::FDError
-    elsif (revents & LibC::POLLOUT) != 0
+    elsif (revents & Termisu::System::Poll::POLLOUT) != 0
       PollResult::Type::FDWritable
-    elsif (revents & LibC::POLLIN) != 0
+    elsif (revents & Termisu::System::Poll::POLLIN) != 0
       PollResult::Type::FDReadable
     else
       # Unknown event - treat as error
