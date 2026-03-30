@@ -92,7 +92,6 @@ describe Termisu::Terminal do
     it "returns non-negative integer dimensions" do
       terminal = CaptureTerminal.new
       width, height = terminal.size
-      # unbuffer may return 0x0, real terminals return positive values
       width.should be >= 0
       height.should be >= 0
     ensure
@@ -136,7 +135,7 @@ describe Termisu::Terminal do
 
     it "returns the mode after set_mode is called" do
       terminal = CaptureTerminal.new
-      terminal.set_mode(Termisu::Terminal::Mode.raw)
+      terminal.mode = Termisu::Terminal::Mode.raw
       terminal.current_mode.should eq(Termisu::Terminal::Mode.raw)
     ensure
       terminal.try &.close
@@ -146,7 +145,7 @@ describe Termisu::Terminal do
   describe "#set_mode" do
     it "sets raw mode and updates raw_mode? tracking" do
       terminal = CaptureTerminal.new
-      terminal.set_mode(Termisu::Terminal::Mode.raw)
+      terminal.mode = Termisu::Terminal::Mode.raw
       terminal.current_mode.should eq(Termisu::Terminal::Mode.raw)
       terminal.raw_mode?.should be_true
     ensure
@@ -155,7 +154,7 @@ describe Termisu::Terminal do
 
     it "sets cooked mode and updates raw_mode? tracking" do
       terminal = CaptureTerminal.new
-      terminal.set_mode(Termisu::Terminal::Mode.cooked)
+      terminal.mode = Termisu::Terminal::Mode.cooked
       terminal.current_mode.should eq(Termisu::Terminal::Mode.cooked)
       terminal.raw_mode?.should be_false
     ensure
@@ -164,7 +163,7 @@ describe Termisu::Terminal do
 
     it "sets cbreak mode" do
       terminal = CaptureTerminal.new
-      terminal.set_mode(Termisu::Terminal::Mode.cbreak)
+      terminal.mode = Termisu::Terminal::Mode.cbreak
       terminal.current_mode.should eq(Termisu::Terminal::Mode.cbreak)
       terminal.raw_mode?.should be_false
     ensure
@@ -173,7 +172,7 @@ describe Termisu::Terminal do
 
     it "sets password mode" do
       terminal = CaptureTerminal.new
-      terminal.set_mode(Termisu::Terminal::Mode.password)
+      terminal.mode = Termisu::Terminal::Mode.password
       terminal.current_mode.should eq(Termisu::Terminal::Mode.password)
       terminal.raw_mode?.should be_false
     ensure
@@ -183,13 +182,13 @@ describe Termisu::Terminal do
     it "handles mode transitions" do
       terminal = CaptureTerminal.new
 
-      terminal.set_mode(Termisu::Terminal::Mode.raw)
+      terminal.mode = Termisu::Terminal::Mode.raw
       terminal.raw_mode?.should be_true
 
-      terminal.set_mode(Termisu::Terminal::Mode.cooked)
+      terminal.mode = Termisu::Terminal::Mode.cooked
       terminal.raw_mode?.should be_false
 
-      terminal.set_mode(Termisu::Terminal::Mode.raw)
+      terminal.mode = Termisu::Terminal::Mode.raw
       terminal.raw_mode?.should be_true
     ensure
       terminal.try &.close
@@ -199,7 +198,7 @@ describe Termisu::Terminal do
   describe "#with_mode" do
     it "sets mode within block and restores after" do
       terminal = CaptureTerminal.new
-      terminal.set_mode(Termisu::Terminal::Mode.raw)
+      terminal.mode = Termisu::Terminal::Mode.raw
       terminal.raw_mode?.should be_true
 
       terminal.with_mode(Termisu::Terminal::Mode.cooked) do
@@ -215,7 +214,7 @@ describe Termisu::Terminal do
 
     it "restores mode on exception" do
       terminal = CaptureTerminal.new
-      terminal.set_mode(Termisu::Terminal::Mode.raw)
+      terminal.mode = Termisu::Terminal::Mode.raw
 
       expect_raises(Exception, "test") do
         terminal.with_mode(Termisu::Terminal::Mode.cooked) do
@@ -240,7 +239,7 @@ describe Termisu::Terminal do
 
     it "handles nested with_mode calls" do
       terminal = CaptureTerminal.new
-      terminal.set_mode(Termisu::Terminal::Mode.raw)
+      terminal.mode = Termisu::Terminal::Mode.raw
 
       terminal.with_mode(Termisu::Terminal::Mode.cooked) do
         terminal.current_mode.should eq(Termisu::Terminal::Mode.cooked)
@@ -290,7 +289,7 @@ describe Termisu::Terminal do
   describe "#with_cooked_mode" do
     it "switches to cooked mode within block" do
       terminal = CaptureTerminal.new
-      terminal.set_mode(Termisu::Terminal::Mode.raw)
+      terminal.mode = Termisu::Terminal::Mode.raw
 
       terminal.with_cooked_mode do
         terminal.current_mode.should eq(Termisu::Terminal::Mode.cooked)
@@ -312,7 +311,7 @@ describe Termisu::Terminal do
 
     it "restores mode on exception" do
       terminal = CaptureTerminal.new
-      terminal.set_mode(Termisu::Terminal::Mode.raw)
+      terminal.mode = Termisu::Terminal::Mode.raw
 
       expect_raises(Exception, "test") do
         terminal.with_cooked_mode { raise "test" }
@@ -327,7 +326,7 @@ describe Termisu::Terminal do
   describe "#with_cbreak_mode" do
     it "switches to cbreak mode within block" do
       terminal = CaptureTerminal.new
-      terminal.set_mode(Termisu::Terminal::Mode.raw)
+      terminal.mode = Termisu::Terminal::Mode.raw
 
       terminal.with_cbreak_mode do
         terminal.current_mode.should eq(Termisu::Terminal::Mode.cbreak)
@@ -352,7 +351,7 @@ describe Termisu::Terminal do
   describe "#with_password_mode" do
     it "switches to password mode within block" do
       terminal = CaptureTerminal.new
-      terminal.set_mode(Termisu::Terminal::Mode.raw)
+      terminal.mode = Termisu::Terminal::Mode.raw
 
       terminal.with_password_mode do
         terminal.current_mode.should eq(Termisu::Terminal::Mode.password)
