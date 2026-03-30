@@ -70,8 +70,8 @@ class Termisu::Terminal
     # terminfo blink capability. tmux, Alacritty, and Neovim can treat these
     # sequences differently, so keep both for now and re-check behavior before
     # dropping the terminfo path.
-    # TODO: validate cursor shape/blink behavior across supported terminals and
-    # remove blink_cursor_seq when DECSCUSR support is reliable.
+    # Follow-up: validate cursor shape/blink behavior across supported
+    # terminals and remove blink_cursor_seq when DECSCUSR support is reliable.
     write("\e[#{@cursor.shape.value + (@cursor.blink? ? 0 : 1)} q")
     write(@terminfo.blink_cursor_seq) if @cursor.blink?
   end
