@@ -1,3 +1,9 @@
+enum Termisu::Terminal::Mode
+  def raw? : Bool
+    self == self.class.raw
+  end
+end
+
 # Terminal subclass that captures all writes for verification.
 #
 # Useful for testing Terminal output including escape sequences
@@ -65,7 +71,7 @@ class CaptureTerminal < Termisu::Terminal
     if previous.nil?
       disable_raw_mode
     else
-      set_mode(previous.not_nil!)
+      self.mode = previous
     end
   end
 
@@ -73,9 +79,9 @@ class CaptureTerminal < Termisu::Terminal
     @fake_current_mode
   end
 
-  def set_mode(mode : Termisu::Terminal::Mode)
+  def mode=(mode : Termisu::Terminal::Mode)
     @fake_current_mode = mode
-    @fake_raw_mode = mode.value == 0
+    @fake_raw_mode = mode.raw?
   end
 
   def with_mode(mode : Termisu::Terminal::Mode, preserve_screen : Bool = false, &)
@@ -89,10 +95,10 @@ class CaptureTerminal < Termisu::Terminal
     exit_alternate_screen if !preserve_screen && user_interactive && was_in_alternate
 
     previous = @fake_current_mode
-    set_mode(mode)
+    self.mode = mode
     yield
   ensure
-    set_mode(previous || Termisu::Terminal::Mode.raw)
+    self.mode = previous || Termisu::Terminal::Mode.raw
 
     if was_in_alternate && !@alternate_screen
       enter_alternate_screen
