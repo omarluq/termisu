@@ -669,6 +669,8 @@ class Termisu::Terminal < Termisu::Renderer
   end
 
   private def apply_terminal_state
+    # These toggles intentionally flip the cached booleans first so the
+    # enable/disable methods observe the new desired state and emit writes.
     if @mouse_enabled
       @mouse_enabled = false
       enable_mouse
