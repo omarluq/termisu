@@ -69,6 +69,8 @@ describe Termisu::Reader do
       read_fd, write_fd = create_pipe
       begin
         LibC.write(write_fd, "hi".to_slice, 2)
+        LibC.close(write_fd)
+        write_fd = -1
 
         reader = Termisu::Reader.new(read_fd)
         reader.peek_byte.should eq('h'.ord.to_u8)
@@ -79,8 +81,8 @@ describe Termisu::Reader do
 
         reader.close
       ensure
-        LibC.close(read_fd)
-        LibC.close(write_fd)
+        LibC.close(read_fd) if read_fd >= 0
+        LibC.close(write_fd) if write_fd >= 0
       end
     end
 
