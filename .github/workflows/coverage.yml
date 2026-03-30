@@ -18,6 +18,8 @@ jobs:
         uses: actions/checkout@v6
       - name: Setup Crystal
         uses: ./.github/actions/setup-crystal
+        with:
+          crystal-version: 1.19.1
       - name: Cache kcov
         id: cache-kcov
         uses: actions/cache@v5
