@@ -3,7 +3,7 @@ require "../spec_helper"
 describe Termisu::Terminal do
   describe ".new" do
     it "opens /dev/tty and provides valid file descriptors" do
-      terminal = Termisu::Terminal.new
+      terminal = CaptureTerminal.new
       terminal.infd.should be >= 0
       terminal.outfd.should be >= 0
     ensure
@@ -13,7 +13,7 @@ describe Termisu::Terminal do
 
   describe "#raw_mode?" do
     it "tracks raw mode state through enable/disable cycle" do
-      terminal = Termisu::Terminal.new
+      terminal = CaptureTerminal.new
 
       terminal.raw_mode?.should be_false
 
@@ -27,7 +27,7 @@ describe Termisu::Terminal do
     end
 
     it "is idempotent for both enable and disable" do
-      terminal = Termisu::Terminal.new
+      terminal = CaptureTerminal.new
 
       # Multiple enables should be idempotent
       terminal.enable_raw_mode
@@ -47,7 +47,7 @@ describe Termisu::Terminal do
 
   describe "#with_raw_mode" do
     it "enables raw mode only within block execution" do
-      terminal = Termisu::Terminal.new
+      terminal = CaptureTerminal.new
       terminal.raw_mode?.should be_false
 
       terminal.with_raw_mode do
@@ -60,7 +60,7 @@ describe Termisu::Terminal do
     end
 
     it "restores state on exception and returns block result" do
-      terminal = Termisu::Terminal.new
+      terminal = CaptureTerminal.new
 
       # Test exception handling
       expect_raises(Exception, "test error") do
@@ -78,7 +78,7 @@ describe Termisu::Terminal do
 
   describe "#write and #flush" do
     it "writes data and escape sequences to the terminal" do
-      terminal = Termisu::Terminal.new
+      terminal = CaptureTerminal.new
       # Use invisible sequences to avoid polluting test output
       terminal.write("\e7") # Save cursor
       terminal.write("\e8") # Restore cursor
@@ -90,7 +90,7 @@ describe Termisu::Terminal do
 
   describe "#size" do
     it "returns non-negative integer dimensions" do
-      terminal = Termisu::Terminal.new
+      terminal = CaptureTerminal.new
       width, height = terminal.size
       # unbuffer may return 0x0, real terminals return positive values
       width.should be >= 0
@@ -102,7 +102,7 @@ describe Termisu::Terminal do
 
   describe "#close" do
     it "disables raw mode and can be called multiple times safely" do
-      terminal = Termisu::Terminal.new
+      terminal = CaptureTerminal.new
       terminal.enable_raw_mode
       terminal.close
       terminal.raw_mode?.should be_false
@@ -115,7 +115,7 @@ describe Termisu::Terminal do
 
   describe "lifecycle management" do
     it "handles full lifecycle correctly" do
-      terminal = Termisu::Terminal.new
+      terminal = CaptureTerminal.new
       terminal.enable_raw_mode
       terminal.write("\e7\e8") # Save/restore cursor (invisible)
       terminal.flush
@@ -128,14 +128,14 @@ describe Termisu::Terminal do
 
   describe "#current_mode" do
     it "returns nil before any mode is set" do
-      terminal = Termisu::Terminal.new
+      terminal = CaptureTerminal.new
       terminal.current_mode.should be_nil
     ensure
       terminal.try &.close
     end
 
     it "returns the mode after set_mode is called" do
-      terminal = Termisu::Terminal.new
+      terminal = CaptureTerminal.new
       terminal.set_mode(Termisu::Terminal::Mode.raw)
       terminal.current_mode.should eq(Termisu::Terminal::Mode.raw)
     ensure
@@ -145,7 +145,7 @@ describe Termisu::Terminal do
 
   describe "#set_mode" do
     it "sets raw mode and updates raw_mode? tracking" do
-      terminal = Termisu::Terminal.new
+      terminal = CaptureTerminal.new
       terminal.set_mode(Termisu::Terminal::Mode.raw)
       terminal.current_mode.should eq(Termisu::Terminal::Mode.raw)
       terminal.raw_mode?.should be_true
@@ -154,7 +154,7 @@ describe Termisu::Terminal do
     end
 
     it "sets cooked mode and updates raw_mode? tracking" do
-      terminal = Termisu::Terminal.new
+      terminal = CaptureTerminal.new
       terminal.set_mode(Termisu::Terminal::Mode.cooked)
       terminal.current_mode.should eq(Termisu::Terminal::Mode.cooked)
       terminal.raw_mode?.should be_false
@@ -163,7 +163,7 @@ describe Termisu::Terminal do
     end
 
     it "sets cbreak mode" do
-      terminal = Termisu::Terminal.new
+      terminal = CaptureTerminal.new
       terminal.set_mode(Termisu::Terminal::Mode.cbreak)
       terminal.current_mode.should eq(Termisu::Terminal::Mode.cbreak)
       terminal.raw_mode?.should be_false
@@ -172,7 +172,7 @@ describe Termisu::Terminal do
     end
 
     it "sets password mode" do
-      terminal = Termisu::Terminal.new
+      terminal = CaptureTerminal.new
       terminal.set_mode(Termisu::Terminal::Mode.password)
       terminal.current_mode.should eq(Termisu::Terminal::Mode.password)
       terminal.raw_mode?.should be_false
@@ -181,7 +181,7 @@ describe Termisu::Terminal do
     end
 
     it "handles mode transitions" do
-      terminal = Termisu::Terminal.new
+      terminal = CaptureTerminal.new
 
       terminal.set_mode(Termisu::Terminal::Mode.raw)
       terminal.raw_mode?.should be_true
@@ -198,7 +198,7 @@ describe Termisu::Terminal do
 
   describe "#with_mode" do
     it "sets mode within block and restores after" do
-      terminal = Termisu::Terminal.new
+      terminal = CaptureTerminal.new
       terminal.set_mode(Termisu::Terminal::Mode.raw)
       terminal.raw_mode?.should be_true
 
@@ -214,7 +214,7 @@ describe Termisu::Terminal do
     end
 
     it "restores mode on exception" do
-      terminal = Termisu::Terminal.new
+      terminal = CaptureTerminal.new
       terminal.set_mode(Termisu::Terminal::Mode.raw)
 
       expect_raises(Exception, "test") do
@@ -231,7 +231,7 @@ describe Termisu::Terminal do
     end
 
     it "returns block result" do
-      terminal = Termisu::Terminal.new
+      terminal = CaptureTerminal.new
       result = terminal.with_mode(Termisu::Terminal::Mode.cooked) { 42 }
       result.should eq(42)
     ensure
@@ -239,7 +239,7 @@ describe Termisu::Terminal do
     end
 
     it "handles nested with_mode calls" do
-      terminal = Termisu::Terminal.new
+      terminal = CaptureTerminal.new
       terminal.set_mode(Termisu::Terminal::Mode.raw)
 
       terminal.with_mode(Termisu::Terminal::Mode.cooked) do
@@ -258,7 +258,7 @@ describe Termisu::Terminal do
     end
 
     it "defaults to raw mode when no previous mode was set" do
-      terminal = Termisu::Terminal.new
+      terminal = CaptureTerminal.new
       terminal.current_mode.should be_nil
 
       terminal.with_mode(Termisu::Terminal::Mode.cooked) do
@@ -272,7 +272,7 @@ describe Termisu::Terminal do
     end
 
     it "respects preserve_screen parameter" do
-      terminal = Termisu::Terminal.new
+      terminal = CaptureTerminal.new
       # Cannot directly test alternate screen without visible effects,
       # but we verify the method accepts the parameter
       terminal.with_mode(Termisu::Terminal::Mode.cooked, preserve_screen: true) do
@@ -289,7 +289,7 @@ describe Termisu::Terminal do
 
   describe "#with_cooked_mode" do
     it "switches to cooked mode within block" do
-      terminal = Termisu::Terminal.new
+      terminal = CaptureTerminal.new
       terminal.set_mode(Termisu::Terminal::Mode.raw)
 
       terminal.with_cooked_mode do
@@ -303,7 +303,7 @@ describe Termisu::Terminal do
     end
 
     it "returns block result" do
-      terminal = Termisu::Terminal.new
+      terminal = CaptureTerminal.new
       result = terminal.with_cooked_mode { "hello" }
       result.should eq("hello")
     ensure
@@ -311,7 +311,7 @@ describe Termisu::Terminal do
     end
 
     it "restores mode on exception" do
-      terminal = Termisu::Terminal.new
+      terminal = CaptureTerminal.new
       terminal.set_mode(Termisu::Terminal::Mode.raw)
 
       expect_raises(Exception, "test") do
@@ -326,7 +326,7 @@ describe Termisu::Terminal do
 
   describe "#with_cbreak_mode" do
     it "switches to cbreak mode within block" do
-      terminal = Termisu::Terminal.new
+      terminal = CaptureTerminal.new
       terminal.set_mode(Termisu::Terminal::Mode.raw)
 
       terminal.with_cbreak_mode do
@@ -339,7 +339,7 @@ describe Termisu::Terminal do
     end
 
     it "defaults to preserve_screen true" do
-      terminal = Termisu::Terminal.new
+      terminal = CaptureTerminal.new
       # Method accepts no args, which means preserve_screen defaults to true
       terminal.with_cbreak_mode do
         terminal.current_mode.should eq(Termisu::Terminal::Mode.cbreak)
@@ -351,7 +351,7 @@ describe Termisu::Terminal do
 
   describe "#with_password_mode" do
     it "switches to password mode within block" do
-      terminal = Termisu::Terminal.new
+      terminal = CaptureTerminal.new
       terminal.set_mode(Termisu::Terminal::Mode.raw)
 
       terminal.with_password_mode do
@@ -364,7 +364,7 @@ describe Termisu::Terminal do
     end
 
     it "defaults to preserve_screen true" do
-      terminal = Termisu::Terminal.new
+      terminal = CaptureTerminal.new
       terminal.with_password_mode do
         terminal.current_mode.should eq(Termisu::Terminal::Mode.password)
       end
@@ -497,7 +497,7 @@ describe Termisu::Terminal do
 
     describe "#sync_updates?" do
       it "defaults to true" do
-        terminal = Termisu::Terminal.new
+        terminal = CaptureTerminal.new
         terminal.sync_updates?.should be_true
       ensure
         terminal.try &.close
@@ -506,7 +506,7 @@ describe Termisu::Terminal do
 
     describe "#sync_updates=" do
       it "can disable sync updates at runtime" do
-        terminal = Termisu::Terminal.new
+        terminal = CaptureTerminal.new
         terminal.sync_updates?.should be_true
 
         terminal.sync_updates = false
@@ -516,7 +516,7 @@ describe Termisu::Terminal do
       end
 
       it "can re-enable sync updates at runtime" do
-        terminal = Termisu::Terminal.new(sync_updates: false)
+        terminal = CaptureTerminal.new(sync_updates: false)
         terminal.sync_updates?.should be_false
 
         terminal.sync_updates = true
@@ -528,7 +528,7 @@ describe Termisu::Terminal do
 
     describe "#hide_cursor" do
       it "hides the cursor" do
-        terminal = Termisu::Terminal.new
+        terminal = CaptureTerminal.new
         terminal.hide_cursor
         terminal.cursor.visible?.should be_false
         terminal.show_cursor
@@ -541,7 +541,7 @@ describe Termisu::Terminal do
 
     describe "#show_cursor" do
       it "shows the cursor" do
-        terminal = Termisu::Terminal.new
+        terminal = CaptureTerminal.new
         terminal.show_cursor
         terminal.cursor.visible?.should be_true
         terminal.hide_cursor
