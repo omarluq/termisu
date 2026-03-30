@@ -596,10 +596,7 @@ class Termisu::Terminal < Termisu::Renderer
   def enable_mouse
     return if @mouse_enabled
     Log.debug { "Enabling mouse tracking" }
-    # Enable SGR mode first (preferred), then normal mode as fallback
-    write(MOUSE_ENABLE_SGR)
-    write(MOUSE_ENABLE_NORMAL)
-    flush
+    apply_mouse_state true
     @mouse_enabled = true
   end
 
@@ -609,9 +606,7 @@ class Termisu::Terminal < Termisu::Renderer
   def disable_mouse
     return unless @mouse_enabled
     Log.debug { "Disabling mouse tracking" }
-    write(MOUSE_DISABLE_SGR)
-    write(MOUSE_DISABLE_NORMAL)
-    flush
+    apply_mouse_state false
     @mouse_enabled = false
   end
 
@@ -643,10 +638,7 @@ class Termisu::Terminal < Termisu::Renderer
   def enable_enhanced_keyboard
     return if @enhanced_keyboard
     Log.debug { "Enabling enhanced keyboard protocol" }
-    # Try Kitty first (most comprehensive), then modifyOtherKeys as fallback
-    write(KITTY_KEYBOARD_ENABLE)
-    write(MODIFY_OTHER_KEYS_ENABLE)
-    flush
+    apply_enhanced_keyboard_state true
     @enhanced_keyboard = true
   end
 
@@ -657,9 +649,7 @@ class Termisu::Terminal < Termisu::Renderer
   def disable_enhanced_keyboard
     return unless @enhanced_keyboard
     Log.debug { "Disabling enhanced keyboard protocol" }
-    write(KITTY_KEYBOARD_DISABLE)
-    write(MODIFY_OTHER_KEYS_DISABLE)
-    flush
+    apply_enhanced_keyboard_state false
     @enhanced_keyboard = false
   end
 
@@ -669,23 +659,34 @@ class Termisu::Terminal < Termisu::Renderer
   end
 
   private def apply_terminal_state
-    # These toggles intentionally flip the cached booleans first so the
-    # enable/disable methods observe the new desired state and emit writes.
-    if @mouse_enabled
-      @mouse_enabled = false
-      enable_mouse
+    apply_mouse_state @mouse_enabled
+    apply_enhanced_keyboard_state @enhanced_keyboard
+  end
+
+  private def apply_mouse_state(enabled : Bool)
+    # Enable SGR mode first (preferred), then normal mode as fallback.
+    if enabled
+      write(MOUSE_ENABLE_SGR)
+      write(MOUSE_ENABLE_NORMAL)
     else
-      @mouse_enabled = true
-      disable_mouse
+      write(MOUSE_DISABLE_SGR)
+      write(MOUSE_DISABLE_NORMAL)
     end
 
-    if @enhanced_keyboard
-      @enhanced_keyboard = false
-      enable_enhanced_keyboard
+    flush
+  end
+
+  private def apply_enhanced_keyboard_state(enabled : Bool)
+    # Try Kitty first (most comprehensive), then modifyOtherKeys as fallback.
+    if enabled
+      write(KITTY_KEYBOARD_ENABLE)
+      write(MODIFY_OTHER_KEYS_ENABLE)
     else
-      @enhanced_keyboard = true
-      disable_enhanced_keyboard
+      write(KITTY_KEYBOARD_DISABLE)
+      write(MODIFY_OTHER_KEYS_DISABLE)
     end
+
+    flush
   end
 
   def title=(title : String)
