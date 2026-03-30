@@ -330,5 +330,4 @@ lib LibC
   {% end %}
 
   fun select(nfds : Int32, readfds : FdSet*, writefds : FdSet*, errorfds : FdSet*, timeout : Timeval*) : Int32
-
 end
