@@ -552,6 +552,121 @@ describe Termisu::Terminal do
       end
     end
 
+    describe "mouse state" do
+      it "enables mouse tracking once and flushes once" do
+        terminal = CaptureTerminal.new
+
+        terminal.enable_mouse
+
+        terminal.mouse_enabled?.should be_true
+        terminal.output.should contain(Termisu::Terminal::MOUSE_ENABLE_SGR)
+        terminal.output.should contain(Termisu::Terminal::MOUSE_ENABLE_NORMAL)
+        terminal.captured_flush_count.should eq 1
+      ensure
+        terminal.try &.close
+      end
+
+      it "disables mouse tracking once and flushes once" do
+        terminal = CaptureTerminal.new
+        terminal.enable_mouse
+        terminal.clear_captured
+
+        terminal.disable_mouse
+
+        terminal.mouse_enabled?.should be_false
+        terminal.output.should contain(Termisu::Terminal::MOUSE_DISABLE_SGR)
+        terminal.output.should contain(Termisu::Terminal::MOUSE_DISABLE_NORMAL)
+        terminal.captured_flush_count.should eq 1
+      ensure
+        terminal.try &.close
+      end
+
+      it "reapplies mouse state after with_mode restore with one consolidated flush" do
+        terminal = CaptureTerminal.new
+        terminal.enable_mouse
+        terminal.clear_captured
+
+        terminal.with_mode(Termisu::Terminal::Mode.cooked, preserve_screen: true) { }
+
+        terminal.mouse_enabled?.should be_true
+        terminal.output.should contain(Termisu::Terminal::MOUSE_ENABLE_SGR)
+        terminal.output.should contain(Termisu::Terminal::MOUSE_ENABLE_NORMAL)
+        terminal.captured_flush_count.should eq 1
+      ensure
+        terminal.try &.close
+      end
+    end
+
+    describe "enhanced keyboard state" do
+      it "enables enhanced keyboard once and flushes once" do
+        terminal = CaptureTerminal.new
+
+        terminal.enable_enhanced_keyboard
+
+        terminal.enhanced_keyboard?.should be_true
+        terminal.output.should contain(Termisu::Terminal::KITTY_KEYBOARD_ENABLE)
+        terminal.output.should contain(Termisu::Terminal::MODIFY_OTHER_KEYS_ENABLE)
+        terminal.captured_flush_count.should eq 1
+      ensure
+        terminal.try &.close
+      end
+
+      it "disables enhanced keyboard once and flushes once" do
+        terminal = CaptureTerminal.new
+        terminal.enable_enhanced_keyboard
+        terminal.clear_captured
+
+        terminal.disable_enhanced_keyboard
+
+        terminal.enhanced_keyboard?.should be_false
+        terminal.output.should contain(Termisu::Terminal::KITTY_KEYBOARD_DISABLE)
+        terminal.output.should contain(Termisu::Terminal::MODIFY_OTHER_KEYS_DISABLE)
+        terminal.captured_flush_count.should eq 1
+      ensure
+        terminal.try &.close
+      end
+
+      it "reapplies enhanced keyboard state after with_mode restore with one consolidated flush" do
+        terminal = CaptureTerminal.new
+        terminal.enable_enhanced_keyboard
+        terminal.clear_captured
+
+        terminal.with_mode(Termisu::Terminal::Mode.cooked, preserve_screen: true) { }
+
+        terminal.enhanced_keyboard?.should be_true
+        terminal.output.should contain(Termisu::Terminal::KITTY_KEYBOARD_ENABLE)
+        terminal.output.should contain(Termisu::Terminal::MODIFY_OTHER_KEYS_ENABLE)
+        terminal.captured_flush_count.should eq 1
+      ensure
+        terminal.try &.close
+      end
+    end
+
+    describe "#title=" do
+      it "writes the title when it changes" do
+        terminal = CaptureTerminal.new
+
+        terminal.title = "Termisu"
+
+        terminal.title.should eq "Termisu"
+        terminal.output.should contain("Termisu")
+      ensure
+        terminal.try &.close
+      end
+
+      it "does nothing when the title is unchanged" do
+        terminal = CaptureTerminal.new
+        terminal.title = "Termisu"
+        terminal.clear_captured
+
+        terminal.title = "Termisu"
+
+        terminal.output.should be_empty
+      ensure
+        terminal.try &.close
+      end
+    end
+
     describe "#move_cursor" do
       it "defaults at 0, 0" do
         terminal = CaptureTerminal.new
