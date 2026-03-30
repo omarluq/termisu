@@ -672,8 +672,6 @@ class Termisu::Terminal < Termisu::Renderer
       write(MOUSE_DISABLE_SGR)
       write(MOUSE_DISABLE_NORMAL)
     end
-
-    flush
   end
 
   private def apply_enhanced_keyboard_state(enabled : Bool)
@@ -685,8 +683,6 @@ class Termisu::Terminal < Termisu::Renderer
       write(KITTY_KEYBOARD_DISABLE)
       write(MODIFY_OTHER_KEYS_DISABLE)
     end
-
-    flush
   end
 
   def title=(title : String)
