@@ -64,6 +64,14 @@ class Termisu::Terminal
 
   private def write_cursor
     return unless @cursor.visible?
+
+    # DECSCUSR carries the preferred cursor shape+blink state, while cvvis is
+    # sent as a compatibility shim for terminals that still honor the legacy
+    # terminfo blink capability. tmux, Alacritty, and Neovim can treat these
+    # sequences differently, so keep both for now and re-check behavior before
+    # dropping the terminfo path.
+    # TODO: validate cursor shape/blink behavior across supported terminals and
+    # remove blink_cursor_seq when DECSCUSR support is reliable.
     write("\e[#{@cursor.shape.value + (@cursor.blink? ? 0 : 1)} q")
     write(@terminfo.blink_cursor_seq) if @cursor.blink?
   end

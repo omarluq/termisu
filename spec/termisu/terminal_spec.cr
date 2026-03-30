@@ -570,7 +570,7 @@ describe Termisu::Terminal do
         terminal.try &.close
       end
 
-      it "moves the cursor to the specified position" do
+      it "moves the cursor to the specified position on the default terminal size" do
         terminal = CaptureTerminal.new
         terminal.move_cursor(10, 10)
         terminal.cursor.x.should eq 10
@@ -589,7 +589,7 @@ describe Termisu::Terminal do
         terminal.try &.close
       end
 
-      it "does not move beyond the terminal's size" do
+      it "does not move beyond the default terminal size" do
         terminal = CaptureTerminal.new
         terminal.move_cursor(100, 100)
         terminal.cursor.x.should eq 79
@@ -622,7 +622,7 @@ describe Termisu::Terminal do
         terminal.try &.close
       end
 
-      it "moves the cursor to the specified position" do
+      it "moves the cursor to the specified position with a larger terminal size" do
         terminal = CaptureTerminal.new
         terminal.size = {100, 100}
         terminal.move_cursor(50, 50)
@@ -632,7 +632,7 @@ describe Termisu::Terminal do
         terminal.try &.close
       end
 
-      it "does not move beyond the terminal's size" do
+      it "does not move beyond a custom terminal size" do
         terminal = CaptureTerminal.new
         terminal.size = {10, 10}
         terminal.move_cursor(50, 50)

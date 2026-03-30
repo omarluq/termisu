@@ -4,20 +4,18 @@
 # - Front buffer: What's currently displayed on screen
 # - Back buffer: Where new content is written
 # - Diff algorithm: Only redraws cells that have changed
-# - Cursor position and visibility
 # - Render state tracking for escape sequence optimization
 #
 # Performance Optimizations:
 # - Only emits color/attribute escape sequences when they change
 # - Batches consecutive cells on the same row with the same styling
-# - Tracks cursor position to minimize move_cursor calls
+# - Tracks dirty rows to skip unnecessary render work
 #
 # Example:
 # ```
 # buffer = Termisu::Buffer.new(80, 24)
 # buffer.set_cell(10, 5, 'A', fg: Color.green, bg: Color.black)
-# buffer.set_cursor(10, 5)
-# buffer.render_to(renderer) # Only changed cells and cursor are redrawn
+# buffer.render_to(renderer) # Only changed cells are redrawn
 # ```
 class Termisu::Buffer
   Log = Termisu::Logs::Buffer

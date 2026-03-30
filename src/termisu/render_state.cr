@@ -1,7 +1,7 @@
 # Tracks the current terminal rendering state for optimization.
 #
 # Used to avoid emitting redundant escape sequences by tracking
-# what colors, attributes, and cursor position are currently set.
+# what colors and attributes are currently set.
 # Only emits escape sequences when the state actually changes.
 #
 # Example:
