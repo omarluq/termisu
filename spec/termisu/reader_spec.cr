@@ -65,6 +65,61 @@ describe Termisu::Reader do
       end
     end
 
+    it "peeks without consuming buffered bytes" do
+      read_fd, write_fd = create_pipe
+      begin
+        LibC.write(write_fd, "hi".to_slice, 2)
+
+        reader = Termisu::Reader.new(read_fd)
+        reader.peek_byte.should eq('h'.ord.to_u8)
+        reader.peek_byte.should eq('h'.ord.to_u8)
+        reader.read_byte.should eq('h'.ord.to_u8)
+        reader.peek_byte.should eq('i'.ord.to_u8)
+        reader.read_byte.should eq('i'.ord.to_u8)
+
+        reader.close
+      ensure
+        LibC.close(read_fd)
+        LibC.close(write_fd)
+      end
+    end
+
+    it "returns nil when read_bytes cannot fill the requested count" do
+      read_fd, write_fd = create_pipe
+      begin
+        LibC.write(write_fd, "ab".to_slice, 2)
+        LibC.close(write_fd)
+        write_fd = -1
+
+        reader = Termisu::Reader.new(read_fd)
+        reader.read_bytes(3).should be_nil
+
+        reader.close
+      ensure
+        LibC.close(read_fd) if read_fd >= 0
+        LibC.close(write_fd) if write_fd >= 0
+      end
+    end
+
+    it "uses buffered data for available? and wait_for_data" do
+      read_fd, write_fd = create_pipe
+      begin
+        LibC.write(write_fd, "xy".to_slice, 2)
+
+        reader = Termisu::Reader.new(read_fd)
+        reader.read_byte.should eq('x'.ord.to_u8)
+
+        reader.available?.should be_true
+        reader.wait_for_data(0).should be_true
+        reader.peek_byte.should eq('y'.ord.to_u8)
+
+        reader.close
+      ensure
+        LibC.close(read_fd)
+        LibC.close(write_fd)
+      end
+    end
+
     it "returns nil on empty pipe" do
       read_fd, write_fd = create_pipe
       begin
@@ -74,6 +129,8 @@ describe Termisu::Reader do
 
         reader = Termisu::Reader.new(read_fd)
         reader.available?.should be_false
+        reader.read_byte.should be_nil
+        reader.peek_byte.should be_nil
 
         reader.close
       ensure
@@ -129,6 +186,17 @@ describe Termisu::Reader do
       reader = Termisu::Reader.new(read_fd)
       expect_raises(Termisu::IOError) do
         reader.available?
+      end
+    end
+
+    it "raises IOError on bad file descriptor for read" do
+      read_fd, write_fd = create_pipe
+      LibC.close(read_fd)
+      LibC.close(write_fd)
+
+      reader = Termisu::Reader.new(read_fd)
+      expect_raises(Termisu::IOError) do
+        reader.read_byte
       end
     end
   end
