@@ -3,12 +3,11 @@
     "target": "ES2022",
     "module": "ESNext",
     "moduleResolution": "Bundler",
-    "baseUrl": ".",
     "paths": {
       "@termisu/*": [
-        "javascript/*/src/index.ts",
-        "javascript/framework/*/src/index.ts",
-        "javascript/starter/*/src/index.ts"
+        "./javascript/*/src/index.ts",
+        "./javascript/framework/*/src/index.ts",
+        "./javascript/starter/*/src/index.ts"
       ]
     },
     "strict": true,
