@@ -4,11 +4,7 @@
     "module": "ESNext",
     "moduleResolution": "Bundler",
     "paths": {
-      "@termisu/*": [
-        "./javascript/*/src/index.ts",
-        "./javascript/framework/*/src/index.ts",
-        "./javascript/starter/*/src/index.ts"
-      ]
+      "@termisu/*": ["./javascript/*/src/index.ts"]
     },
     "strict": true,
     "skipLibCheck": true,
