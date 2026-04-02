@@ -108,7 +108,14 @@ function resolveNativePackageLibraryPath(): string | null {
   }
 
   const packageName = nativePackageByTarget[target];
-  const manifestPath = import.meta.resolve(`${packageName}/manifest`);
+  let manifestPath: string;
+
+  try {
+    manifestPath = import.meta.resolve(`${packageName}/manifest`);
+  } catch {
+    return null;
+  }
+
   const packageDir = dirname(fileURLToPath(manifestPath));
   const candidates = [
     resolve(join(packageDir, `libtermisu.${suffix}`)),
