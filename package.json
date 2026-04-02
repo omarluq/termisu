@@ -5,10 +5,8 @@
   "packageManager": "bun@1.3.10",
   "workspaces": [
     "javascript/*",
-    "javascript/framework/*",
     "javascript/native/*/*",
     "javascript/native/*/*/*",
-    "javascript/starter/*",
     "e2e"
   ],
   "trustedDependencies": [
