@@ -1,3 +1,5 @@
+import { existsSync } from "node:fs";
+
 export type PlatformTarget =
   | "linux-x64-gnu"
   | "linux-arm64-gnu"
@@ -8,12 +10,47 @@ export type PlatformTarget =
   | "freebsd-x64"
   | "freebsd-arm64";
 
+const MUSL_LOADER_BY_ARCH = {
+  arm64: "/lib/ld-musl-aarch64.so.1",
+  x64: "/lib/ld-musl-x86_64.so.1",
+} as const;
+
+type RuntimeReportHeader = {
+  glibcVersionRuntime?: string;
+};
+
+type RuntimeReport = {
+  header?: RuntimeReportHeader;
+};
+
+const isLinuxMusl = (arch: NodeJS.Architecture): boolean => {
+  const report = process.report?.getReport?.() as RuntimeReport | undefined;
+  const glibcVersion = report?.header?.glibcVersionRuntime;
+
+  if (typeof glibcVersion === "string" && glibcVersion.length > 0) {
+    return false;
+  }
+
+  const muslLoader = arch === "arm64" || arch === "x64" ? MUSL_LOADER_BY_ARCH[arch] : undefined;
+  if (muslLoader) {
+    return existsSync(muslLoader);
+  }
+
+  return false;
+};
+
 export const detectTarget = (): PlatformTarget | null => {
   const platform = process.platform;
   const arch = process.arch;
 
-  if (platform === "linux" && arch === "x64") return "linux-x64-gnu";
-  if (platform === "linux" && arch === "arm64") return "linux-arm64-gnu";
+  if (platform === "linux" && arch === "x64") {
+    return isLinuxMusl(arch) ? "linux-x64-musl" : "linux-x64-gnu";
+  }
+
+  if (platform === "linux" && arch === "arm64") {
+    return isLinuxMusl(arch) ? "linux-arm64-musl" : "linux-arm64-gnu";
+  }
+
   if (platform === "darwin" && arch === "x64") return "darwin-x64";
   if (platform === "darwin" && arch === "arm64") return "darwin-arm64";
   if (platform === "freebsd" && arch === "x64") return "freebsd-x64";
