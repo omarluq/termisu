@@ -3,6 +3,8 @@ import { existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { detectTarget, nativePackageByTarget } from "@termisu/platform";
+
 import { ABI_VERSION, STRUCT_LAYOUT_SIGNATURE } from "./constants";
 
 const SYMBOLS = {
@@ -99,11 +101,37 @@ function validateNativeLayout(path: string, symbols: SymbolMap): void {
   }
 }
 
+function resolveNativePackageLibraryPath(): string | null {
+  const target = detectTarget();
+  if (target === null) {
+    return null;
+  }
+
+  const packageName = nativePackageByTarget[target];
+  const manifestPath = import.meta.resolve(`${packageName}/manifest`);
+  const packageDir = dirname(fileURLToPath(manifestPath));
+  const candidates = [
+    resolve(join(packageDir, `libtermisu.${suffix}`)),
+    resolve(join(packageDir, "bin", `libtermisu.${suffix}`)),
+  ];
+
+  for (const candidate of candidates) {
+    if (existsSync(candidate)) {
+      return candidate;
+    }
+  }
+
+  return null;
+}
+
 function resolveLibraryPath(explicit?: string): string {
   if (explicit) return resolve(explicit);
 
   const envPath = process.env.TERMISU_LIB_PATH;
   if (envPath) return resolve(envPath);
+
+  const packageLibraryPath = resolveNativePackageLibraryPath();
+  if (packageLibraryPath) return packageLibraryPath;
 
   const moduleDir = dirname(fileURLToPath(import.meta.url));
   const candidates = [
@@ -119,7 +147,7 @@ function resolveLibraryPath(explicit?: string): string {
   throw new Error(
     [
       "Could not locate Termisu native library.",
-      "Set TERMISU_LIB_PATH or pass { libraryPath }.",
+      "Install @termisu/core on a supported target, set TERMISU_LIB_PATH, or pass { libraryPath }.",
       `Checked: ${candidates.join(", ")}`,
     ].join(" ")
   );

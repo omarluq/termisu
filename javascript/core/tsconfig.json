@@ -4,6 +4,10 @@
     "declaration": true,
     "declarationMap": false,
     "outDir": "dist",
+    "rootDir": ".",
+    "paths": {
+      "@termisu/platform": ["../platform/dist/index.d.ts"]
+    },
     "types": ["bun-types"],
     "lib": ["ES2022"]
   },
