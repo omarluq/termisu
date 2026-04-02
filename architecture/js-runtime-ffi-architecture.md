@@ -2,19 +2,22 @@
 
 Last verified: 2026-02-28
 
-This document captures the target package architecture for JS bindings and how it maps to the Crystal core and native artifacts.
+This document captures the current minimal package architecture for JS bindings
+and how it maps to the Crystal core and native artifacts.
 
 ## Goals
 
 - Keep rendering, input parsing, Unicode width, and terminal-mode semantics in Crystal.
-- Make `bun add @termisu/*` work without manual native path wiring.
+- Keep the JS surface centered on `@termisu/core`.
+- Make platform-specific native delivery possible without exposing multiple
+  public JS entrypoints.
 - Keep behavior consistent across Linux, macOS, and BSD targets.
 - Isolate platform differences to native artifact loading and capability reporting.
 
 ## Non-Goals
 
 - Reimplementing core terminal semantics in TypeScript.
-- Framework-specific behavior differences at the runtime/core layer.
+- Framework-specific adapters and starter templates.
 
 ## Ground Truth From Crystal
 
@@ -38,13 +41,8 @@ flowchart TD
   end
 
   subgraph JS
-    FW[@termisu/framework adapters]
-    REC[@termisu/reconciler]
-    RT[@termisu/runtime]
     CORE[@termisu/core]
     PLAT[@termisu/platform]
-    CLI[@termisu/create-tui]
-    START[@termisu/*-starter]
   end
 
   subgraph NativePkgs
@@ -62,11 +60,8 @@ flowchart TD
     SO[libtermisu.so or libtermisu.dylib]
   end
 
-  APP --> FW
-  FW --> REC
-  REC --> RT
-  RT --> PLAT
-  RT --> CORE
+  APP --> CORE
+  CORE --> PLAT
   CORE --> SO
 
   PLAT -. resolves target package .-> N1
@@ -77,30 +72,25 @@ flowchart TD
   PLAT -. resolves target package .-> N6
   PLAT -. resolves target package .-> N7
   PLAT -. resolves target package .-> N8
-
-  CLI --> START
 ```
 
-## Runtime Startup Contract
+## Native Load Contract
 
 ```mermaid
 sequenceDiagram
   participant App
-  participant Runtime as @termisu/runtime
-  participant Platform as @termisu/platform
   participant Core as @termisu/core
+  participant Platform as @termisu/platform
   participant Native as libtermisu
 
-  App->>Runtime: createRuntime(options)
-  Runtime->>Platform: detectTarget()/resolve library path
-  Platform-->>Runtime: absolute path to native library
-  Runtime->>Core: new Termisu({ libraryPath })
+  App->>Core: new Termisu({ libraryPath? })
+  Core->>Platform: detectTarget()/resolve package name
+  Platform-->>Core: target metadata
   Core->>Native: dlopen(symbols)
   Core->>Native: termisu_abi_version()
   Core->>Native: termisu_layout_signature()
   Native-->>Core: ABI + layout signature
-  Core-->>Runtime: initialized handle
-  Runtime-->>App: runtime/session ready
+  Core-->>App: initialized handle
 ```
 
 ## Library Path Resolution
@@ -109,7 +99,7 @@ Resolution precedence should be deterministic:
 
 1. explicit `libraryPath` option
 2. `TERMISU_LIB_PATH`
-3. platform resolver mapping (`os/arch/libc` -> native package -> bundled path)
+3. platform resolver mapping (`os/arch/libc` -> native package)
 4. actionable error with target and checked paths
 
 ```mermaid
@@ -134,10 +124,7 @@ flowchart TD
 | --- | --- | --- |
 | `@termisu/platform` | target detection, native package mapping, path resolution | terminal behavior semantics |
 | `@termisu/core` | FFI symbol binding, ABI/layout validation, native call wrappers | platform policy |
-| `@termisu/runtime` | lifecycle orchestration and default wiring | native symbol definitions |
-| `@termisu/reconciler` | state/tree to runtime operation mapping | dynamic library loading |
-| `@termisu/framework/*` | framework adapter APIs | runtime internals |
-| `@termisu/create-tui` + starters | scaffolding workflows/templates | runtime/core behavior |
+| `@termisu/native-*` | platform-specific package metadata and artifact delivery | runtime behavior semantics |
 
 ## Capability Model
 
@@ -156,20 +143,22 @@ Behavior contract:
 
 - `@termisu/core` already validates ABI and struct layout signature.
 - `@termisu/platform` currently detects `os/arch` and maps to package names.
-- `@termisu/runtime` and framework packages are still scaffolds and need execution wiring.
-- native packages currently expose manifest metadata and need artifact payload/release wiring.
+- `@termisu/core` currently resolves explicit paths, `TERMISU_LIB_PATH`, and
+- `@termisu/core` currently resolves explicit paths, `TERMISU_LIB_PATH`,
+  platform-package candidates, and repository-local `bin/` candidates.
+- native packages currently expose manifest metadata and still need artifact
+  payload and release wiring before they can be auto-loaded end to end.
 
 ## Source Anchors
 
-- [src/termisu/event/poller.cr](/home/omar/sandbox/crystal/termisu/src/termisu/event/poller.cr)
-- [src/termisu/event/poller/linux.cr](/home/omar/sandbox/crystal/termisu/src/termisu/event/poller/linux.cr)
-- [src/termisu/event/poller/kqueue.cr](/home/omar/sandbox/crystal/termisu/src/termisu/event/poller/kqueue.cr)
-- [src/termisu/event/poller/poll.cr](/home/omar/sandbox/crystal/termisu/src/termisu/event/poller/poll.cr)
-- [src/termisu/tty.cr](/home/omar/sandbox/crystal/termisu/src/termisu/tty.cr)
-- [src/termisu/terminal/backend.cr](/home/omar/sandbox/crystal/termisu/src/termisu/terminal/backend.cr)
-- [src/termisu/ffi/exports.cr](/home/omar/sandbox/crystal/termisu/src/termisu/ffi/exports.cr)
-- [src/termisu/ffi/layout.cr](/home/omar/sandbox/crystal/termisu/src/termisu/ffi/layout.cr)
-- [javascript/core/src/native.ts](/home/omar/sandbox/crystal/termisu/javascript/core/src/native.ts)
-- [javascript/core/src/termisu.ts](/home/omar/sandbox/crystal/termisu/javascript/core/src/termisu.ts)
-- [javascript/platform/src/index.ts](/home/omar/sandbox/crystal/termisu/javascript/platform/src/index.ts)
-- [javascript/runtime/src/index.ts](/home/omar/sandbox/crystal/termisu/javascript/runtime/src/index.ts)
+- [src/termisu/event/poller.cr](../src/termisu/event/poller.cr)
+- [src/termisu/event/poller/linux.cr](../src/termisu/event/poller/linux.cr)
+- [src/termisu/event/poller/kqueue.cr](../src/termisu/event/poller/kqueue.cr)
+- [src/termisu/event/poller/poll.cr](../src/termisu/event/poller/poll.cr)
+- [src/termisu/tty.cr](../src/termisu/tty.cr)
+- [src/termisu/terminal/backend.cr](../src/termisu/terminal/backend.cr)
+- [src/termisu/ffi/exports.cr](../src/termisu/ffi/exports.cr)
+- [src/termisu/ffi/layout.cr](../src/termisu/ffi/layout.cr)
+- [javascript/core/src/native.ts](../javascript/core/src/native.ts)
+- [javascript/core/src/termisu.ts](../javascript/core/src/termisu.ts)
+- [javascript/platform/src/index.ts](../javascript/platform/src/index.ts)

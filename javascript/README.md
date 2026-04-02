@@ -15,7 +15,9 @@ platform-specific native package scaffolding.
 
 - `@termisu/core` is the only intended user-facing JS package today.
 - `@termisu/platform` is an internal helper package.
-- Native packages are scaffolds for platform delivery and release wiring.
+- `@termisu/core` declares platform-specific native packages as optional
+  dependencies so one install command can resolve the right target.
+- Native packages are still scaffolds for platform delivery and release wiring.
 - Framework adapters, starters, and CLI scaffolding were removed until the core
   JS distribution story is fully working.
 

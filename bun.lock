@@ -15,50 +15,6 @@
       "name": "@termisu/core",
       "version": "0.0.0",
     },
-    "javascript/create-tui": {
-      "name": "@termisu/create-tui",
-      "version": "0.0.0",
-      "bin": {
-        "create-termisu": "./dist/cli.js",
-      },
-      "dependencies": {
-        "@termisu/next-starter": "workspace:*",
-        "@termisu/nuxt-starter": "workspace:*",
-        "@termisu/sveltekit-starter": "workspace:*",
-      },
-    },
-    "javascript/framework/react": {
-      "name": "@termisu/react",
-      "version": "0.0.0",
-      "dependencies": {
-        "@termisu/reconciler": "workspace:*",
-        "@termisu/runtime": "workspace:*",
-      },
-    },
-    "javascript/framework/solid": {
-      "name": "@termisu/solid",
-      "version": "0.0.0",
-      "dependencies": {
-        "@termisu/reconciler": "workspace:*",
-        "@termisu/runtime": "workspace:*",
-      },
-    },
-    "javascript/framework/svelte": {
-      "name": "@termisu/svelte",
-      "version": "0.0.0",
-      "dependencies": {
-        "@termisu/reconciler": "workspace:*",
-        "@termisu/runtime": "workspace:*",
-      },
-    },
-    "javascript/framework/vue": {
-      "name": "@termisu/vue",
-      "version": "0.0.0",
-      "dependencies": {
-        "@termisu/reconciler": "workspace:*",
-        "@termisu/runtime": "workspace:*",
-      },
-    },
     "javascript/native/darwin/arm64": {
       "name": "@termisu/native-darwin-arm64",
       "version": "0.0.0",
@@ -103,42 +59,6 @@
         "@termisu/native-linux-arm64-musl": "workspace:*",
         "@termisu/native-linux-x64-gnu": "workspace:*",
         "@termisu/native-linux-x64-musl": "workspace:*",
-      },
-    },
-    "javascript/reconciler": {
-      "name": "@termisu/reconciler",
-      "version": "0.0.0",
-      "dependencies": {
-        "@termisu/runtime": "workspace:*",
-      },
-    },
-    "javascript/runtime": {
-      "name": "@termisu/runtime",
-      "version": "0.0.0",
-      "dependencies": {
-        "@termisu/core": "workspace:*",
-        "@termisu/platform": "workspace:*",
-      },
-    },
-    "javascript/starter/next": {
-      "name": "@termisu/next-starter",
-      "version": "0.0.0",
-      "dependencies": {
-        "@termisu/react": "workspace:*",
-      },
-    },
-    "javascript/starter/nuxt": {
-      "name": "@termisu/nuxt-starter",
-      "version": "0.0.0",
-      "dependencies": {
-        "@termisu/vue": "workspace:*",
-      },
-    },
-    "javascript/starter/sveltekit": {
-      "name": "@termisu/sveltekit-starter",
-      "version": "0.0.0",
-      "dependencies": {
-        "@termisu/svelte": "workspace:*",
       },
     },
   },
