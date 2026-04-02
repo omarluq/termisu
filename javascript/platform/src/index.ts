@@ -23,6 +23,16 @@ type RuntimeReport = {
   header?: RuntimeReportHeader;
 };
 
+const NON_LINUX_TARGET_BY_KEY = {
+  "darwin:arm64": "darwin-arm64",
+  "darwin:x64": "darwin-x64",
+  "freebsd:arm64": "freebsd-arm64",
+  "freebsd:x64": "freebsd-x64",
+} as const satisfies Partial<Record<`${NodeJS.Platform}:${NodeJS.Architecture}`, PlatformTarget>>;
+
+const hasNonLinuxTarget = (targetKey: string): targetKey is keyof typeof NON_LINUX_TARGET_BY_KEY =>
+  targetKey in NON_LINUX_TARGET_BY_KEY;
+
 const isLinuxMusl = (arch: NodeJS.Architecture): boolean => {
   const report = process.report?.getReport?.() as RuntimeReport | undefined;
   const glibcVersion = report?.header?.glibcVersionRuntime;
@@ -39,24 +49,25 @@ const isLinuxMusl = (arch: NodeJS.Architecture): boolean => {
   return false;
 };
 
+const detectLinuxTarget = (arch: NodeJS.Architecture): PlatformTarget | null => {
+  const linuxTargetByArch = {
+    arm64: isLinuxMusl(arch) ? "linux-arm64-musl" : "linux-arm64-gnu",
+    x64: isLinuxMusl(arch) ? "linux-x64-musl" : "linux-x64-gnu",
+  } as const satisfies Record<"arm64" | "x64", PlatformTarget>;
+
+  return arch === "arm64" || arch === "x64" ? linuxTargetByArch[arch] : null;
+};
+
 export const detectTarget = (): PlatformTarget | null => {
   const platform = process.platform;
   const arch = process.arch;
 
-  if (platform === "linux" && arch === "x64") {
-    return isLinuxMusl(arch) ? "linux-x64-musl" : "linux-x64-gnu";
+  if (platform === "linux") {
+    return detectLinuxTarget(arch);
   }
 
-  if (platform === "linux" && arch === "arm64") {
-    return isLinuxMusl(arch) ? "linux-arm64-musl" : "linux-arm64-gnu";
-  }
-
-  if (platform === "darwin" && arch === "x64") return "darwin-x64";
-  if (platform === "darwin" && arch === "arm64") return "darwin-arm64";
-  if (platform === "freebsd" && arch === "x64") return "freebsd-x64";
-  if (platform === "freebsd" && arch === "arm64") return "freebsd-arm64";
-
-  return null;
+  const targetKey = `${platform}:${arch}`;
+  return hasNonLinuxTarget(targetKey) ? NON_LINUX_TARGET_BY_KEY[targetKey] : null;
 };
 
 export const nativePackageByTarget: Record<PlatformTarget, string> = {
