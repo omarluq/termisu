@@ -23,50 +23,6 @@
       "name": "@termisu/core",
       "version": "0.0.0",
     },
-    "javascript/create-tui": {
-      "name": "@termisu/create-tui",
-      "version": "0.0.0",
-      "bin": {
-        "create-termisu": "./dist/cli.js",
-      },
-      "dependencies": {
-        "@termisu/next-starter": "workspace:*",
-        "@termisu/nuxt-starter": "workspace:*",
-        "@termisu/sveltekit-starter": "workspace:*",
-      },
-    },
-    "javascript/framework/react": {
-      "name": "@termisu/react",
-      "version": "0.0.0",
-      "dependencies": {
-        "@termisu/reconciler": "workspace:*",
-        "@termisu/runtime": "workspace:*",
-      },
-    },
-    "javascript/framework/solid": {
-      "name": "@termisu/solid",
-      "version": "0.0.0",
-      "dependencies": {
-        "@termisu/reconciler": "workspace:*",
-        "@termisu/runtime": "workspace:*",
-      },
-    },
-    "javascript/framework/svelte": {
-      "name": "@termisu/svelte",
-      "version": "0.0.0",
-      "dependencies": {
-        "@termisu/reconciler": "workspace:*",
-        "@termisu/runtime": "workspace:*",
-      },
-    },
-    "javascript/framework/vue": {
-      "name": "@termisu/vue",
-      "version": "0.0.0",
-      "dependencies": {
-        "@termisu/reconciler": "workspace:*",
-        "@termisu/runtime": "workspace:*",
-      },
-    },
     "javascript/native/darwin/arm64": {
       "name": "@termisu/native-darwin-arm64",
       "version": "0.0.0",
@@ -111,42 +67,6 @@
         "@termisu/native-linux-arm64-musl": "workspace:*",
         "@termisu/native-linux-x64-gnu": "workspace:*",
         "@termisu/native-linux-x64-musl": "workspace:*",
-      },
-    },
-    "javascript/reconciler": {
-      "name": "@termisu/reconciler",
-      "version": "0.0.0",
-      "dependencies": {
-        "@termisu/runtime": "workspace:*",
-      },
-    },
-    "javascript/runtime": {
-      "name": "@termisu/runtime",
-      "version": "0.0.0",
-      "dependencies": {
-        "@termisu/core": "workspace:*",
-        "@termisu/platform": "workspace:*",
-      },
-    },
-    "javascript/starter/next": {
-      "name": "@termisu/next-starter",
-      "version": "0.0.0",
-      "dependencies": {
-        "@termisu/react": "workspace:*",
-      },
-    },
-    "javascript/starter/nuxt": {
-      "name": "@termisu/nuxt-starter",
-      "version": "0.0.0",
-      "dependencies": {
-        "@termisu/vue": "workspace:*",
-      },
-    },
-    "javascript/starter/sveltekit": {
-      "name": "@termisu/sveltekit-starter",
-      "version": "0.0.0",
-      "dependencies": {
-        "@termisu/svelte": "workspace:*",
       },
     },
   },
@@ -220,8 +140,6 @@
 
     "@termisu/core": ["@termisu/core@workspace:javascript/core"],
 
-    "@termisu/create-tui": ["@termisu/create-tui@workspace:javascript/create-tui"],
-
     "@termisu/native-darwin-arm64": ["@termisu/native-darwin-arm64@workspace:javascript/native/darwin/arm64"],
 
     "@termisu/native-darwin-x64": ["@termisu/native-darwin-x64@workspace:javascript/native/darwin/x64"],
@@ -238,25 +156,7 @@
 
     "@termisu/native-linux-x64-musl": ["@termisu/native-linux-x64-musl@workspace:javascript/native/linux/x64/musl"],
 
-    "@termisu/next-starter": ["@termisu/next-starter@workspace:javascript/starter/next"],
-
-    "@termisu/nuxt-starter": ["@termisu/nuxt-starter@workspace:javascript/starter/nuxt"],
-
     "@termisu/platform": ["@termisu/platform@workspace:javascript/platform"],
-
-    "@termisu/react": ["@termisu/react@workspace:javascript/framework/react"],
-
-    "@termisu/reconciler": ["@termisu/reconciler@workspace:javascript/reconciler"],
-
-    "@termisu/runtime": ["@termisu/runtime@workspace:javascript/runtime"],
-
-    "@termisu/solid": ["@termisu/solid@workspace:javascript/framework/solid"],
-
-    "@termisu/svelte": ["@termisu/svelte@workspace:javascript/framework/svelte"],
-
-    "@termisu/sveltekit-starter": ["@termisu/sveltekit-starter@workspace:javascript/starter/sveltekit"],
-
-    "@termisu/vue": ["@termisu/vue@workspace:javascript/framework/vue"],
 
     "@types/istanbul-lib-coverage": ["@types/istanbul-lib-coverage@2.0.6", "", {}, "sha512-2QF/t/auWm0lsy8XtKVPG19v3sSOQlJe/YHZgfjb/KBBHOGSV+J2q/S671rcq9uTBrLAXmZpqJiaQbMT+zNU1w=="],
 
