@@ -4,10 +4,22 @@
   "description": "Prebuilt native Termisu library for native-linux-x64-gnu",
   "type": "module",
   "private": false,
-  "os": ["linux"],
-  "cpu": ["x64"],
-  "libc": ["glibc"],
-  "files": ["README.md", "manifest.json"],
+  "publishConfig": {
+    "access": "public"
+  },
+  "os": [
+    "linux"
+  ],
+  "cpu": [
+    "x64"
+  ],
+  "libc": [
+    "glibc"
+  ],
+  "files": [
+    "README.md",
+    "manifest.json"
+  ],
   "exports": {
     "./manifest": "./manifest.json"
   },

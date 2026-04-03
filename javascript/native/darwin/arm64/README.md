@@ -1,6 +1,8 @@
 # @termisu/native-darwin-arm64
 
-Native target package scaffold for - OS: darwin
+Native target package scaffold for:
+
+- OS: darwin
 - CPU: arm64
 - libc: n/a
 

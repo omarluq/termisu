@@ -3,7 +3,7 @@ import { existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { detectTarget, nativePackageByTarget } from "@termisu/platform";
+import { detectTarget, nativePackageByTarget, type PlatformTarget } from "@termisu/platform";
 
 import { ABI_VERSION, STRUCT_LAYOUT_SIGNATURE } from "./constants";
 
@@ -49,6 +49,15 @@ export interface NativeLibrary {
   close(): void;
   path: string;
 }
+
+type NativeResolutionDeps = {
+  cwd?: string;
+  detectTarget?: () => PlatformTarget | null;
+  env?: NodeJS.ProcessEnv;
+  fileExists?: (path: string) => boolean;
+  moduleUrl?: string;
+  resolveModule?: (specifier: string) => string;
+};
 
 const MAX_SAFE_INTEGER_BIGINT = BigInt(Number.MAX_SAFE_INTEGER);
 const MIN_SAFE_INTEGER_BIGINT = BigInt(Number.MIN_SAFE_INTEGER);
@@ -101,8 +110,13 @@ function validateNativeLayout(path: string, symbols: SymbolMap): void {
   }
 }
 
-function resolveNativePackageLibraryPath(): string | null {
-  const target = detectTarget();
+export function resolveNativePackageLibraryPath(deps: NativeResolutionDeps = {}): string | null {
+  const detectTargetFn = deps.detectTarget ?? detectTarget;
+  const fileExists = deps.fileExists ?? existsSync;
+  const resolveModule =
+    deps.resolveModule ?? ((specifier: string) => import.meta.resolve(specifier));
+
+  const target = detectTargetFn();
   if (target === null) {
     return null;
   }
@@ -111,7 +125,7 @@ function resolveNativePackageLibraryPath(): string | null {
   let manifestPath: string;
 
   try {
-    manifestPath = import.meta.resolve(`${packageName}/manifest`);
+    manifestPath = resolveModule(`${packageName}/manifest`);
   } catch {
     return null;
   }
@@ -123,7 +137,7 @@ function resolveNativePackageLibraryPath(): string | null {
   ];
 
   for (const candidate of candidates) {
-    if (existsSync(candidate)) {
+    if (fileExists(candidate)) {
       return candidate;
     }
   }
@@ -131,24 +145,28 @@ function resolveNativePackageLibraryPath(): string | null {
   return null;
 }
 
-function resolveLibraryPath(explicit?: string): string {
+export function resolveLibraryPath(explicit?: string, deps: NativeResolutionDeps = {}): string {
+  const env = deps.env ?? process.env;
+  const cwd = deps.cwd ?? process.cwd();
+  const fileExists = deps.fileExists ?? existsSync;
+
   if (explicit) return resolve(explicit);
 
-  const envPath = process.env.TERMISU_LIB_PATH;
+  const envPath = env.TERMISU_LIB_PATH;
   if (envPath) return resolve(envPath);
 
-  const packageLibraryPath = resolveNativePackageLibraryPath();
+  const packageLibraryPath = resolveNativePackageLibraryPath(deps);
   if (packageLibraryPath) return packageLibraryPath;
 
-  const moduleDir = dirname(fileURLToPath(import.meta.url));
+  const moduleDir = dirname(fileURLToPath(deps.moduleUrl ?? import.meta.url));
   const candidates = [
-    resolve(join(process.cwd(), "bin", `libtermisu.${suffix}`)),
-    resolve(join(process.cwd(), "..", "bin", `libtermisu.${suffix}`)),
+    resolve(join(cwd, "bin", `libtermisu.${suffix}`)),
+    resolve(join(cwd, "..", "bin", `libtermisu.${suffix}`)),
     resolve(join(moduleDir, "..", "..", "bin", `libtermisu.${suffix}`)),
   ];
 
   for (const candidate of candidates) {
-    if (existsSync(candidate)) return candidate;
+    if (fileExists(candidate)) return candidate;
   }
 
   throw new Error(
