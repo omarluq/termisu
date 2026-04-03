@@ -4,9 +4,19 @@
   "description": "Prebuilt native Termisu library for native-freebsd-arm64",
   "type": "module",
   "private": false,
-  "os": ["freebsd"],
-  "cpu": ["arm64"],
-  "files": ["README.md", "manifest.json"],
+  "publishConfig": {
+    "access": "public"
+  },
+  "os": [
+    "freebsd"
+  ],
+  "cpu": [
+    "arm64"
+  ],
+  "files": [
+    "README.md",
+    "manifest.json"
+  ],
   "exports": {
     "./manifest": "./manifest.json"
   },
