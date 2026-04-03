@@ -4,12 +4,9 @@
     "declaration": true,
     "declarationMap": false,
     "outDir": "dist",
-    "rootDir": ".",
-    "paths": {
-      "@termisu/platform": ["../platform/dist/index.d.ts"]
-    },
+    "rootDir": "src",
     "types": ["bun-types"],
     "lib": ["ES2022"]
   },
-  "include": ["src/**/*.ts", "examples/**/*.ts", "tests/**/*.ts"]
+  "include": ["src/**/*.ts"]
 }
