@@ -1,6 +1,8 @@
 # @termisu/native-linux-arm64-gnu
 
-Native target package scaffold for - OS: linux
+Native target package scaffold for:
+
+- OS: linux
 - CPU: arm64
 - libc: glibc
 

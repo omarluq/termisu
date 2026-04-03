@@ -151,7 +151,7 @@ flowchart TD
 ```
 
 Other platform branches:
-- `TTY` uses a FreeBSD/OpenBSD specific open mode branch.
+- `TTY` uses a FreeBSD/OpenBSD-specific open mode branch.
 - terminal size ioctl constants are platform-specific in `Terminal::Backend`.
 
 ## Optional C FFI Boundary
@@ -189,18 +189,18 @@ Safety model:
 
 ## Source Anchors
 
-- [src/termisu.cr](/home/omar/sandbox/crystal/termisu/src/termisu.cr)
-- [src/termisu/terminal.cr](/home/omar/sandbox/crystal/termisu/src/termisu/terminal.cr)
-- [src/termisu/buffer.cr](/home/omar/sandbox/crystal/termisu/src/termisu/buffer.cr)
-- [src/termisu/render_state.cr](/home/omar/sandbox/crystal/termisu/src/termisu/render_state.cr)
-- [src/termisu/event/loop.cr](/home/omar/sandbox/crystal/termisu/src/termisu/event/loop.cr)
-- [src/termisu/event/source/input.cr](/home/omar/sandbox/crystal/termisu/src/termisu/event/source/input.cr)
-- [src/termisu/event/source/resize.cr](/home/omar/sandbox/crystal/termisu/src/termisu/event/source/resize.cr)
-- [src/termisu/event/source/timer.cr](/home/omar/sandbox/crystal/termisu/src/termisu/event/source/timer.cr)
-- [src/termisu/event/source/system_timer.cr](/home/omar/sandbox/crystal/termisu/src/termisu/event/source/system_timer.cr)
-- [src/termisu/event/poller.cr](/home/omar/sandbox/crystal/termisu/src/termisu/event/poller.cr)
-- [src/termisu/ffi/exports.cr](/home/omar/sandbox/crystal/termisu/src/termisu/ffi/exports.cr)
-- [src/termisu/ffi/core.cr](/home/omar/sandbox/crystal/termisu/src/termisu/ffi/core.cr)
-- [src/termisu/ffi/runtime.cr](/home/omar/sandbox/crystal/termisu/src/termisu/ffi/runtime.cr)
-- [src/termisu/ffi/layout.cr](/home/omar/sandbox/crystal/termisu/src/termisu/ffi/layout.cr)
-- [include/termisu/ffi.h](/home/omar/sandbox/crystal/termisu/include/termisu/ffi.h)
+- [src/termisu.cr](../src/termisu.cr)
+- [src/termisu/terminal.cr](../src/termisu/terminal.cr)
+- [src/termisu/buffer.cr](../src/termisu/buffer.cr)
+- [src/termisu/render_state.cr](../src/termisu/render_state.cr)
+- [src/termisu/event/loop.cr](../src/termisu/event/loop.cr)
+- [src/termisu/event/source/input.cr](../src/termisu/event/source/input.cr)
+- [src/termisu/event/source/resize.cr](../src/termisu/event/source/resize.cr)
+- [src/termisu/event/source/timer.cr](../src/termisu/event/source/timer.cr)
+- [src/termisu/event/source/system_timer.cr](../src/termisu/event/source/system_timer.cr)
+- [src/termisu/event/poller.cr](../src/termisu/event/poller.cr)
+- [src/termisu/ffi/exports.cr](../src/termisu/ffi/exports.cr)
+- [src/termisu/ffi/core.cr](../src/termisu/ffi/core.cr)
+- [src/termisu/ffi/runtime.cr](../src/termisu/ffi/runtime.cr)
+- [src/termisu/ffi/layout.cr](../src/termisu/ffi/layout.cr)
+- [include/termisu/ffi.h](../include/termisu/ffi.h)

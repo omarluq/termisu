@@ -4,10 +4,22 @@
   "description": "Prebuilt native Termisu library for native-linux-arm64-musl",
   "type": "module",
   "private": false,
-  "os": ["linux"],
-  "cpu": ["arm64"],
-  "libc": ["musl"],
-  "files": ["README.md", "manifest.json"],
+  "publishConfig": {
+    "access": "public"
+  },
+  "os": [
+    "linux"
+  ],
+  "cpu": [
+    "arm64"
+  ],
+  "libc": [
+    "musl"
+  ],
+  "files": [
+    "README.md",
+    "manifest.json"
+  ],
   "exports": {
     "./manifest": "./manifest.json"
   },
