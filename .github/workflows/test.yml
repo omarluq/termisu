@@ -39,7 +39,7 @@ jobs:
         env:
           TERM: xterm-256color
   test-freebsd:
-    name: Run Tests (FreeBSD 15.0, Crystal ${{ matrix.crystal }})
+    name: Run Tests (Crystal ${{ matrix.crystal }}, FreeBSD 15.0)
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -77,10 +77,12 @@ jobs:
             mkdir -p "$MISE_DATA_DIR" "$MISE_CACHE_DIR" "$MISE_CONFIG_DIR"
             curl https://mise.run | sh
             export PATH="$HOME/.local/bin:$PATH"
+            pwd
+            ls
+            which mise
+            mise --version
             mise install crystal@${{ matrix.crystal }}
-            mise exec crystal@${{ matrix.crystal }} -- sh -lc '
-              crystal --version
-              shards --version
-              shards install
-              unbuffer crystal spec -v
-            '
+            mise exec crystal@${{ matrix.crystal }} -- crystal --version
+            mise exec crystal@${{ matrix.crystal }} -- shards --version
+            mise exec crystal@${{ matrix.crystal }} -- shards install
+            mise exec crystal@${{ matrix.crystal }} -- unbuffer crystal spec -v
