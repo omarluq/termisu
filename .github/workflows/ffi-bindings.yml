@@ -120,16 +120,18 @@ jobs:
             mkdir -p "$MISE_DATA_DIR" "$MISE_CACHE_DIR" "$MISE_CONFIG_DIR"
             curl https://mise.run | sh
             export PATH="$HOME/.local/bin:$PATH"
+            pwd
+            ls
+            which mise
+            mise --version
             mise install crystal@${{ matrix.crystal }}
-            mise exec crystal@${{ matrix.crystal }} -- sh -lc '
-              shards install
-              clang-format --dry-run --Werror include/termisu/ffi.h examples/c/basic.c tests/c/ffi_test.c
-              clang-tidy -quiet examples/c/basic.c --config-file=.clang-tidy -- -std=c11 -Iinclude
-              clang-tidy -quiet tests/c/ffi_test.c --config-file=.clang-tidy -- -std=c11 -Iinclude
-              bin/hace ffi:build
-              cc tests/c/ffi_test.c -Iinclude -Lbin -ltermisu -o bin/termisu-c-test
-              LD_LIBRARY_PATH="$PWD/bin" unbuffer ./bin/termisu-c-test
-            '
+            mise exec crystal@${{ matrix.crystal }} -- shards install
+            clang-format --dry-run --Werror include/termisu/ffi.h examples/c/basic.c tests/c/ffi_test.c
+            clang-tidy -quiet examples/c/basic.c --config-file=.clang-tidy -- -std=c11 -Iinclude
+            clang-tidy -quiet tests/c/ffi_test.c --config-file=.clang-tidy -- -std=c11 -Iinclude
+            mise exec crystal@${{ matrix.crystal }} -- bin/hace ffi:build
+            cc tests/c/ffi_test.c -Iinclude -Lbin -ltermisu -o bin/termisu-c-test
+            LD_LIBRARY_PATH="$PWD/bin" unbuffer ./bin/termisu-c-test
   # Bun does not currently support FreeBSD natively, so the TypeScript FFI
   # matrix remains Linux/macOS until the runtime becomes available there.
   ts-ffi:
