@@ -50,9 +50,10 @@ const isLinuxMusl = (arch: NodeJS.Architecture): boolean => {
 };
 
 const detectLinuxTarget = (arch: NodeJS.Architecture): PlatformTarget | null => {
+  const musl = isLinuxMusl(arch);
   const linuxTargetByArch = {
-    arm64: isLinuxMusl(arch) ? "linux-arm64-musl" : "linux-arm64-gnu",
-    x64: isLinuxMusl(arch) ? "linux-x64-musl" : "linux-x64-gnu",
+    arm64: musl ? "linux-arm64-musl" : "linux-arm64-gnu",
+    x64: musl ? "linux-x64-musl" : "linux-x64-gnu",
   } as const satisfies Record<"arm64" | "x64", PlatformTarget>;
 
   return arch === "arm64" || arch === "x64" ? linuxTargetByArch[arch] : null;

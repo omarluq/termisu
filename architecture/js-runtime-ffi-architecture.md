@@ -42,7 +42,6 @@ flowchart TD
 
   subgraph JS
     CORE[@termisu/core]
-    PLAT[@termisu/platform]
   end
 
   subgraph NativePkgs
@@ -61,17 +60,16 @@ flowchart TD
   end
 
   APP --> CORE
-  CORE --> PLAT
   CORE --> SO
 
-  PLAT -. resolves target package .-> N1
-  PLAT -. resolves target package .-> N2
-  PLAT -. resolves target package .-> N3
-  PLAT -. resolves target package .-> N4
-  PLAT -. resolves target package .-> N5
-  PLAT -. resolves target package .-> N6
-  PLAT -. resolves target package .-> N7
-  PLAT -. resolves target package .-> N8
+  CORE -. resolves target package .-> N1
+  CORE -. resolves target package .-> N2
+  CORE -. resolves target package .-> N3
+  CORE -. resolves target package .-> N4
+  CORE -. resolves target package .-> N5
+  CORE -. resolves target package .-> N6
+  CORE -. resolves target package .-> N7
+  CORE -. resolves target package .-> N8
 ```
 
 ## Native Load Contract
@@ -80,12 +78,10 @@ flowchart TD
 sequenceDiagram
   participant App
   participant Core as @termisu/core
-  participant Platform as @termisu/platform
   participant Native as libtermisu
 
   App->>Core: new Termisu({ libraryPath? })
-  Core->>Platform: detectTarget()/resolve package name
-  Platform-->>Core: target metadata
+  Core->>Core: detectTarget()/resolve package name
   Core->>Native: dlopen(symbols)
   Core->>Native: termisu_abi_version()
   Core->>Native: termisu_layout_signature()
@@ -122,8 +118,7 @@ flowchart TD
 
 | Package | Owns | Must not own |
 | --- | --- | --- |
-| `@termisu/platform` | target detection, native package mapping, path resolution | terminal behavior semantics |
-| `@termisu/core` | FFI symbol binding, ABI/layout validation, native call wrappers | platform policy |
+| `@termisu/core` | target detection, native package mapping, path resolution, FFI symbol binding, ABI/layout validation, native call wrappers | framework policy |
 | `@termisu/native-*` | platform-specific package metadata and artifact delivery | runtime behavior semantics |
 
 ## Capability Model
@@ -142,8 +137,6 @@ Behavior contract:
 ## Current Implementation Notes
 
 - `@termisu/core` already validates ABI and struct layout signature.
-- `@termisu/platform` currently detects `os/arch` and maps to package names.
-- `@termisu/core` currently resolves explicit paths, `TERMISU_LIB_PATH`, and
 - `@termisu/core` currently resolves explicit paths, `TERMISU_LIB_PATH`,
   platform-package candidates, and repository-local `bin/` candidates.
 - native packages currently expose manifest metadata and still need artifact
@@ -161,4 +154,4 @@ Behavior contract:
 - [src/termisu/ffi/layout.cr](../src/termisu/ffi/layout.cr)
 - [javascript/core/src/native.ts](../javascript/core/src/native.ts)
 - [javascript/core/src/termisu.ts](../javascript/core/src/termisu.ts)
-- [javascript/platform/src/index.ts](../javascript/platform/src/index.ts)
+- [javascript/core/src/platform.ts](../javascript/core/src/platform.ts)

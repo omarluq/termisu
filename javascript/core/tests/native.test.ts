@@ -54,6 +54,25 @@ describe("native loader", () => {
       env: {},
       fileExists: (candidate) => candidate === packageLibraryPath,
       moduleUrl: pathToFileURL("/tmp/termisu-project/javascript/core/src/native.ts").toString(),
+      readFile: () => JSON.stringify({ library: `libtermisu.${suffix}` }),
+      resolveModule: () => manifestUrl,
+    });
+
+    expect(resolvedPath).toBe(packageLibraryPath);
+  });
+
+  it("uses the manifest-declared library path when the package is installed", () => {
+    const packageDir = "/tmp/termisu-native-package";
+    const manifestUrl = pathToFileURL(`${packageDir}/manifest.json`).toString();
+    const packageLibraryPath = resolve(`${packageDir}/libtermisu.${suffix}`);
+
+    const resolvedPath = resolveLibraryPath(undefined, {
+      cwd: "/tmp/termisu-project",
+      detectTarget: () => "linux-x64-gnu",
+      env: {},
+      fileExists: (candidate) => candidate === packageLibraryPath,
+      moduleUrl: pathToFileURL("/tmp/termisu-project/javascript/core/src/native.ts").toString(),
+      readFile: () => JSON.stringify({ library: `libtermisu.${suffix}` }),
       resolveModule: () => manifestUrl,
     });
 
