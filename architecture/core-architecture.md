@@ -96,8 +96,8 @@ flowchart TD
   B --> C[Dirty row tracking]
   C --> D[Termisu.render]
   D --> E{sync_updates enabled?}
-  E -- yes --> F[Emit BSU]
-  E -- no --> G[Skip BSU]
+  E -- yes --> F[Emit BSU (Begin Synchronized Update)]
+  E -- no --> G[Skip BSU (Begin Synchronized Update)]
   F --> H[Buffer.render_to diff front vs back]
   G --> H
   H --> I[Row batch rendering]
@@ -105,7 +105,7 @@ flowchart TD
   J --> K[Terminal writes escape sequences + graphemes]
   K --> L[Render cursor visibility/position]
   L --> M{sync_updates enabled?}
-  M -- yes --> N[Emit ESU + flush]
+  M -- yes --> N[Emit ESU (End Synchronized Update) + flush]
   M -- no --> O[Flush]
   N --> P[front buffer synchronized]
   O --> P
