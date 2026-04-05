@@ -80,15 +80,17 @@ jobs:
             mkdir -p "$MISE_DATA_DIR" "$MISE_CACHE_DIR" "$MISE_CONFIG_DIR" bin
             curl https://mise.run | sh
             export PATH="$HOME/.local/bin:$PATH"
+            pwd
+            ls
+            which mise
+            mise --version
             mise install crystal@${{ matrix.crystal }}
-            mise exec crystal@${{ matrix.crystal }} -- sh -lc '
-              shards install
-              crystal build examples/showcase.cr -o bin/showcase --release
-              crystal build examples/simple.cr -o bin/simple --release
-              crystal build examples/colors.cr -o bin/colors --release
-              crystal build examples/keyboard_and_mouse.cr -o bin/kmd --release
-              crystal build examples/animation.cr -o bin/animation --release
-            '
+            mise exec crystal@${{ matrix.crystal }} -- shards install
+            mise exec crystal@${{ matrix.crystal }} -- crystal build examples/showcase.cr -o bin/showcase --release
+            mise exec crystal@${{ matrix.crystal }} -- crystal build examples/simple.cr -o bin/simple --release
+            mise exec crystal@${{ matrix.crystal }} -- crystal build examples/colors.cr -o bin/colors --release
+            mise exec crystal@${{ matrix.crystal }} -- crystal build examples/keyboard_and_mouse.cr -o bin/kmd --release
+            mise exec crystal@${{ matrix.crystal }} -- crystal build examples/animation.cr -o bin/animation --release
       - name: Upload FreeBSD binaries
         uses: actions/upload-artifact@v7
         with:
