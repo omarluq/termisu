@@ -19,7 +19,7 @@
   ],
   "scripts": {
     "build": "bun run clean && bun build src/index.ts --outdir dist --target bun --format esm && bun run build:types",
-    "build:types": "bun run --cwd ../platform build:types && bunx tsc -p tsconfig.json --emitDeclarationOnly",
+    "build:types": "bunx tsc -p tsconfig.json --emitDeclarationOnly",
     "check": "biome check .",
     "check:fix": "biome check --write .",
     "clean": "rimraf dist",
@@ -28,11 +28,8 @@
     "lint": "biome lint .",
     "lint:fix": "biome lint --write .",
     "test": "bun test tests",
-    "typecheck": "bun run --cwd ../platform build:types && bunx tsc -p tsconfig.json --noEmit",
+    "typecheck": "bunx tsc -p tsconfig.json --noEmit",
     "dev": "bun run examples/basic.ts"
-  },
-  "dependencies": {
-    "@termisu/platform": "workspace:*"
   },
   "optionalDependencies": {
     "@termisu/native-darwin-arm64": "workspace:*",

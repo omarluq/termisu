@@ -2,5 +2,6 @@
   "target": "native-freebsd-x64",
   "os": "freebsd",
   "cpu": "x64",
-  "libc": "n/a"
+  "libc": "n/a",
+  "library": "libtermisu.so"
 }

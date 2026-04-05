@@ -4,7 +4,15 @@
   "type": "module",
   "packageManager": "bun@1.3.10",
   "workspaces": [
-    "javascript/core"
+    "javascript/core",
+    "javascript/native/darwin/arm64",
+    "javascript/native/darwin/x64",
+    "javascript/native/freebsd/arm64",
+    "javascript/native/freebsd/x64",
+    "javascript/native/linux/arm64/gnu",
+    "javascript/native/linux/arm64/musl",
+    "javascript/native/linux/x64/gnu",
+    "javascript/native/linux/x64/musl"
   ],
   "scripts": {
     "js:build": "bun run --cwd javascript/core build",

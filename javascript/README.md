@@ -7,14 +7,12 @@ platform-specific native package scaffolding.
 
 | Package | Path | Purpose |
 | --- | --- | --- |
-| `@termisu/core` | `javascript/core` | Public Bun FFI bindings and JS API |
-| `@termisu/platform` | `javascript/platform` | Internal target detection and native package mapping |
+| `@termisu/core` | `javascript/core` | Public Bun FFI bindings, native target detection, and JS API |
 | `@termisu/native-*` | `javascript/native/**` | Platform-specific native package metadata |
 
 ## Current Status
 
 - `@termisu/core` is the only intended user-facing JS package today.
-- `@termisu/platform` is an internal helper package.
 - `@termisu/core` declares platform-specific native packages as optional
   dependencies so one install command can resolve the right target.
 - Native packages are still scaffolds for platform delivery and release wiring.
@@ -37,6 +35,8 @@ platform-specific native package scaffolding.
 From the repository root:
 
 ```bash
-bun run js:typecheck
-bun run e2e:typecheck
+bun install          # resolves @termisu/core + its native target packages
+bun run js:typecheck # type-check @termisu/core
+bun run js:test      # run @termisu/core tests
+bun run js:check     # biome lint + format checks
 ```
