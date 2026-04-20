@@ -1,9 +1,10 @@
 import { dlopen, suffix } from "bun:ffi";
-import { existsSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { ABI_VERSION, STRUCT_LAYOUT_SIGNATURE } from "./constants";
+import { detectTarget, nativePackageByTarget, type PlatformTarget } from "./platform";
 
 const SYMBOLS = {
   termisu_abi_version: { args: [], returns: "u32" },
@@ -47,6 +48,20 @@ export interface NativeLibrary {
   close(): void;
   path: string;
 }
+
+type NativeResolutionDeps = {
+  cwd?: string;
+  detectTarget?: () => PlatformTarget | null;
+  env?: NodeJS.ProcessEnv;
+  fileExists?: (path: string) => boolean;
+  moduleUrl?: string;
+  readFile?: (path: string) => string;
+  resolveModule?: (specifier: string) => string;
+};
+
+type NativePackageManifest = {
+  library?: string;
+};
 
 const MAX_SAFE_INTEGER_BIGINT = BigInt(Number.MAX_SAFE_INTEGER);
 const MIN_SAFE_INTEGER_BIGINT = BigInt(Number.MIN_SAFE_INTEGER);
@@ -99,27 +114,79 @@ function validateNativeLayout(path: string, symbols: SymbolMap): void {
   }
 }
 
-function resolveLibraryPath(explicit?: string): string {
-  if (explicit) return resolve(explicit);
+export function resolveNativePackageLibraryPath(deps: NativeResolutionDeps = {}): string | null {
+  const detectTargetFn = deps.detectTarget ?? detectTarget;
+  const fileExists = deps.fileExists ?? existsSync;
+  const readFile = deps.readFile ?? ((path: string) => readFileSync(path, "utf8"));
+  const resolveModule =
+    deps.resolveModule ?? ((specifier: string) => import.meta.resolve(specifier));
 
-  const envPath = process.env.TERMISU_LIB_PATH;
-  if (envPath) return resolve(envPath);
+  const target = detectTargetFn();
+  if (target === null) {
+    return null;
+  }
 
-  const moduleDir = dirname(fileURLToPath(import.meta.url));
+  const packageName = nativePackageByTarget[target];
+  let manifestPath: string;
+
+  try {
+    manifestPath = resolveModule(`${packageName}/manifest`);
+  } catch {
+    return null;
+  }
+
+  const packageDir = dirname(fileURLToPath(manifestPath));
+  let manifest: NativePackageManifest;
+
+  try {
+    manifest = JSON.parse(readFile(fileURLToPath(manifestPath))) as NativePackageManifest;
+  } catch {
+    return null;
+  }
+
+  if (!manifest.library) {
+    return null;
+  }
+
+  const candidates = [resolve(join(packageDir, manifest.library))];
+
+  for (const candidate of candidates) {
+    if (fileExists(candidate)) {
+      return candidate;
+    }
+  }
+
+  return null;
+}
+
+export function resolveLibraryPath(explicit?: string, deps: NativeResolutionDeps = {}): string {
+  const env = deps.env ?? process.env;
+  const cwd = deps.cwd ?? process.cwd();
+  const fileExists = deps.fileExists ?? existsSync;
+
+  if (explicit) return isAbsolute(explicit) ? explicit : resolve(cwd, explicit);
+
+  const envPath = env.TERMISU_LIB_PATH;
+  if (envPath) return isAbsolute(envPath) ? envPath : resolve(cwd, envPath);
+
+  const packageLibraryPath = resolveNativePackageLibraryPath(deps);
+  if (packageLibraryPath) return packageLibraryPath;
+
+  const moduleDir = dirname(fileURLToPath(deps.moduleUrl ?? import.meta.url));
   const candidates = [
-    resolve(join(process.cwd(), "bin", `libtermisu.${suffix}`)),
-    resolve(join(process.cwd(), "..", "bin", `libtermisu.${suffix}`)),
+    resolve(join(cwd, "bin", `libtermisu.${suffix}`)),
+    resolve(join(cwd, "..", "bin", `libtermisu.${suffix}`)),
     resolve(join(moduleDir, "..", "..", "bin", `libtermisu.${suffix}`)),
   ];
 
   for (const candidate of candidates) {
-    if (existsSync(candidate)) return candidate;
+    if (fileExists(candidate)) return candidate;
   }
 
   throw new Error(
     [
       "Could not locate Termisu native library.",
-      "Set TERMISU_LIB_PATH or pass { libraryPath }.",
+      "Install @termisu/core on a supported target, set TERMISU_LIB_PATH, or pass { libraryPath }.",
       `Checked: ${candidates.join(", ")}`,
     ].join(" ")
   );
