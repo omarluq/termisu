@@ -18,7 +18,7 @@
   },
   "devDependencies": {
     "@homebridge/node-pty-prebuilt-multiarch": "^0.13.1",
-    "@microsoft/tui-test": "github:jacob314/tui-test#6ae2984"
+    "@microsoft/tui-test": "github:jacob314/tui-test#eda5ffa"
   },
   "trustedDependencies": [
     "@homebridge/node-pty-prebuilt-multiarch"
