@@ -31,7 +31,7 @@ jobs:
       - name: Setup Crystal
         uses: ./.github/actions/setup-crystal
         with:
-          crystal-version: "1.19.1"
+          crystal-version: "1.20.0"
       - name: Build native FFI library
         uses: ./.github/actions/build-ffi
       - name: Install dependencies
