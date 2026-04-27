@@ -44,7 +44,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        crystal: ["1.17.0", "1.18.2", "1.19.1"]
+        crystal: ["1.17.0", "1.18.2", "1.19.1", "1.20.0"]
     permissions:
       checks: write
       contents: read
@@ -57,7 +57,7 @@ jobs:
           path: |
             .cache/mise
             lib
-          key: freebsd-test-${{ matrix.crystal }}-${{ hashFiles('shard.lock') }}
+          key: freebsd-test-${{ matrix.crystal }}-${{ hashFiles('shard.yml', 'shard.lock') }}
           restore-keys: |
             freebsd-test-${{ matrix.crystal }}-
             freebsd-test-
@@ -67,7 +67,7 @@ jobs:
           release: "15.0"
           usesh: true
           prepare: |
-            pkg install -y curl git terminfo-db expect
+            pkg install -y mise terminfo-db expect
           run: |
             set -eux
             export TERM=xterm-256color
@@ -75,11 +75,6 @@ jobs:
             export MISE_CACHE_DIR="$PWD/.cache/mise/cache"
             export MISE_CONFIG_DIR="$PWD/.cache/mise/config"
             mkdir -p "$MISE_DATA_DIR" "$MISE_CACHE_DIR" "$MISE_CONFIG_DIR"
-            curl https://mise.run | sh
-            export PATH="$HOME/.local/bin:$PATH"
-            pwd
-            ls
-            which mise
             mise --version
             mise install crystal@${{ matrix.crystal }}
             mise exec crystal@${{ matrix.crystal }} -- crystal --version

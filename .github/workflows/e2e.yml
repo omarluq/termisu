@@ -51,7 +51,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        crystal: ["1.17.0", "1.18.2", "1.19.1"]
+        crystal: ["1.17.0", "1.18.2", "1.19.1", "1.20.0"]
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -61,7 +61,7 @@ jobs:
           path: |
             .cache/mise
             lib
-          key: freebsd-e2e-build-${{ matrix.crystal }}-${{ hashFiles('shard.lock') }}
+          key: freebsd-e2e-build-${{ matrix.crystal }}-${{ hashFiles('shard.yml', 'shard.lock') }}
           restore-keys: |
             freebsd-e2e-build-${{ matrix.crystal }}-
             freebsd-e2e-build-
@@ -71,18 +71,13 @@ jobs:
           release: "15.0"
           usesh: true
           prepare: |
-            pkg install -y curl git terminfo-db
+            pkg install -y mise terminfo-db
           run: |
             set -eux
             export MISE_DATA_DIR="$PWD/.cache/mise/data"
             export MISE_CACHE_DIR="$PWD/.cache/mise/cache"
             export MISE_CONFIG_DIR="$PWD/.cache/mise/config"
             mkdir -p "$MISE_DATA_DIR" "$MISE_CACHE_DIR" "$MISE_CONFIG_DIR" bin
-            curl https://mise.run | sh
-            export PATH="$HOME/.local/bin:$PATH"
-            pwd
-            ls
-            which mise
             mise --version
             mise install crystal@${{ matrix.crystal }}
             mise exec crystal@${{ matrix.crystal }} -- shards install
@@ -161,7 +156,7 @@ jobs:
       fail-fast: false
       matrix:
         shell: [bash, zsh, fish]
-        crystal: ["1.17.0", "1.18.2", "1.19.1"]
+        crystal: ["1.17.0", "1.18.2", "1.19.1", "1.20.0"]
     permissions:
       contents: read
     steps:
@@ -172,13 +167,6 @@ jobs:
         with:
           name: e2e-binaries-freebsd-${{ matrix.crystal }}
           path: bin/
-      - name: Cache FreeBSD E2E dependencies
-        uses: actions/cache@v5
-        with:
-          path: e2e/node_modules
-          key: freebsd-e2e-node-${{ hashFiles('e2e/package.json') }}
-          restore-keys: |
-            freebsd-e2e-node-
       - name: Run E2E in FreeBSD VM
         uses: vmactions/freebsd-vm@v1
         with:
