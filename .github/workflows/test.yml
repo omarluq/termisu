@@ -17,7 +17,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
-        crystal: ["1.17.0", "1.18.2", "1.19.1"]
+        crystal: ["1.17.0", "1.18.2", "1.19.1", "1.20.0"]
     permissions:
       checks: write
       contents: read
