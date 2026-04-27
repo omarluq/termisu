@@ -83,26 +83,19 @@ jobs:
           fi
           unbuffer ./bin/termisu-c-test
   c-abi-freebsd:
-    name: C ABI (FreeBSD 15.0, Crystal ${{ matrix.crystal }})
+    name: C ABI (FreeBSD 15.0)
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        crystal: ["1.17.0", "1.18.2", "1.19.1", "1.20.0"]
     permissions:
       contents: read
     steps:
       - name: Checkout
         uses: actions/checkout@v6
-      - name: Cache FreeBSD Crystal dependencies
+      - name: Cache FreeBSD shards
         uses: actions/cache@v5
         with:
-          path: |
-            .cache/mise
-            lib
-          key: freebsd-c-abi-${{ matrix.crystal }}-${{ hashFiles('shard.yml', 'shard.lock') }}
+          path: lib
+          key: freebsd-c-abi-${{ hashFiles('shard.yml', 'shard.lock') }}
           restore-keys: |
-            freebsd-c-abi-${{ matrix.crystal }}-
             freebsd-c-abi-
       - name: Run C ABI checks in FreeBSD VM
         uses: vmactions/freebsd-vm@v1
@@ -110,21 +103,17 @@ jobs:
           release: "15.0"
           usesh: true
           prepare: |
-            pkg install -y mise llvm expect
+            pkg install -y crystal shards llvm expect
           run: |
             set -eux
             export TERM=xterm-256color
-            export MISE_DATA_DIR="$PWD/.cache/mise/data"
-            export MISE_CACHE_DIR="$PWD/.cache/mise/cache"
-            export MISE_CONFIG_DIR="$PWD/.cache/mise/config"
-            mkdir -p "$MISE_DATA_DIR" "$MISE_CACHE_DIR" "$MISE_CONFIG_DIR"
-            mise --version
-            mise install crystal@${{ matrix.crystal }}
-            mise exec crystal@${{ matrix.crystal }} -- shards install
+            crystal --version
+            shards --version
+            shards install
             clang-format --dry-run --Werror include/termisu/ffi.h examples/c/basic.c tests/c/ffi_test.c
             clang-tidy -quiet examples/c/basic.c --config-file=.clang-tidy -- -std=c11 -Iinclude
             clang-tidy -quiet tests/c/ffi_test.c --config-file=.clang-tidy -- -std=c11 -Iinclude
-            mise exec crystal@${{ matrix.crystal }} -- bin/hace ffi:build
+            bin/hace ffi:build
             cc tests/c/ffi_test.c -Iinclude -Lbin -ltermisu -o bin/termisu-c-test
             LD_LIBRARY_PATH="$PWD/bin" unbuffer ./bin/termisu-c-test
   # Bun does not currently support FreeBSD natively, so the TypeScript FFI
