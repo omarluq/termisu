@@ -168,7 +168,7 @@ jobs:
             set -eux
             export TERM=xterm-256color
             chmod +x bin/*
-            TUI_TEST_SHELL=${{ matrix.shell }} npm --prefix e2e run test
+            TUI_TEST_SHELL=${{ matrix.shell }} node e2e/node_modules/@microsoft/tui-test/index.js
       - name: Upload traces on failure
         if: failure()
         uses: actions/upload-artifact@v7
