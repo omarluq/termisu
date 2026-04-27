@@ -46,24 +46,17 @@ jobs:
         with:
           artifact-name: e2e-binaries-${{ matrix.os == 'ubuntu-latest' && 'linux' || 'macos' }}-${{ matrix.crystal }}
   build-freebsd:
-    name: Build (FreeBSD 15.0, Crystal ${{ matrix.crystal }})
+    name: Build (FreeBSD 15.0)
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        crystal: ["1.17.0", "1.18.2", "1.19.1", "1.20.0"]
     steps:
       - name: Checkout
         uses: actions/checkout@v6
-      - name: Cache FreeBSD Crystal dependencies
+      - name: Cache FreeBSD shards
         uses: actions/cache@v5
         with:
-          path: |
-            .cache/mise
-            lib
-          key: freebsd-e2e-build-${{ matrix.crystal }}-${{ hashFiles('shard.yml', 'shard.lock') }}
+          path: lib
+          key: freebsd-e2e-build-${{ hashFiles('shard.yml', 'shard.lock') }}
           restore-keys: |
-            freebsd-e2e-build-${{ matrix.crystal }}-
             freebsd-e2e-build-
       - name: Build binaries in FreeBSD VM
         uses: vmactions/freebsd-vm@v1
@@ -71,25 +64,22 @@ jobs:
           release: "15.0"
           usesh: true
           prepare: |
-            pkg install -y mise terminfo-db
+            pkg install -y crystal shards terminfo-db
           run: |
             set -eux
-            export MISE_DATA_DIR="$PWD/.cache/mise/data"
-            export MISE_CACHE_DIR="$PWD/.cache/mise/cache"
-            export MISE_CONFIG_DIR="$PWD/.cache/mise/config"
-            mkdir -p "$MISE_DATA_DIR" "$MISE_CACHE_DIR" "$MISE_CONFIG_DIR" bin
-            mise --version
-            mise install crystal@${{ matrix.crystal }}
-            mise exec crystal@${{ matrix.crystal }} -- shards install
-            mise exec crystal@${{ matrix.crystal }} -- crystal build examples/showcase.cr -o bin/showcase --release
-            mise exec crystal@${{ matrix.crystal }} -- crystal build examples/simple.cr -o bin/simple --release
-            mise exec crystal@${{ matrix.crystal }} -- crystal build examples/colors.cr -o bin/colors --release
-            mise exec crystal@${{ matrix.crystal }} -- crystal build examples/keyboard_and_mouse.cr -o bin/kmd --release
-            mise exec crystal@${{ matrix.crystal }} -- crystal build examples/animation.cr -o bin/animation --release
+            mkdir -p bin
+            crystal --version
+            shards --version
+            shards install
+            crystal build examples/showcase.cr -o bin/showcase --release
+            crystal build examples/simple.cr -o bin/simple --release
+            crystal build examples/colors.cr -o bin/colors --release
+            crystal build examples/keyboard_and_mouse.cr -o bin/kmd --release
+            crystal build examples/animation.cr -o bin/animation --release
       - name: Upload FreeBSD binaries
         uses: actions/upload-artifact@v7
         with:
-          name: e2e-binaries-freebsd-${{ matrix.crystal }}
+          name: e2e-binaries-freebsd
           path: bin/
   e2e:
     name: E2E (${{ matrix.os }}, ${{ matrix.shell }}, Crystal ${{ matrix.crystal }})
@@ -149,14 +139,13 @@ jobs:
           path: e2e/tests/__snapshots__/
           retention-days: 7
   e2e-freebsd:
-    name: E2E (FreeBSD 15.0, ${{ matrix.shell }}, Crystal ${{ matrix.crystal }})
+    name: E2E (FreeBSD 15.0, ${{ matrix.shell }})
     runs-on: ubuntu-latest
     needs: build-freebsd
     strategy:
       fail-fast: false
       matrix:
         shell: [bash, zsh, fish]
-        crystal: ["1.17.0", "1.18.2", "1.19.1", "1.20.0"]
     permissions:
       contents: read
     steps:
@@ -165,7 +154,7 @@ jobs:
       - name: Download FreeBSD binaries
         uses: actions/download-artifact@v8
         with:
-          name: e2e-binaries-freebsd-${{ matrix.crystal }}
+          name: e2e-binaries-freebsd
           path: bin/
       - name: Run E2E in FreeBSD VM
         uses: vmactions/freebsd-vm@v1
@@ -184,13 +173,13 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v7
         with:
-          name: tui-traces-freebsd-${{ matrix.crystal }}-${{ matrix.shell }}
+          name: tui-traces-freebsd-${{ matrix.shell }}
           path: e2e/tui-traces/
           retention-days: 7
       - name: Upload snapshots on failure
         if: failure()
         uses: actions/upload-artifact@v7
         with:
-          name: snapshots-freebsd-${{ matrix.crystal }}-${{ matrix.shell }}
+          name: snapshots-freebsd-${{ matrix.shell }}
           path: e2e/tests/__snapshots__/
           retention-days: 7
