@@ -38,3 +38,33 @@ jobs:
         run: unbuffer crystal spec -v
         env:
           TERM: xterm-256color
+  test-freebsd:
+    name: Run Tests (FreeBSD 15.0)
+    runs-on: ubuntu-latest
+    permissions:
+      checks: write
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+      - name: Cache FreeBSD shards
+        uses: actions/cache@v5
+        with:
+          path: lib
+          key: freebsd-test-${{ hashFiles('shard.yml', 'shard.lock') }}
+          restore-keys: |
+            freebsd-test-
+      - name: Run tests in FreeBSD VM
+        uses: vmactions/freebsd-vm@v1
+        with:
+          release: "15.0"
+          usesh: true
+          prepare: |
+            pkg install -y crystal shards terminfo-db
+          run: |
+            set -eux
+            export TERM=xterm-256color
+            crystal --version
+            shards --version
+            shards install
+            script -q /dev/null crystal spec -v

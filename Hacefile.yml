@@ -106,7 +106,12 @@ tasks:
     commands: |
       mkdir -p bin
       crystal build src/termisu.cr --release --cross-compile -o bin/libtermisu
-      cc -shared bin/libtermisu.o -o {{FFI_LIB}} -L$(crystal env CRYSTAL_LIBRARY_PATH) -lgc -lpthread -ldl
+      case "$(uname -s)" in
+        FreeBSD) DL_LIB="-ldl" ; GC_LIB="-lgc-threaded" ; SYS_LIBS="-L/usr/local/lib -lm" ;;
+        Darwin)  DL_LIB=""     ; GC_LIB="-lgc"          ; SYS_LIBS="" ;;
+        *)       DL_LIB="-ldl" ; GC_LIB="-lgc"          ; SYS_LIBS="" ;;
+      esac
+      cc -shared bin/libtermisu.o -o {{FFI_LIB}} -L$(crystal env CRYSTAL_LIBRARY_PATH) $SYS_LIBS $GC_LIB -lpthread $DL_LIB
   ffi:example:build:
     description: Build C example linked against Termisu C ABI library
     phony: true
