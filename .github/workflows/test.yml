@@ -60,11 +60,11 @@ jobs:
           release: "15.0"
           usesh: true
           prepare: |
-            pkg install -y crystal shards terminfo-db expect
+            pkg install -y crystal shards terminfo-db
           run: |
             set -eux
             export TERM=xterm-256color
             crystal --version
             shards --version
             shards install
-            unbuffer crystal spec -v
+            script -q /dev/null crystal spec -v

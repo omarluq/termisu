@@ -103,19 +103,20 @@ jobs:
           release: "15.0"
           usesh: true
           prepare: |
-            pkg install -y crystal shards llvm expect
+            pkg install -y crystal shards llvm
           run: |
             set -eux
             export TERM=xterm-256color
             crystal --version
             shards --version
             shards install
+            shards build hace
             clang-format --dry-run --Werror include/termisu/ffi.h examples/c/basic.c tests/c/ffi_test.c
             clang-tidy -quiet examples/c/basic.c --config-file=.clang-tidy -- -std=c11 -Iinclude
             clang-tidy -quiet tests/c/ffi_test.c --config-file=.clang-tidy -- -std=c11 -Iinclude
             bin/hace ffi:build
             cc tests/c/ffi_test.c -Iinclude -Lbin -ltermisu -o bin/termisu-c-test
-            LD_LIBRARY_PATH="$PWD/bin" unbuffer ./bin/termisu-c-test
+            LD_LIBRARY_PATH="$PWD/bin" script -q /dev/null ./bin/termisu-c-test
   # Bun does not currently support FreeBSD natively, so the TypeScript FFI
   # matrix remains Linux/macOS until the runtime becomes available there.
   ts-ffi:

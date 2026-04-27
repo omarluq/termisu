@@ -162,7 +162,7 @@ jobs:
           release: "15.0"
           usesh: true
           prepare: |
-            pkg install -y terminfo-db node npm bash zsh fish python3 gmake
+            pkg install -y git terminfo-db node npm bash zsh fish python3 gmake
             npm --prefix e2e install
           run: |
             set -eux
