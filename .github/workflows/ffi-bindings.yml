@@ -47,7 +47,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
-        crystal: ["1.18.2", "1.19.1", "1.20.0"]
+        crystal: ["1.17.0", "1.18.2", "1.19.1", "1.20.0"]
     permissions:
       contents: read
     steps:
@@ -82,6 +82,43 @@ jobs:
             cc tests/c/ffi_test.c -Iinclude -Lbin -ltermisu -Wl,-rpath,@loader_path -o bin/termisu-c-test
           fi
           unbuffer ./bin/termisu-c-test
+  c-abi-freebsd:
+    name: C ABI (FreeBSD 15.0)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+      - name: Cache FreeBSD shards
+        uses: actions/cache@v5
+        with:
+          path: lib
+          key: freebsd-c-abi-${{ hashFiles('shard.yml', 'shard.lock') }}
+          restore-keys: |
+            freebsd-c-abi-
+      - name: Run C ABI checks in FreeBSD VM
+        uses: vmactions/freebsd-vm@v1
+        with:
+          release: "15.0"
+          usesh: true
+          prepare: |
+            pkg install -y crystal shards llvm
+          run: |
+            set -eux
+            export TERM=xterm-256color
+            crystal --version
+            shards --version
+            shards install
+            shards build hace
+            clang-format --dry-run --Werror include/termisu/ffi.h examples/c/basic.c tests/c/ffi_test.c
+            clang-tidy -quiet examples/c/basic.c --config-file=.clang-tidy -- -std=c11 -Iinclude
+            clang-tidy -quiet tests/c/ffi_test.c --config-file=.clang-tidy -- -std=c11 -Iinclude
+            bin/hace ffi:build
+            cc tests/c/ffi_test.c -Iinclude -Lbin -ltermisu -o bin/termisu-c-test
+            LD_LIBRARY_PATH="$PWD/bin" script -q /dev/null ./bin/termisu-c-test
+  # Bun does not currently support FreeBSD natively, so the TypeScript FFI
+  # matrix remains Linux/macOS until the runtime becomes available there.
   ts-ffi:
     name: TypeScript FFI (${{ matrix.os }}, Crystal ${{ matrix.crystal }})
     runs-on: ${{ matrix.os }}
@@ -89,7 +126,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
-        crystal: ["1.18.2", "1.19.1", "1.20.0"]
+        crystal: ["1.17.0", "1.18.2", "1.19.1", "1.20.0"]
     permissions:
       contents: read
     steps:
