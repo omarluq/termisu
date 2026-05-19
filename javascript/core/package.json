@@ -31,6 +31,16 @@
     "typecheck": "bunx tsc -p tsconfig.json --noEmit",
     "dev": "bun run examples/basic.ts"
   },
+  "optionalDependencies": {
+    "@termisu/native-darwin-arm64": "workspace:*",
+    "@termisu/native-darwin-x64": "workspace:*",
+    "@termisu/native-freebsd-arm64": "workspace:*",
+    "@termisu/native-freebsd-x64": "workspace:*",
+    "@termisu/native-linux-arm64-gnu": "workspace:*",
+    "@termisu/native-linux-arm64-musl": "workspace:*",
+    "@termisu/native-linux-x64-gnu": "workspace:*",
+    "@termisu/native-linux-x64-musl": "workspace:*"
+  },
   "keywords": [
     "termisu",
     "bun",
