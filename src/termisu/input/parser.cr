@@ -210,22 +210,27 @@ class Termisu::Input::Parser
     when 0x7F # DEL (Backspace on most terminals)
       Event::Key.new(Key::Backspace)
     else
-      # Printable character - support full UTF-8 (Hangul, CJK, etc. for text input).
-      # Always read the full UTF-8 char first (so multibyte continuation bytes are
-      # consumed even when we end up discarding it — otherwise they'd be misparsed).
-      c = read_utf8_char(byte)
-      return Event::Key.new(Key::Unknown) unless c
-
-      # Under the Kitty protocol (report_text), plain unmodified keys still arrive
-      # as raw bytes (report_all_keys is off), so we must NOT blanket-drop them.
-      # Only swallow a raw byte that exactly duplicates the char just emitted by
-      # the immediately-preceding CSI-u text event (a terminal echoing an IME
-      # commit on both channels).
-      return Event::Key.new(Key::Unknown) if @protocol_active && dup == c
-
-      key = Key.from_char(c) || Key::Unknown
-      Event::Key.new(key, char: c)
+      parse_printable(byte, dup)
     end
+  end
+
+  # Handles a printable (non-control) byte: reads the full UTF-8 char and emits
+  # a Key event, supporting Hangul, CJK, accented letters, etc. for text input.
+  private def parse_printable(byte : UInt8, dup : Char?) : Event::Any
+    # Always read the full UTF-8 char first (so multibyte continuation bytes are
+    # consumed even when we end up discarding it — otherwise they'd be misparsed).
+    c = read_utf8_char(byte)
+    return Event::Key.new(Key::Unknown) unless c
+
+    # Under the Kitty protocol (report_text), plain unmodified keys still arrive
+    # as raw bytes (report_all_keys is off), so we must NOT blanket-drop them.
+    # Only swallow a raw byte that exactly duplicates the char just emitted by
+    # the immediately-preceding CSI-u text event (a terminal echoing an IME
+    # commit on both channels).
+    return Event::Key.new(Key::Unknown) if @protocol_active && dup == c
+
+    key = Key.from_char(c) || Key::Unknown
+    Event::Key.new(key, char: c)
   end
 
   # Parses an escape sequence starting with ESC (0x1B).
@@ -356,13 +361,11 @@ class Termisu::Input::Parser
     text_str = build_text_from_codepoints(text_param)
 
     # Prefer associated text (report_text) for the actual inserted char (e.g. shift+a gives 'A' in text)
-    c = text_str[0]? || ((codepoint > 0 && codepoint <= 0x10FFFF) ? (codepoint.chr rescue nil) : nil)
+    c = text_str[0]? || (valid_codepoint?(codepoint) ? codepoint.chr : nil)
 
     # If we saw a text-producing CSI report, terminal is using protocol for chars too (report_all+text or similar);
     # skip raw byte path for printables from now to avoid duplicates.
-    if c && c.printable? && c.ord >= 32
-      @protocol_active = true
-    end
+    @protocol_active = true if producing_text?(c)
 
     if codepoint == 0
       # Pure text event (no associated key), typically from IME or direct text input.
@@ -378,8 +381,15 @@ class Termisu::Input::Parser
     key = codepoint_to_key(codepoint)
     # Arm the one-shot dup guard so a duplicate raw echo of this exact char
     # (same byte immediately following) is swallowed; plain keys never match it.
-    @dup_guard = c if c && c.printable? && c.ord >= 32
+    @dup_guard = c if producing_text?(c)
     Event::Key.new(key, modifiers, char: c)
+  end
+
+  # Whether `c` is a text-producing printable char (printable and not a control
+  # codepoint). Used to gate Kitty text-protocol dedup state.
+  private def producing_text?(c : Char?) : Bool
+    return false unless c
+    c.printable? && c.ord >= 32
   end
 
   # Parses modifyOtherKeys sequence.
@@ -395,7 +405,7 @@ class Termisu::Input::Parser
     # If modify reports a printable via CSI, the terminal is using the protocol
     # for text; arm the one-shot dup guard so only a duplicate raw echo of this
     # exact char is swallowed (plain raw keys keep flowing).
-    if c && c.printable? && c.ord >= 32
+    if producing_text?(c)
       @protocol_active = true
       @dup_guard = c
     end

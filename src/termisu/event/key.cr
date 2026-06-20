@@ -22,8 +22,9 @@ struct Termisu::Event::Key
 
   # The Unicode character for printable input (e.g. Hangul syllables, CJK,
   # accented letters, etc.). This is set for direct UTF-8 input and takes
-  # precedence over key.to_char for text editing.
-  getter char : Char?
+  # precedence over key.to_char for text editing. Exposed via the custom
+  # `#char` reader below (which falls back to `key.to_char`).
+  @char : Char?
 
   def initialize(@key : Input::Key, @modifiers : Input::Modifier = Input::Modifier::None, @char : Char? = nil)
   end

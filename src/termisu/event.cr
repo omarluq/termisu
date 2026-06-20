@@ -38,7 +38,12 @@ require "./event/source/*"
 # Union type for all terminal events.
 # Use Event::Any for type annotations and collections.
 # Individual event types (Event::Key, Event::Mouse, etc.) work in case statements.
-alias Termisu::Event::Any = Termisu::Event::Key | Termisu::Event::Mouse | Termisu::Event::Resize | Termisu::Event::Tick | Termisu::Event::ModeChange | Termisu::Event::Preedit
+alias Termisu::Event::Any = Termisu::Event::Key |
+                            Termisu::Event::Mouse |
+                            Termisu::Event::Resize |
+                            Termisu::Event::Tick |
+                            Termisu::Event::ModeChange |
+                            Termisu::Event::Preedit
 
 # Preedit text from the input method during composition (e.g. partial Hangul
 # syllable as jamo are typed). The TUI should render this at the current cursor
