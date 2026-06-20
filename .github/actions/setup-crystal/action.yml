@@ -4,7 +4,7 @@ inputs:
   crystal-version:
     description: Crystal version to install
     required: false
-    default: 1.19.1
+    default: 1.20.0
   install-shards:
     description: Whether to run shards install
     required: false
