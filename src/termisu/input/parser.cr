@@ -129,34 +129,33 @@ class Termisu::Input::Parser
   # not delivered as key events here. Full preedit support would require terminal-
   # specific protocols (e.g. kitty's input protocol extensions or IM protocol).
   private def read_utf8_char(first_byte : UInt8) : Char?
-    # ASCII fast path
-    return first_byte.chr if first_byte < 0x80
+    return first_byte.chr if first_byte < 0x80 # ASCII fast path
 
-    # Number of continuation bytes from lead
-    ncont = case first_byte
-            when 0xC0..0xDF then 1
-            when 0xE0..0xEF then 2
-            when 0xF0..0xF7 then 3
-            else                 return nil
-            end
+    # Sequence length from the lead byte: count the leading 1-bits (2..4 for a
+    # valid multibyte lead). Anything else (lone continuation byte, 0xFF, etc.)
+    # is rejected here; full validity is confirmed by valid_encoding? below.
+    len = (~first_byte).leading_zeros_count.to_i
+    return nil unless 2 <= len <= 4
 
-    bytes = Bytes.new(1 + ncont)
+    bytes = Bytes.new(len)
     bytes[0] = first_byte
 
-    ncont.times do |i|
-      b = @reader.read_byte
-      return nil unless b
-      # must be continuation 10xxxxxx
-      return nil unless (b & 0xC0) == 0x80
-      bytes[i + 1] = b
+    (1...len).each do |i|
+      # wait_for_data reuses the split-read tolerance so a char fragmented
+      # across two reads survives; peek + confirm before consuming so a
+      # non-continuation byte is left in the buffer rather than swallowed.
+      return nil unless @reader.wait_for_data(ESCAPE_TIMEOUT_MS)
+      b = @reader.peek_byte
+      return nil unless b && (b & 0xC0) == 0x80 # continuation 10xxxxxx
+      @reader.read_byte
+      bytes[i] = b
     end
 
-    begin
-      s = String.new(bytes)
-      s.size > 0 ? s[0] : nil
-    rescue
-      nil
-    end
+    # valid_encoding? is a full RFC-3629 check: it rejects overlong encodings,
+    # surrogates, and anything above U+10FFFF. String.new never raises on bad
+    # UTF-8 (it yields U+FFFD), so no begin/rescue is needed.
+    s = String.new(bytes)
+    s.valid_encoding? ? s[0]? : nil
   end
 
   # Polls for an input event with optional timeout.
@@ -404,10 +403,22 @@ class Termisu::Input::Parser
     Event::Key.new(key, modifiers, char: c)
   end
 
+  # Whether `cp` is a scalar Unicode codepoint that maps to a real Char: in
+  # range and not a UTF-16 surrogate (U+D800..U+DFFF), which `Int#chr` would
+  # otherwise accept. Filtering here keeps the intent explicit and surrogate-safe.
+  private def valid_codepoint?(cp : Int32) : Bool
+    cp >= 0 && cp <= Char::MAX_CODEPOINT && !(0xD800..0xDFFF).includes?(cp)
+  end
+
   private def build_text_from_codepoints(text_param : String?) : String
     return "" if text_param.nil? || text_param.empty?
-    codes = text_param.split(':').compact_map(&.to_i?)
-    codes.map { |cp| (cp.chr rescue nil) }.compact.join
+
+    String.build do |io|
+      text_param.split(':').each do |part|
+        cp = part.to_i?
+        io << cp.chr if cp && valid_codepoint?(cp)
+      end
+    end
   end
 
   # Kitty protocol codepoint to Key mapping for special keys.
