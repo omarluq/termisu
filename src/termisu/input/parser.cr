@@ -106,8 +106,56 @@ class Termisu::Input::Parser
   }
 
   @reader : Reader
+  @protocol_active : Bool = false
+  # One-shot de-duplication guard. When a CSI-u event reports an associated
+  # text char, some terminals ALSO echo that same char as a raw UTF-8 byte
+  # (notably IME commits). We remember the just-emitted protocol char here so
+  # the immediately-following raw byte, IF it is the exact same char, can be
+  # swallowed as a duplicate. It is consumed (cleared) by the very next byte —
+  # so plain unmodified keys (which arrive as raw bytes under the 17u flag set,
+  # since report_all_keys is off) are never wrongly dropped.
+  @dup_guard : Char? = nil
 
   def initialize(@reader : Reader)
+  end
+
+  # Reads a complete UTF-8 character (1-4 bytes) starting from the given lead byte.
+  # Consumes the additional continuation bytes from the reader.
+  # Returns nil if incomplete, invalid, or not UTF-8 text.
+  #
+  # Note on Hangul/IME: This receives *committed* characters after IME composition
+  # completes (e.g. after typing jamo for a full syllable). Preedit/composing text
+  # during input is typically handled by the terminal emulator or OS IME overlay,
+  # not delivered as key events here. Full preedit support would require terminal-
+  # specific protocols (e.g. kitty's input protocol extensions or IM protocol).
+  private def read_utf8_char(first_byte : UInt8) : Char?
+    return first_byte.chr if first_byte < 0x80 # ASCII fast path
+
+    # Sequence length from the lead byte: count the leading 1-bits (2..4 for a
+    # valid multibyte lead). Anything else (lone continuation byte, 0xFF, etc.)
+    # is rejected here; full validity is confirmed by valid_encoding? below.
+    len = (~first_byte).leading_zeros_count.to_i
+    return nil unless 2 <= len <= 4
+
+    bytes = Bytes.new(len)
+    bytes[0] = first_byte
+
+    (1...len).each do |i|
+      # wait_for_data reuses the split-read tolerance so a char fragmented
+      # across two reads survives; peek + confirm before consuming so a
+      # non-continuation byte is left in the buffer rather than swallowed.
+      return nil unless @reader.wait_for_data(ESCAPE_TIMEOUT_MS)
+      b = @reader.peek_byte
+      return nil unless b && (b & 0xC0) == 0x80 # continuation 10xxxxxx
+      @reader.read_byte
+      bytes[i] = b
+    end
+
+    # valid_encoding? is a full RFC-3629 check: it rejects overlong encodings,
+    # surrogates, and anything above U+10FFFF. String.new never raises on bad
+    # UTF-8 (it yields U+FFFD), so no begin/rescue is needed.
+    s = String.new(bytes)
+    s.valid_encoding? ? s[0]? : nil
   end
 
   # Polls for an input event with optional timeout.
@@ -137,6 +185,12 @@ class Termisu::Input::Parser
   # Also: Modifier keys alone (Ctrl, Alt, Shift) don't send any bytes in
   # standard terminal input. We can only detect them combined with other keys.
   private def parse_byte(byte : UInt8) : Event::Any
+    # Snapshot + clear the one-shot dup guard: it only matches a raw byte that
+    # arrives IMMEDIATELY after the CSI-u event that set it (handled in the
+    # printable branch below). Any other byte clears it. The escape branch may
+    # set a fresh guard for the *next* call.
+    dup = @dup_guard
+    @dup_guard = nil
     case byte
     when 0x1B # ESC - could be escape key or start of sequence
       parse_escape_sequence
@@ -156,10 +210,27 @@ class Termisu::Input::Parser
     when 0x7F # DEL (Backspace on most terminals)
       Event::Key.new(Key::Backspace)
     else
-      # Printable character
-      key = Key.from_char(byte.chr)
-      Event::Key.new(key)
+      parse_printable(byte, dup)
     end
+  end
+
+  # Handles a printable (non-control) byte: reads the full UTF-8 char and emits
+  # a Key event, supporting Hangul, CJK, accented letters, etc. for text input.
+  private def parse_printable(byte : UInt8, dup : Char?) : Event::Any
+    # Always read the full UTF-8 char first (so multibyte continuation bytes are
+    # consumed even when we end up discarding it — otherwise they'd be misparsed).
+    c = read_utf8_char(byte)
+    return Event::Key.new(Key::Unknown) unless c
+
+    # Under the Kitty protocol (report_text), plain unmodified keys still arrive
+    # as raw bytes (report_all_keys is off), so we must NOT blanket-drop them.
+    # Only swallow a raw byte that exactly duplicates the char just emitted by
+    # the immediately-preceding CSI-u text event (a terminal echoing an IME
+    # commit on both channels).
+    return Event::Key.new(Key::Unknown) if @protocol_active && dup == c
+
+    key = Key.from_char(c) || Key::Unknown
+    Event::Key.new(key, char: c)
   end
 
   # Parses an escape sequence starting with ESC (0x1B).
@@ -182,10 +253,11 @@ class Termisu::Input::Parser
       @reader.read_byte # consume 'O'
       parse_ss3_sequence
     else
-      # Alt+key: \e followed by printable char
-      @reader.read_byte # consume the char
-      key = Key.from_char(byte.chr)
-      Event::Key.new(key, Modifier::Alt)
+      # Alt+key: \e followed by printable char (UTF-8 capable)
+      @reader.read_byte # consume the (first) char byte
+      c = read_utf8_char(byte)
+      key = c ? (Key.from_char(c) || Key::Unknown) : Key::Unknown
+      Event::Key.new(key, Modifier::Alt, char: c)
     end
   end
 
@@ -229,7 +301,8 @@ class Termisu::Input::Parser
 
   # Decodes a CSI sequence into a KeyEvent using hash lookups.
   # Handles standard CSI sequences, Kitty keyboard protocol, and modifyOtherKeys.
-  private def decode_csi_key(params : String, final : Char) : Event::Key
+  # Returns Any because kitty text events with codepoint 0 are emitted as Preedit.
+  private def decode_csi_key(params : String, final : Char) : Event::Any
     # Kitty keyboard protocol: CSI codepoint ; modifiers u
     # or: CSI codepoint ; modifiers : event_type u
     if final == 'u'
@@ -269,20 +342,54 @@ class Termisu::Input::Parser
   #
   # Codepoint is the Unicode codepoint of the key.
   # Modifiers use the same encoding as xterm (1 + shift + alt*2 + ctrl*4 + meta*8).
-  private def parse_kitty_key(params : String) : Event::Key
-    # Handle colon separator for event type (e.g., "97;5:1" for Ctrl+A press)
-    clean_params = params.split(':').first || params
-    parts = clean_params.split(';')
+  # With report_text, a 3rd field carries the produced text codepoints (prefer for .char).
+  private def parse_kitty_key(params : String) : Event::Any
+    # Fields are ';'-separated: codepoint ; modifiers ; text. The ':' separator is
+    # used *within* fields — alternate keys in the codepoint field
+    # (unicode:shifted:base), an event type in the modifier field (mods:event_type),
+    # and MULTIPLE codepoints in the text field (cp1:cp2:...). Split on ';' first and
+    # strip ':' only from the codepoint/modifier fields; never from the text field,
+    # or multi-codepoint text (e.g. composed Hangul jamo) would be truncated.
+    parts = params.split(';')
 
-    codepoint = parts[0]?.try(&.to_i?) || 0
-    mod_code = parts[1]?.try(&.to_i?) || 1
+    codepoint = parts[0]?.try(&.split(':').first).try(&.to_i?) || 0
+    mod_code = parts[1]?.try(&.split(':').first).try(&.to_i?) || 1
+    text_param = parts[2]?
 
     modifiers = Modifier.from_xterm_code(mod_code)
 
-    # Convert codepoint to key
-    key = codepoint_to_key(codepoint)
+    text_str = build_text_from_codepoints(text_param)
 
-    Event::Key.new(key, modifiers)
+    # Prefer associated text (report_text) for the actual inserted char (e.g. shift+a gives 'A' in text)
+    c = text_str[0]? || (valid_codepoint?(codepoint) ? codepoint.chr : nil)
+
+    # If we saw a text-producing CSI report, terminal is using protocol for chars too (report_all+text or similar);
+    # skip raw byte path for printables from now to avoid duplicates.
+    @protocol_active = true if producing_text?(c)
+
+    if codepoint == 0
+      # Pure text event (no associated key), typically from IME or direct text input.
+      # Emit as Preedit so the TUI can show composing state with underline (e.g.
+      # building Hangul jamo -> syllable). An EMPTY text here is the terminal
+      # signalling "preedit cleared" — emit Preedit("") so consumers can clear stale
+      # composition UI, rather than dropping it as Key::Unknown. On commit the final
+      # syllable arrives as a normal Key+char (or another report).
+      @protocol_active = true
+      return Event::Preedit.new(text_str)
+    end
+
+    key = codepoint_to_key(codepoint)
+    # Arm the one-shot dup guard so a duplicate raw echo of this exact char
+    # (same byte immediately following) is swallowed; plain keys never match it.
+    @dup_guard = c if producing_text?(c)
+    Event::Key.new(key, modifiers, char: c)
+  end
+
+  # Whether `c` is a text-producing printable char (printable and not a control
+  # codepoint). Used to gate Kitty text-protocol dedup state.
+  private def producing_text?(c : Char?) : Bool
+    return false unless c
+    c.printable? && c.ord >= 32
   end
 
   # Parses modifyOtherKeys sequence.
@@ -293,8 +400,35 @@ class Termisu::Input::Parser
 
     modifiers = Modifier.from_xterm_code(mod_code)
     key = codepoint_to_key(keycode)
+    c = (keycode > 0 && keycode <= 0x10FFFF) ? (keycode.chr rescue nil) : nil
 
-    Event::Key.new(key, modifiers)
+    # If modify reports a printable via CSI, the terminal is using the protocol
+    # for text; arm the one-shot dup guard so only a duplicate raw echo of this
+    # exact char is swallowed (plain raw keys keep flowing).
+    if producing_text?(c)
+      @protocol_active = true
+      @dup_guard = c
+    end
+
+    Event::Key.new(key, modifiers, char: c)
+  end
+
+  # Whether `cp` is a scalar Unicode codepoint that maps to a real Char: in
+  # range and not a UTF-16 surrogate (U+D800..U+DFFF), which `Int#chr` would
+  # otherwise accept. Filtering here keeps the intent explicit and surrogate-safe.
+  private def valid_codepoint?(cp : Int32) : Bool
+    cp >= 0 && cp <= Char::MAX_CODEPOINT && !(0xD800..0xDFFF).includes?(cp)
+  end
+
+  private def build_text_from_codepoints(text_param : String?) : String
+    return "" if text_param.nil? || text_param.empty?
+
+    String.build do |io|
+      text_param.split(':').each do |part|
+        cp = part.to_i?
+        io << cp.chr if cp && valid_codepoint?(cp)
+      end
+    end
   end
 
   # Kitty protocol codepoint to Key mapping for special keys.

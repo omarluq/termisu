@@ -573,8 +573,8 @@ class Termisu::Terminal < Termisu::Renderer
   #   https://sw.kovidgoyal.net/kitty/keyboard-protocol/
   #   Flags: 1=disambiguate, 2=report_event_types, 4=report_alternate_keys
   #         8=report_all_keys, 16=report_text
-  KITTY_KEYBOARD_ENABLE  = "\e[>1u" # Enable with disambiguate flag
-  KITTY_KEYBOARD_DISABLE = "\e[<u"  # Pop keyboard mode
+  KITTY_KEYBOARD_ENABLE  = "\e[>17u" # disambiguate + report_text (safer for Hangul IME compose than 31u)
+  KITTY_KEYBOARD_DISABLE = "\e[<u"   # Pop keyboard mode
 
   # modifyOtherKeys (xterm, widely supported):
   #   Mode 2 reports modified keys as CSI 27 ; modifier ; keycode ~

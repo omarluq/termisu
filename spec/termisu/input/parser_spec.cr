@@ -584,3 +584,84 @@ describe Termisu::Input::Parser do
     end
   end
 end
+
+# Drives the parser over a single byte stream, polling `count` events. Used to
+# exercise the interaction between a Kitty CSI-u text report and the raw-byte
+# path that immediately follows it.
+private def parse_events(bytes : Bytes, count : Int32) : Array(Termisu::Event::Any?)
+  read_fd, write_fd = create_pipe
+  reader = nil
+  events = [] of Termisu::Event::Any?
+  begin
+    LibC.write(write_fd, bytes, bytes.size)
+    reader = Termisu::Reader.new(read_fd)
+    parser = Termisu::Input::Parser.new(reader)
+    count.times { events << parser.poll_event(100) }
+  ensure
+    reader.try(&.close)
+    LibC.close(read_fd)
+    LibC.close(write_fd)
+  end
+  events
+end
+
+describe Termisu::Input::Parser do
+  describe "Kitty report_text (CSI >17u) + raw printable bytes" do
+    # Under flags 17u (disambiguate + report_text, NO report_all_keys), modified
+    # keys arrive as CSI-u while plain unmodified keys still arrive as raw bytes.
+    # A text-bearing CSI-u event must NOT cause subsequent plain raw keys to be
+    # dropped — only an exact duplicate echo of that one char is a duplicate.
+    it "keeps plain raw keys typed after a CSI-u text event" do
+      # Shift+a -> 'A' (codepoint 97, shift mod 2, text 65), then raw "bc".
+      bytes = Bytes[0x1B, '['.ord, '9'.ord, '7'.ord, ';'.ord, '2'.ord, ';'.ord, '6'.ord, '5'.ord, 'u'.ord,
+        'b'.ord, 'c'.ord]
+      events = parse_events(bytes, 3)
+      events[0].as(Termisu::Event::Key).char.should eq('A')
+      events[1].as(Termisu::Event::Key).char.should eq('b')
+      events[2].as(Termisu::Event::Key).char.should eq('c')
+    end
+
+    it "drops only an exact duplicate raw echo of the CSI-u char" do
+      # CSI-u 'x' (codepoint 120, text 120), then raw 'x' (the echo), then raw 'y'.
+      bytes = Bytes[0x1B, '['.ord, '1'.ord, '2'.ord, '0'.ord, ';'.ord, '1'.ord, ';'.ord, '1'.ord, '2'.ord, '0'.ord, 'u'.ord,
+        'x'.ord, 'y'.ord]
+      events = parse_events(bytes, 3)
+      events[0].as(Termisu::Event::Key).char.should eq('x')
+      # the duplicate echo is swallowed (Unknown, no char)
+      events[1].as(Termisu::Event::Key).char.should be_nil
+      events[2].as(Termisu::Event::Key).char.should eq('y')
+    end
+  end
+end
+
+describe Termisu::Input::Parser do
+  describe "Kitty CSI-u text field parsing" do
+    it "keeps all codepoints of a multi-codepoint text field (no ':' truncation)" do
+      # CSI 0;1;4352:4449 u -> pure-text (preedit) event carrying two Hangul jamo.
+      bytes = Bytes[0x1B, '['.ord, '0'.ord, ';'.ord, '1'.ord, ';'.ord,
+        '4'.ord, '3'.ord, '5'.ord, '2'.ord, ':'.ord, '4'.ord, '4'.ord, '4'.ord, '9'.ord, 'u'.ord]
+      event = parse_sequence(bytes)
+      event.should be_a(Termisu::Event::Preedit)
+      event.as(Termisu::Event::Preedit).text.size.should eq(2)
+    end
+
+    it "emits Preedit with empty text for a codepoint-0 report with no text (preedit cleared)" do
+      # CSI 0;1 u -> terminal signalling composition cleared.
+      bytes = Bytes[0x1B, '['.ord, '0'.ord, ';'.ord, '1'.ord, 'u'.ord]
+      event = parse_sequence(bytes)
+      event.should be_a(Termisu::Event::Preedit)
+      event.as(Termisu::Event::Preedit).text.empty?.should be_true
+    end
+
+    it "parses an event-type in the modifier field without dropping the key" do
+      # CSI 97;5:1 u -> Ctrl+a press (mods=5, event_type=1); the ':' is the event type.
+      bytes = Bytes[0x1B, '['.ord, '9'.ord, '7'.ord, ';'.ord, '5'.ord, ':'.ord, '1'.ord, 'u'.ord]
+      event = parse_sequence(bytes)
+      event.should be_a(Termisu::Event::Key)
+      if event.is_a?(Termisu::Event::Key)
+        event.char.should eq('a')
+        event.modifiers.ctrl?.should be_true
+      end
+    end
+  end
+end
