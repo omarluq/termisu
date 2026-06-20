@@ -105,7 +105,10 @@ export function readEvent(buffer: ArrayBuffer): AnyEvent {
     }
 
     case EventType.Preedit: {
-      const len = view.getUint8(STRUCT.event.preeditLen);
+      // Clamp to the inline capacity so a corrupt/out-of-contract length byte
+      // can't read past the buffer (RangeError) and crash event decoding.
+      const rawLen = view.getUint8(STRUCT.event.preeditLen);
+      const len = Math.min(rawLen, STRUCT.event.preeditTextCapacity);
       const bytes = new Uint8Array(buffer, STRUCT.event.preeditText, len);
       return {
         type,
