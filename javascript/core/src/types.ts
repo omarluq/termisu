@@ -85,12 +85,19 @@ export interface UnknownEvent extends BaseEvent {
   type: EventType.None;
 }
 
+// IME preedit (composing) text. Empty text signals composition was cleared.
+export interface PreeditEvent extends BaseEvent {
+  type: EventType.Preedit;
+  text: string;
+}
+
 export type AnyEvent =
   | KeyEvent
   | MouseEvent
   | ResizeEvent
   | TickEvent
   | ModeChangeEvent
+  | PreeditEvent
   | UnknownEvent;
 
 export interface TermisuOptions {

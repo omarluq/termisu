@@ -174,8 +174,6 @@ describe Termisu::Terminal::Backend do
       backend.set_mode(Termisu::Terminal::Mode.cbreak)
       backend.current_mode.should eq(Termisu::Terminal::Mode.cbreak)
       backend.raw_mode?.should be_false # cbreak has flags set
-
-
     ensure
       backend.try &.close
     end

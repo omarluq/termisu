@@ -1,4 +1,8 @@
 module Termisu::FFI
+  # Inline capacity (bytes) for ABI::Event preedit text. Composing strings are
+  # short (a handful of codepoints); longer preedit is truncated on a boundary.
+  PREEDIT_TEXT_CAPACITY = 32
+
   lib ABI
     struct Color
       mode : UInt8
@@ -46,6 +50,14 @@ module Termisu::FFI
       mode_current : UInt32
       mode_previous : UInt32
       mode_has_previous : UInt8
+
+      # IME preedit (composing) text, inline UTF-8. preedit_len is the number of
+      # valid bytes in preedit_text; the text is truncated on a codepoint
+      # boundary if it would exceed the buffer. An empty preedit (len 0) means
+      # composition was cleared. Appended last so existing field offsets are
+      # unchanged across this ABI revision.
+      preedit_len : UInt8
+      preedit_text : UInt8[PREEDIT_TEXT_CAPACITY]
     end
   end
 end

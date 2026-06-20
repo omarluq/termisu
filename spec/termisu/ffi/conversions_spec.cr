@@ -108,4 +108,36 @@ describe Termisu::FFI::Conversions do
     blank.key_char.should eq(-1)
     blank.modifiers.should eq(0_u8)
   end
+
+  it "marshals Preedit text into the inline UTF-8 buffer" do
+    ev = Termisu::FFI::Conversions.to_abi_event(Termisu::Event::Preedit.new("한"))
+    ev.event_type.should eq(Termisu::FFI::EventType::Preedit.value)
+
+    # "한" is 3 UTF-8 bytes (0xED 0x95 0x9C); preedit_len counts bytes.
+    len = ev.preedit_len
+    len.should eq(3_u8)
+    # `to_slice` needs an addressable receiver, so bind the StaticArray locally.
+    buf = ev.preedit_text
+    bytes = buf.to_slice[0, len]
+    bytes[0].should eq(0xED_u8)
+    bytes[1].should eq(0x95_u8)
+    bytes[2].should eq(0x9C_u8)
+    String.new(bytes).should eq("한") # round-trips back to the same string
+  end
+
+  it "emits Preedit with empty text (composition cleared)" do
+    ev = Termisu::FFI::Conversions.to_abi_event(Termisu::Event::Preedit.new(""))
+    ev.event_type.should eq(Termisu::FFI::EventType::Preedit.value)
+    ev.preedit_len.should eq(0_u8)
+  end
+
+  it "truncates Preedit on a codepoint boundary, never mid-byte" do
+    # 11 Hangul syllables = 33 UTF-8 bytes > 32-byte capacity; the 11th (byte 31)
+    # must be dropped whole, leaving 10 syllables = 30 bytes (not a split 32).
+    ev = Termisu::FFI::Conversions.to_abi_event(Termisu::Event::Preedit.new("한" * 11))
+    len = ev.preedit_len
+    len.should eq(30_u8)
+    buf = ev.preedit_text
+    String.new(buf.to_slice[0, len]).should eq("한" * 10)
+  end
 end

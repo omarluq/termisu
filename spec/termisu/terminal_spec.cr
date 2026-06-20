@@ -474,8 +474,6 @@ describe Termisu::Terminal do
       terminal.clear_captured
       terminal.enable_bold
       terminal.output.should contain("\e[1m") # Bold SGR
-
-
     ensure
       terminal.try &.close
     end

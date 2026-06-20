@@ -14,6 +14,7 @@ describe("constants", () => {
     expect(ABI_VERSION).toBe(1);
     expect(Status.Ok).toBe(0);
     expect(EventType.ModeChange).toBe(5);
+    expect(EventType.Preedit).toBe(6);
     expect(ColorMode.Rgb).toBe(3);
   });
 
@@ -21,7 +22,9 @@ describe("constants", () => {
     expect(STRUCT.color.size).toBe(12);
     expect(STRUCT.cellStyle.size).toBe(28);
     expect(STRUCT.size.size).toBe(8);
-    expect(STRUCT.event.size).toBe(96);
+    expect(STRUCT.event.size).toBe(128);
+    expect(STRUCT.event.preeditLen).toBe(89);
+    expect(STRUCT.event.preeditText).toBe(90);
   });
 
   it("computes a stable non-zero layout signature", () => {

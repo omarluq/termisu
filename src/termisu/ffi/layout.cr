@@ -40,6 +40,8 @@ module Termisu::FFI::Layout
     offsetof(Termisu::FFI::ABI::Event, @mode_current).to_u64,
     offsetof(Termisu::FFI::ABI::Event, @mode_previous).to_u64,
     offsetof(Termisu::FFI::ABI::Event, @mode_has_previous).to_u64,
+    offsetof(Termisu::FFI::ABI::Event, @preedit_len).to_u64,
+    offsetof(Termisu::FFI::ABI::Event, @preedit_text).to_u64,
   }
 
   def self.signature : UInt64

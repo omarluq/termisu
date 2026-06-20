@@ -14,6 +14,7 @@ export enum EventType {
   Resize = 3,
   Tick = 4,
   ModeChange = 5,
+  Preedit = 6,
 }
 
 export enum ColorMode {
@@ -47,7 +48,7 @@ export const STRUCT = {
     height: 4,
   },
   event: {
-    size: 96,
+    size: 128,
     eventType: 0,
     modifiers: 1,
     keyCode: 4,
@@ -68,6 +69,9 @@ export const STRUCT = {
     modeCurrent: 80,
     modePrevious: 84,
     modeHasPrevious: 88,
+    preeditLen: 89,
+    preeditText: 90,
+    preeditTextCapacity: 32,
   },
 } as const;
 
@@ -114,6 +118,8 @@ const STRUCT_LAYOUT_VALUES = [
   STRUCT.event.modeCurrent,
   STRUCT.event.modePrevious,
   STRUCT.event.modeHasPrevious,
+  STRUCT.event.preeditLen,
+  STRUCT.event.preeditText,
 ] as const;
 
 export const STRUCT_LAYOUT_SIGNATURE = STRUCT_LAYOUT_VALUES.reduce(

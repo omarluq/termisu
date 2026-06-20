@@ -10,6 +10,10 @@ extern "C" {
 
 #define TERMISU_FFI_VERSION 1u
 
+/* Inline capacity (bytes) for termisu_event_t preedit text. Composing strings
+ * are short; longer preedit is truncated on a UTF-8 codepoint boundary. */
+#define TERMISU_PREEDIT_TEXT_CAPACITY 32
+
 #if defined(__cplusplus)
 #define TERMISU_STATIC_ASSERT(expr, msg) static_assert((expr), msg)
 #else
@@ -34,6 +38,7 @@ typedef enum termisu_event_type {
   TERMISU_EVENT_RESIZE = 3,
   TERMISU_EVENT_TICK = 4,
   TERMISU_EVENT_MODE_CHANGE = 5,
+  TERMISU_EVENT_PREEDIT = 6,
 } termisu_event_type_t;
 
 typedef enum termisu_color_mode {
@@ -90,6 +95,11 @@ typedef struct termisu_event {
   uint32_t mode_current;
   uint32_t mode_previous;
   uint8_t mode_has_previous;
+
+  /* IME preedit (composing) text, inline UTF-8. preedit_len is the number of
+   * valid bytes in preedit_text; empty (len 0) means composition was cleared. */
+  uint8_t preedit_len;
+  uint8_t preedit_text[TERMISU_PREEDIT_TEXT_CAPACITY];
 } termisu_event_t;
 
 /* ABI layout guards (must match Crystal FFI structs and JS bindings) */
@@ -116,7 +126,7 @@ TERMISU_STATIC_ASSERT(offsetof(termisu_size_t, width) == 0, "termisu_size_t.widt
 TERMISU_STATIC_ASSERT(offsetof(termisu_size_t, height) == 4,
                       "termisu_size_t.height offset mismatch");
 
-TERMISU_STATIC_ASSERT(sizeof(termisu_event_t) == 96, "termisu_event_t size mismatch");
+TERMISU_STATIC_ASSERT(sizeof(termisu_event_t) == 128, "termisu_event_t size mismatch");
 TERMISU_STATIC_ASSERT(offsetof(termisu_event_t, event_type) == 0,
                       "termisu_event_t.event_type offset mismatch");
 TERMISU_STATIC_ASSERT(offsetof(termisu_event_t, modifiers) == 1,
@@ -157,6 +167,10 @@ TERMISU_STATIC_ASSERT(offsetof(termisu_event_t, mode_previous) == 84,
                       "termisu_event_t.mode_previous offset mismatch");
 TERMISU_STATIC_ASSERT(offsetof(termisu_event_t, mode_has_previous) == 88,
                       "termisu_event_t.mode_has_previous offset mismatch");
+TERMISU_STATIC_ASSERT(offsetof(termisu_event_t, preedit_len) == 89,
+                      "termisu_event_t.preedit_len offset mismatch");
+TERMISU_STATIC_ASSERT(offsetof(termisu_event_t, preedit_text) == 90,
+                      "termisu_event_t.preedit_text offset mismatch");
 
 /* Version and lifecycle */
 uint32_t termisu_abi_version(void);
