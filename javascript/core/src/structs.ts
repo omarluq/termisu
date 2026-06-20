@@ -2,6 +2,7 @@ import { ColorMode, EventType, STRUCT } from "./constants";
 import type { AnyEvent, CellStyle, Size } from "./types";
 
 const LITTLE_ENDIAN = true;
+const PREEDIT_DECODER = new TextDecoder("utf-8");
 
 export function createSizeBuffer(): ArrayBuffer {
   return new ArrayBuffer(STRUCT.size.size);
@@ -100,6 +101,16 @@ export function readEvent(buffer: ArrayBuffer): AnyEvent {
         modifiers,
         current: view.getUint32(STRUCT.event.modeCurrent, LITTLE_ENDIAN),
         previous: hasPrevious ? view.getUint32(STRUCT.event.modePrevious, LITTLE_ENDIAN) : null,
+      };
+    }
+
+    case EventType.Preedit: {
+      const len = view.getUint8(STRUCT.event.preeditLen);
+      const bytes = new Uint8Array(buffer, STRUCT.event.preeditText, len);
+      return {
+        type,
+        modifiers,
+        text: PREEDIT_DECODER.decode(bytes),
       };
     }
 

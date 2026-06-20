@@ -68,6 +68,8 @@ module Termisu::FFI::Conversions
       tick_event(event)
     when Event::ModeChange
       mode_change_event(event)
+    when Event::Preedit
+      preedit_event(event)
     else
       blank_event
     end
@@ -126,6 +128,27 @@ module Termisu::FFI::Conversions
       out.mode_previous = previous.value.to_u32
       out.mode_has_previous = 1_u8
     end
+    out
+  end
+
+  private def self.preedit_event(event : Event::Preedit) : Termisu::FFI::ABI::Event
+    out = blank_event
+    out.event_type = Termisu::FFI::EventType::Preedit.value
+
+    # Copy UTF-8 bytes into the inline buffer, stopping before any char that
+    # would overflow it so the text is never split mid-codepoint. Trailing
+    # bytes stay 0.
+    buf = StaticArray(UInt8, Termisu::FFI::PREEDIT_TEXT_CAPACITY).new(0_u8)
+    len = 0
+    event.text.each_char do |char|
+      break if len + char.bytesize > Termisu::FFI::PREEDIT_TEXT_CAPACITY
+      char.each_byte do |byte|
+        buf[len] = byte
+        len += 1
+      end
+    end
+    out.preedit_text = buf
+    out.preedit_len = len.to_u8
     out
   end
 

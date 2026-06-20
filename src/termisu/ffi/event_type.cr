@@ -5,4 +5,5 @@ enum Termisu::FFI::EventType : UInt8
   Resize     = 3
   Tick       = 4
   ModeChange = 5
+  Preedit    = 6
 end
