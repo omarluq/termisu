@@ -65,7 +65,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
       - name: Cache FreeBSD shards
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: lib
           key: freebsd-e2e-${{ hashFiles('shard.yml', 'shard.lock') }}
