@@ -139,7 +139,7 @@ module Termisu::Testing
       target = File.join(Dir.tempdir, "termisu-ctty-exec-#{digest}")
       return target if File.exists?(target)
 
-      src = File.join(Dir.tempdir, "termisu-ctty-exec.cr")
+      src = "#{target}.cr" # digest-keyed too, so concurrent builds don't clobber a shared source
       File.write(src, CTTY_EXEC_SRC)
       status = Process.run("crystal", ["build", src, "-o", target],
         output: Process::Redirect::Inherit, error: Process::Redirect::Inherit)

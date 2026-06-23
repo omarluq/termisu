@@ -80,6 +80,7 @@ jobs:
             pkg install -y crystal shards terminfo-db
           run: |
             set -eux
+            export TERM=xterm-256color
             crystal --version
             shards --version
             shards install

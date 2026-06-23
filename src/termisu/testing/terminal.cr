@@ -23,10 +23,12 @@ module Termisu::Testing
     getter screen : Screen
     getter cols : Int32
     getter rows : Int32
-    getter? exited : Bool = false
 
     @pty : Pty
-    @started : Bool = false
+    # Shared with the reader fiber (start_reader); access is synchronized.
+    @started = Atomic(Bool).new(false)
+    @exited = Atomic(Bool).new(false)
+    @state_lock = Mutex.new
     @last_activity : MonotonicTime
 
     def initialize(
@@ -152,10 +154,16 @@ module Termisu::Testing
     def wait_stable(quiet_for : Time::Span = 80.milliseconds, timeout : Time::Span = 3.seconds) : Bool
       deadline = monotonic_now + timeout
       loop do
-        return true if @started && (monotonic_now - @last_activity) >= quiet_for
+        last = @state_lock.synchronize { @last_activity }
+        return true if @started.get && (monotonic_now - last) >= quiet_for
         return false if monotonic_now >= deadline
         sleep 10.milliseconds
       end
+    end
+
+    # Whether the program has exited.
+    def exited? : Bool
+      @exited.get
     end
 
     # Stops the program and releases the PTY. Idempotent.
@@ -171,13 +179,13 @@ module Termisu::Testing
             n = @pty.master.read(buf)
             break if n == 0 # EOF
             @screen.feed(buf[0, n])
-            @started = true
-            @last_activity = monotonic_now
+            @started.set(true)
+            @state_lock.synchronize { @last_activity = monotonic_now }
           end
         rescue IO::Error
           # master hung up (child exited; Linux raises EIO) — treat as EOF
         end
-        @exited = true
+        @exited.set(true)
       end
     end
   end

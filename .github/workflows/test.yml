@@ -35,7 +35,7 @@ jobs:
         if: runner.os == 'macOS'
         run: brew install expect
       - name: Run tests
-        run: unbuffer crystal spec -v
+        run: unbuffer crystal spec spec/termisu_spec.cr spec/termisu -v
         env:
           TERM: xterm-256color
   test-freebsd:
@@ -67,4 +67,4 @@ jobs:
             crystal --version
             shards --version
             shards install
-            script -q /dev/null crystal spec -v
+            script -q /dev/null crystal spec spec/termisu_spec.cr spec/termisu -v
