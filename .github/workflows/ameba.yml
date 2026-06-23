@@ -19,7 +19,7 @@ jobs:
       contents: read
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
       - name: Setup Crystal
         uses: ./.github/actions/setup-crystal
       # Build and run the repo's own ameba (against the Crystal from
