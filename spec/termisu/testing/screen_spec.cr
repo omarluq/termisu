@@ -129,4 +129,92 @@ describe Termisu::Testing::Screen do
     out.should_not contain("Frame")
     out.should_not contain("ansi8(1)") # masked cells carry no style entry
   end
+
+  it "handles relative cursor moves (CUU/CUD/CUF/CUB) and CHA" do
+    s = screen(20, 10)
+    s.feed("\e[5;5H") # -> (4, 4)
+    s.feed("\e[2A")
+    s.cursor_y.should eq(2)
+    s.feed("\e[3B")
+    s.cursor_y.should eq(5)
+    s.feed("\e[4C")
+    s.cursor_x.should eq(8)
+    s.feed("\e[2D")
+    s.cursor_x.should eq(6)
+    s.feed("\e[10G") # CHA, column 10 (1-based)
+    s.cursor_x.should eq(9)
+  end
+
+  it "decodes every SGR attribute code (Dim..Strikethrough)" do
+    s = screen(10, 2)
+    s.feed("\e[2;3;4;5;7;8;9mX")
+    a = s.cell(0, 0).attr
+    a.dim?.should be_true
+    a.italic?.should be_true
+    a.underline?.should be_true
+    a.blink?.should be_true
+    a.reverse?.should be_true
+    a.hidden?.should be_true
+    a.strikethrough?.should be_true
+  end
+
+  it "renders a 4-byte UTF-8 codepoint (emoji)" do
+    s = screen(10, 2)
+    s.feed("😀")
+    s.cell(0, 0).grapheme.should eq("😀")
+  end
+
+  it "recovers from a malformed UTF-8 continuation byte" do
+    s = screen(10, 2)
+    s.feed(Bytes[0xC3, 0x41]) # lead byte then 'A' (not a continuation)
+    s.row_text(0).should contain("A")
+  end
+
+  it "tolerates an invalid UTF-8 lead byte" do
+    s = screen(10, 2)
+    s.feed(Bytes[0xFF, 0x42]) # invalid lead, then 'B'
+    s.row_text(0).should contain("B")
+  end
+
+  it "consumes an OSC string terminated by ST (ESC backslash)" do
+    s = screen(10, 2)
+    s.feed("\e]0;my title\e\\OK")
+    s.row_text(0).rstrip.should eq("OK")
+  end
+
+  it "moves the cursor for newline, tab and autowrap" do
+    s = screen(8, 3)
+    s.feed("AB\r\nCD") # CR returns to column 0, LF moves down a row
+    s.cursor_y.should eq(1)
+    s.row_text(1).rstrip.should eq("CD")
+    s.feed("\e[3;1H\t") # tab from column 0 clamps to the last column
+    s.cursor_x.should eq(7)
+    s.feed("\e[1;1HXXXXXXXXY") # 9 glyphs on an 8-wide row wraps
+    s.row_text(0).rstrip.should eq("XXXXXXXX")
+    s.cursor_y.should eq(1)
+  end
+
+  it "erases from the cursor to the end of the display (ED 0)" do
+    s = screen(6, 3)
+    s.feed("\e[1;1HAAAAAA\e[2;1HBBBBBB\e[3;1HCCCCCC")
+    s.feed("\e[2;3H\e[0J")
+    s.row_text(0).rstrip.should eq("AAAAAA")
+    s.row_text(1).rstrip.should eq("BB")
+    s.row_text(2).rstrip.should eq("")
+  end
+
+  it "erases from the start of the display to the cursor (ED 1)" do
+    s = screen(6, 3)
+    s.feed("\e[1;1HAAAAAA\e[2;1HBBBBBB\e[3;1HCCCCCC")
+    s.feed("\e[2;4H\e[1J")
+    s.row_text(0).rstrip.should eq("")
+    s.row_text(1).should eq("    BB")
+    s.row_text(2).rstrip.should eq("CCCCCC")
+  end
+
+  it "keeps wide glyphs (and skip their continuation cell) in a styled run" do
+    s = screen(10, 1)
+    s.feed("\e[31m中X")
+    s.to_styled_s.should contain(%("中X"))
+  end
 end
