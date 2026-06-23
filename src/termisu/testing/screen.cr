@@ -77,23 +77,34 @@ module Termisu::Testing
       !locate(pattern).nil?
     end
 
-    # First {x, y} where *pattern* starts, or nil. For strings, x is the column;
-    # for regexes, x is the match start column within the row.
+    # First {x, y} where *pattern* starts, or nil. x is the cell **column** of the
+    # match start. Crystal string offsets are character-based, but a row may hold
+    # wide (2-column) glyphs, so we map the matched character index back to its
+    # column via `row_columns` rather than returning the offset directly.
     def locate(pattern : String | Regex) : {Int32, Int32}?
       @rows.times do |y|
         line = row_text(y)
-        case pattern
-        in String
-          if idx = line.index(pattern)
-            return {idx, y}
-          end
-        in Regex
-          if match = pattern.match(line)
-            return {match.begin || 0, y}
-          end
-        end
+        offset = case pattern
+                 in String then line.index(pattern)
+                 in Regex  then pattern.match(line).try(&.begin)
+                 end
+        next unless offset
+        cols = row_columns(y)
+        return {cols[offset]? || offset, y}
       end
       nil
+    end
+
+    # Parallel to `row_text`: the cell column each character of the row text maps
+    # to (wide glyphs advance the column by their width, so a character index is
+    # not the same as a column once a wide glyph precedes it).
+    private def row_columns(y : Int32) : Array(Int32)
+      cols = [] of Int32
+      @grid[y].each_with_index do |cell, x|
+        next if cell.continuation?
+        cell.grapheme.each_char { cols << x }
+      end
+      cols
     end
 
     # Cell at (x, y). Raises `IndexError` if out of bounds.

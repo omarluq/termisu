@@ -99,6 +99,13 @@ describe Termisu::Testing::Screen do
     s.locate(/w\w+/).should eq({8, 0})
   end
 
+  it "locates by cell column past wide glyphs (not character offset)" do
+    s = screen
+    s.feed("中A") # 中 spans columns 0-1, so A sits at column 2 (char offset 1)
+    s.locate("A").should eq({2, 0})
+    s.locate(/A/).should eq({2, 0})
+  end
+
   it "ignores recognized-but-skipped sequences without corrupting text" do
     s = screen
     # kitty, modifyOtherKeys, mouse, OSC title, then real text

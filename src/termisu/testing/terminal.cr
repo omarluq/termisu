@@ -95,25 +95,32 @@ module Termisu::Testing
     # Waits (up to *timeout*) until *pattern* appears on screen. Returns whether
     # it became visible — assert with `.should be_true`.
     def get_by_text(pattern : String | Regex, timeout : Time::Span = 3.seconds) : Bool
-      wait_until(timeout) { @screen.includes?(pattern) }
+      wait_until(timeout) { @state_lock.synchronize { @screen.includes?(pattern) } }
     end
 
     # Cursor position once the screen settles.
     def cursor : {Int32, Int32}
       wait_stable
-      {@screen.cursor_x, @screen.cursor_y}
+      @state_lock.synchronize { {@screen.cursor_x, @screen.cursor_y} }
     end
 
     # Waits for *pattern* to appear, then returns its first {x, y} (or nil).
     def locate(pattern : String | Regex, timeout : Time::Span = 3.seconds) : {Int32, Int32}?
       get_by_text(pattern, timeout)
-      @screen.locate(pattern)
+      @state_lock.synchronize { @screen.locate(pattern) }
+    end
+
+    # Current {x, y} of *pattern* right now, without waiting (returns nil if
+    # absent). Use for polling a moving element; use `locate` to wait for it to
+    # appear. Reads `@screen` under the same lock the reader fiber writes with.
+    def find(pattern : String | Regex) : {Int32, Int32}?
+      @state_lock.synchronize { @screen.locate(pattern) }
     end
 
     # The text of screen row *y* once the screen settles.
     def row(y : Int32) : String
       wait_stable
-      @screen.row_text(y)
+      @state_lock.synchronize { @screen.row_text(y) }
     end
 
     # Sends a Ctrl+<char> combination (e.g. `ctrl('c')` → 0x03).
@@ -124,7 +131,7 @@ module Termisu::Testing
     # Whether the cursor is currently visible (waits for the screen to settle).
     def cursor_visible? : Bool
       wait_stable
-      @screen.cursor_visible?
+      @state_lock.synchronize { @screen.cursor_visible? }
     end
 
     # Styled snapshot of the rendered screen (glyph grid + per-cell fg/bg/attr).
@@ -132,7 +139,7 @@ module Termisu::Testing
     # deterministic.
     def snapshot(mask : Array(Regex) = [] of Regex) : String
       wait_stable
-      @screen.to_styled_s(mask)
+      @state_lock.synchronize { @screen.to_styled_s(mask) }
     end
 
     # Blocks until *block* returns true, or *timeout* elapses. Yields to the
@@ -178,9 +185,14 @@ module Termisu::Testing
           loop do
             n = @pty.master.read(buf)
             break if n == 0 # EOF
-            @screen.feed(buf[0, n])
+            # Mutate @screen under the same lock the reader-facing helpers read
+            # with, so a multi-threaded runtime never observes a half-applied
+            # grid. feed() is pure CPU (no yield), so the lock is held briefly.
+            @state_lock.synchronize do
+              @screen.feed(buf[0, n])
+              @last_activity = monotonic_now
+            end
             @started.set(true)
-            @state_lock.synchronize { @last_activity = monotonic_now }
           end
         rescue IO::Error
           # master hung up (child exited; Linux raises EIO) — treat as EOF

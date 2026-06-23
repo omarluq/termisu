@@ -51,7 +51,7 @@ describe "Animation example (e2e)" do
         deadline = monotonic_now + 3.seconds
         while monotonic_now < deadline
           sleep 50.milliseconds
-          if term.screen.locate("●") != start
+          if term.find("●") != start
             moved = true
             break
           end
@@ -67,6 +67,9 @@ describe "Animation example (e2e)" do
         assert_snapshot(term, "animation", mask: [
           /●/,                              # moving ball
           /Actual: [\d.]+fps \([\d.]+ms\)/, # live FPS readout
+          / SLOW/,                          # perf warning (fires on loaded CI runners)
+          / MISSED:\d+/,                    # dropped-frame counter
+          / PAUSED/,                        # pause indicator
         ])
       end
     end
