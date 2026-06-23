@@ -7,47 +7,60 @@ on:
     paths:
       - "src/**/*.cr"
       - "examples/**/*.cr"
-      - "e2e/**"
-      - "package.json"
-      - "bun.lock"
-      - "biome.json"
-      - "tsconfig.base.json"
+      - "spec/e2e/**"
+      - "spec/termisu/testing/**"
+      - "shard.yml"
+      - "shard.lock"
+      - "Hacefile.yml"
       - ".github/workflows/e2e.yml"
+      - ".github/actions/setup-crystal/**"
   pull_request:
     branches: [main]
     paths:
       - "src/**/*.cr"
       - "examples/**/*.cr"
-      - "e2e/**"
-      - "package.json"
-      - "bun.lock"
-      - "biome.json"
-      - "tsconfig.base.json"
+      - "spec/e2e/**"
+      - "spec/termisu/testing/**"
+      - "shard.yml"
+      - "shard.lock"
+      - "Hacefile.yml"
       - ".github/workflows/e2e.yml"
+      - ".github/actions/setup-crystal/**"
   workflow_dispatch:
+# The E2E suite is pure Crystal (Termisu::Testing): it drives the example
+# binaries through a real PTY and asserts on the rendered screen. No
+# node/bun/tui-test, so it runs identically on Linux, macOS, and FreeBSD.
+# A Termisu app opens /dev/tty directly and sets its own raw mode, so the
+# launching shell is irrelevant; the meaningful axis is the OS (termios /
+# /dev/tty / terminfo), not the shell.
 jobs:
-  # Build binaries once per OS and Crystal version
-  build:
-    name: Build (${{ matrix.os }}, Crystal ${{ matrix.crystal }})
+  e2e:
+    name: E2E (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
-        crystal: ["1.17.0", "1.18.2", "1.19.1", "1.20.0"]
-    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
     steps:
       - name: Checkout
         uses: actions/checkout@v6
       - name: Setup Crystal
         uses: ./.github/actions/setup-crystal
         with:
-          crystal-version: ${{ matrix.crystal }}
-      - name: Build and upload binaries
-        uses: ./.github/actions/build-e2e-binaries
-        with:
-          artifact-name: e2e-binaries-${{ matrix.os == 'ubuntu-latest' && 'linux' || 'macos' }}-${{ matrix.crystal }}
-  build-freebsd:
-    name: Build (FreeBSD 15.0)
+          crystal-version: "1.20.0"
+      - name: Install shards
+        run: shards install
+      - name: Build hace
+        run: shards build hace
+      - name: Run E2E suite
+        run: bin/hace e2e
+  e2e-freebsd:
+    name: E2E (FreeBSD 15.0)
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -55,10 +68,10 @@ jobs:
         uses: actions/cache@v5
         with:
           path: lib
-          key: freebsd-e2e-build-${{ hashFiles('shard.yml', 'shard.lock') }}
+          key: freebsd-e2e-${{ hashFiles('shard.yml', 'shard.lock') }}
           restore-keys: |
-            freebsd-e2e-build-
-      - name: Build binaries in FreeBSD VM
+            freebsd-e2e-
+      - name: Run E2E in FreeBSD VM
         uses: vmactions/freebsd-vm@v1
         with:
           release: "15.0"
@@ -67,119 +80,8 @@ jobs:
             pkg install -y crystal shards terminfo-db
           run: |
             set -eux
-            mkdir -p bin
             crystal --version
             shards --version
             shards install
-            crystal build examples/showcase.cr -o bin/showcase --release
-            crystal build examples/simple.cr -o bin/simple --release
-            crystal build examples/colors.cr -o bin/colors --release
-            crystal build examples/keyboard_and_mouse.cr -o bin/kmd --release
-            crystal build examples/animation.cr -o bin/animation --release
-      - name: Upload FreeBSD binaries
-        uses: actions/upload-artifact@v7
-        with:
-          name: e2e-binaries-freebsd
-          path: bin/
-  e2e:
-    name: E2E (${{ matrix.os }}, ${{ matrix.shell }}, Crystal ${{ matrix.crystal }})
-    needs: build
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest]
-        shell: [bash, zsh, fish]
-        crystal: ["1.17.0", "1.18.2", "1.19.1", "1.20.0"]
-    runs-on: ${{ matrix.os }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-      - name: Download binaries
-        uses: actions/download-artifact@v8
-        with:
-          name: e2e-binaries-${{ matrix.os == 'ubuntu-latest' && 'linux' || 'macos' }}-${{ matrix.crystal }}
-          path: bin/
-      - name: Make binaries executable
-        run: chmod +x bin/*
-      - name: Install zsh (Linux)
-        if: matrix.os == 'ubuntu-latest' && matrix.shell == 'zsh'
-        run: sudo apt-get update && sudo apt-get install -y zsh
-      - name: Install fish (Linux)
-        if: matrix.os == 'ubuntu-latest' && matrix.shell == 'fish'
-        run: |
-          sudo apt-add-repository -y ppa:fish-shell/release-3
-          sudo apt-get update
-          sudo apt-get install -y fish
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: "1.3.13"
-      - name: Setup Node
-        uses: actions/setup-node@v6
-        with:
-          node-version: "25.7.0"
-      - name: Install JavaScript dependencies
-        run: bun install --frozen-lockfile
-      - name: Run E2E tests
-        env:
-          TUI_TEST_SHELL: ${{ matrix.shell }}
-        run: bun run e2e:test
-      - name: Upload traces on failure
-        if: failure()
-        uses: actions/upload-artifact@v7
-        with:
-          name: tui-traces-${{ matrix.os }}-${{ matrix.shell }}
-          path: e2e/tui-traces/
-          retention-days: 7
-      - name: Upload snapshots on failure
-        if: failure()
-        uses: actions/upload-artifact@v7
-        with:
-          name: snapshots-${{ matrix.os }}-${{ matrix.shell }}
-          path: e2e/tests/__snapshots__/
-          retention-days: 7
-  e2e-freebsd:
-    name: E2E (FreeBSD 15.0, ${{ matrix.shell }})
-    runs-on: ubuntu-latest
-    needs: build-freebsd
-    strategy:
-      fail-fast: false
-      matrix:
-        shell: [bash, zsh, fish]
-    permissions:
-      contents: read
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-      - name: Download FreeBSD binaries
-        uses: actions/download-artifact@v8
-        with:
-          name: e2e-binaries-freebsd
-          path: bin/
-      - name: Run E2E in FreeBSD VM
-        uses: vmactions/freebsd-vm@v1
-        with:
-          release: "15.0"
-          usesh: true
-          prepare: |
-            pkg install -y git terminfo-db node npm bash zsh fish python3 gmake
-            npm --prefix e2e install
-          run: |
-            set -eux
-            export TERM=xterm-256color
-            chmod +x bin/*
-            TUI_TEST_SHELL=${{ matrix.shell }} node e2e/node_modules/@microsoft/tui-test/index.js
-      - name: Upload traces on failure
-        if: failure()
-        uses: actions/upload-artifact@v7
-        with:
-          name: tui-traces-freebsd-${{ matrix.shell }}
-          path: e2e/tui-traces/
-          retention-days: 7
-      - name: Upload snapshots on failure
-        if: failure()
-        uses: actions/upload-artifact@v7
-        with:
-          name: snapshots-freebsd-${{ matrix.shell }}
-          path: e2e/tests/__snapshots__/
-          retention-days: 7
+            shards build hace
+            bin/hace e2e

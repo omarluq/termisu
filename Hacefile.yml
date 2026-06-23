@@ -10,11 +10,11 @@ tasks:
   # Core Development Tasks
   # ===========================================
   spec:
-    description: Run crystal spec with unbuffer for TTY tests
+    description: Run unit specs with unbuffer for TTY tests (excludes spec/e2e)
     phony: true
     always_run: true
     commands: |
-      unbuffer crystal spec
+      unbuffer crystal spec spec/termisu_spec.cr spec/termisu
   coverage:
     description: Run full spec suite with kcov coverage
     phony: true
@@ -349,14 +349,8 @@ tasks:
   # ===========================================
   # E2E Testing Tasks
   # ===========================================
-  e2e:install:
-    description: Install E2E test dependencies
-    phony: true
-    always_run: true
-    commands: |
-      bun install
   e2e:build:
-    description: Build Crystal binaries for E2E tests
+    description: Build the example binaries the E2E suite drives
     phony: true
     always_run: true
     commands: |
@@ -366,42 +360,22 @@ tasks:
       crystal build examples/colors.cr -o bin/colors --release
       crystal build examples/keyboard_and_mouse.cr -o bin/kmd --release
       crystal build examples/animation.cr -o bin/animation --release
-  e2e:test:
-    description: Run E2E tests with tui-test
+  e2e:
+    description: Build examples and run the Crystal-native E2E suite (spec/e2e)
     phony: true
     always_run: true
     commands: |
-      bun run e2e:test
-  e2e:test:trace:
-    description: Run E2E tests with tracing enabled
+      bin/hace e2e:build
+      crystal build src/termisu/testing/ctty_exec.cr -o bin/ctty-exec
+      TERMISU_CTTY_EXEC="$PWD/bin/ctty-exec" crystal spec spec/e2e
+  e2e:update:
+    description: Regenerate the committed E2E snapshots
     phony: true
     always_run: true
     commands: |
-      bun run e2e:test:trace
-  e2e:test:update:
-    description: Update E2E test snapshots
-    phony: true
-    always_run: true
-    commands: |
-      bun run e2e:test:update
-  e2e:lint:
-    description: Lint E2E test code with Biome
-    phony: true
-    always_run: true
-    commands: |
-      bun run e2e:lint
-  e2e:lint:fix:
-    description: Fix E2E lint issues with Biome
-    phony: true
-    always_run: true
-    commands: |
-      bun run e2e:lint:fix
-  e2e:format:
-    description: Format E2E test code with Biome
-    phony: true
-    always_run: true
-    commands: |
-      bun run e2e:format
+      bin/hace e2e:build
+      crystal build src/termisu/testing/ctty_exec.cr -o bin/ctty-exec
+      TERMISU_CTTY_EXEC="$PWD/bin/ctty-exec" UPDATE_SNAPSHOTS=1 crystal spec spec/e2e
   # ===========================================
   # JavaScript FFI Package Tasks
   # ===========================================
@@ -471,36 +445,6 @@ tasks:
     always_run: true
     commands: |
       bun run js:check:fix
-  e2e:format:check:
-    description: Check E2E code formatting
-    phony: true
-    always_run: true
-    commands: |
-      bun run e2e:format:check
-  e2e:check:
-    description: Run all Biome checks on E2E code
-    phony: true
-    always_run: true
-    commands: |
-      bun run e2e:check
-  e2e:check:fix:
-    description: Fix all Biome issues in E2E code
-    phony: true
-    always_run: true
-    commands: |
-      bun run e2e:check:fix
-  e2e:typecheck:
-    description: Type-check E2E tests with TypeScript
-    phony: true
-    always_run: true
-    commands: |
-      bun run e2e:typecheck
-  e2e:all:
-    description: Build binaries and run E2E tests
-    phony: true
-    always_run: true
-    commands: |
-      bin/hace e2e:build && bin/hace e2e:test
   # ===========================================
   # Docs Site Tasks
   # ===========================================

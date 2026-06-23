@@ -1,13 +1,11 @@
-require "spec"
-require "../../../src/termisu"
-require "../../../src/termisu/testing/pty"
+require "./e2e_helper"
 
-# Smoke test for the PTY layer: spawn a real Termisu example through a controlling
-# PTY and confirm we capture its rendered output. Requires `bin/simple` to exist
-# (built by the e2e flow).
+# Integration smoke test for the PTY layer: spawn a real Termisu example through
+# a controlling PTY and confirm we capture its rendered output. Lives under
+# spec/e2e (not the unit suite) because it needs a built example binary.
 describe Termisu::Testing::Pty do
   it "spawns a program on a controlling PTY and captures its output" do
-    pending! "bin/simple not built" unless File.exists?("bin/simple")
+    requires_binary "bin/simple"
 
     pty = Termisu::Testing::Pty.new("bin/simple", cols: 100, rows: 50,
       env: {"TERM" => "xterm-256color"})
