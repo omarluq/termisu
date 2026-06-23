@@ -145,12 +145,15 @@ module Termisu::Testing
     end
 
     # Blocks until the program has produced no new output for *quiet_for*
-    # (render-stable), or *timeout* elapses.
-    def wait_stable(quiet_for : Time::Span = 80.milliseconds, timeout : Time::Span = 3.seconds) : Nil
+    # (render-stable), or *timeout* elapses. Returns whether the screen actually
+    # stabilized: animated screens (a spinner, a moving element) never quiesce
+    # and return `false` on timeout by design — callers mask the volatile region
+    # rather than rely on stability.
+    def wait_stable(quiet_for : Time::Span = 80.milliseconds, timeout : Time::Span = 3.seconds) : Bool
       deadline = monotonic_now + timeout
       loop do
-        break if @started && (monotonic_now - @last_activity) >= quiet_for
-        break if monotonic_now >= deadline
+        return true if @started && (monotonic_now - @last_activity) >= quiet_for
+        return false if monotonic_now >= deadline
         sleep 10.milliseconds
       end
     end
