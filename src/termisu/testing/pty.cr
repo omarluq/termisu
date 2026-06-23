@@ -1,3 +1,5 @@
+require "digest/md5"
+
 module Termisu::Testing
   # Allocates a pseudo-terminal and spawns a program attached to it, exposing
   # the master side as an ordinary `IO::FileDescriptor` (read it for the child's
@@ -54,15 +56,22 @@ module Termisu::Testing
       slave = IO::FileDescriptor.new(slave_fd)
 
       # Launch through the controlling-terminal shim with the slave as the
-      # child's stdin/stdout/stderr.
-      @process = Process.new(
-        self.class.ctty_exec_path,
-        [command] + args,
-        input: slave,
-        output: slave,
-        error: slave,
-        env: env,
-      )
+      # child's stdin/stdout/stderr. If spawning fails, close both PTY fds so
+      # they don't leak, then re-raise.
+      @process = begin
+        Process.new(
+          self.class.ctty_exec_path,
+          [command] + args,
+          input: slave,
+          output: slave,
+          error: slave,
+          env: env,
+        )
+      rescue ex
+        @master.close rescue nil
+        slave.close rescue nil
+        raise ex
+      end
 
       # The child holds its own dup'd copies; close the parent's slave so the
       # master reports EOF once the child exits.
@@ -124,7 +133,10 @@ module Termisu::Testing
         return explicit
       end
 
-      target = File.join(Dir.tempdir, "termisu-ctty-exec")
+      # Key the cached binary on a hash of the shim source, so a changed shim
+      # (e.g. after a shard upgrade) rebuilds instead of reusing a stale binary.
+      digest = Digest::MD5.hexdigest(CTTY_EXEC_SRC)[0, 12]
+      target = File.join(Dir.tempdir, "termisu-ctty-exec-#{digest}")
       return target if File.exists?(target)
 
       src = File.join(Dir.tempdir, "termisu-ctty-exec.cr")
