@@ -212,7 +212,7 @@ describe Termisu::Testing::Screen do
     s.row_text(2).rstrip.should eq("CCCCCC")
   end
 
-  it "keeps wide glyphs (and skip their continuation cell) in a styled run" do
+  it "keeps wide glyphs (and skips their continuation cell) in a styled run" do
     s = screen(10, 1)
     s.feed("\e[31m中X")
     s.to_styled_s.should contain(%("中X"))

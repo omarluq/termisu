@@ -40,8 +40,8 @@ describe Termisu::Testing::Terminal do
   it "reports when the program has exited" do
     Termisu::Testing.terminal("/bin/sh", ["-c", "printf done"], cols: 10, rows: 2) do |term|
       term.get_by_text("done").should be_true
-      sleep 200.milliseconds
-      term.exited?.should be_true
+      # Poll via the harness rather than a fixed sleep (robust on slow CI).
+      term.wait_until(2.seconds) { term.exited? }.should be_true
     end
   end
 end
