@@ -1,0 +1,208 @@
+
+
+
+
+
+
+
+
+
+
+                                     ⌨ KEYBOARD & MOUSE DEMO ⌨
+
+                   ┌───┐┌──┐┌──┐┌──┐┌──┐┌──┐┌──┐┌──┐┌──┐┌──┐┌──┐┌──┐┌──┐┌──┐┌────┐
+                   │Esc││` ││1 ││2 ││3 ││4 ││5 ││6 ││7 ││8 ││9 ││0 ││- ││= ││ ⌫  │
+                   └───┘└──┘└──┘└──┘└──┘└──┘└──┘└──┘└──┘└──┘└──┘└──┘└──┘└──┘└────┘
+                   ┌────┐┌──┐┌──┐┌──┐┌──┐┌──┐┌──┐┌──┐┌──┐┌──┐┌──┐┌──┐┌──┐┌────┐
+                   │ ⇥  ││Q ││W ││E ││R ││T ││Y ││U ││I ││O ││P ││[ ││] ││ \  │
+                   └────┘└──┘└──┘└──┘└──┘└──┘└──┘└──┘└──┘└──┘└──┘└──┘└──┘└────┘
+                   ┌─────┐┌──┐┌──┐┌──┐┌──┐┌──┐┌──┐┌──┐┌──┐┌──┐┌──┐┌──┐┌───────┐
+                   │  ⇪  ││A ││S ││D ││F ││G ││H ││J ││K ││L ││; ││' ││   ⏎   │
+                   └─────┘└──┘└──┘└──┘└──┘└──┘└──┘└──┘└──┘└──┘└──┘└──┘└───────┘
+                   ┌───────┐┌──┐┌──┐┌──┐┌──┐┌──┐┌──┐┌──┐┌──┐┌──┐┌──┐┌─────────┐
+                   │   ⇧   ││Z ││X ││C ││V ││B ││N ││M ││, ││. ││/ ││    ⇧    │
+                   └───────┘└──┘└──┘└──┘└──┘└──┘└──┘└──┘└──┘└──┘└──┘└─────────┘
+                   ┌──────┐┌──────┐┌────────────────────────────┐┌──────┐┌──────┐
+                   │ Ctrl ││ Alt  ││             ␣              ││ Alt  ││ Ctrl │
+                   └──────┘└──────┘└────────────────────────────┘└──────┘└──────┘
+
+                     Mouse:  Position: (0, 0)
+
+
+
+              Press keys to highlight | Click/scroll anywhere | ESC or Ctrl+C to quit
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# styles
+r10 c37 "⌨" fg=ansi8(6) bg=default attr=None
+r10 c39-46 "KEYBOARD" fg=ansi8(6) bg=default attr=None
+r10 c48 "&" fg=ansi8(6) bg=default attr=None
+r10 c50-54 "MOUSE" fg=ansi8(6) bg=default attr=None
+r10 c56-59 "DEMO" fg=ansi8(6) bg=default attr=None
+r10 c61 "⌨" fg=ansi8(6) bg=default attr=None
+r12 c19-81 "┌───┐┌──┐┌──┐┌──┐┌──┐┌──┐┌──┐┌──┐┌──┐┌──┐┌──┐┌──┐┌──┐┌──┐┌────┐" fg=ansi256(240) bg=default attr=None
+r13 c19 "│" fg=ansi256(240) bg=default attr=None
+r13 c20-22 "Esc" fg=ansi8(7) bg=ansi256(236) attr=None
+r13 c23-24 "││" fg=ansi256(240) bg=default attr=None
+r13 c25 "`" fg=ansi8(7) bg=ansi256(236) attr=None
+r13 c27-28 "││" fg=ansi256(240) bg=default attr=None
+r13 c29 "1" fg=ansi8(7) bg=ansi256(236) attr=None
+r13 c31-32 "││" fg=ansi256(240) bg=default attr=None
+r13 c33 "2" fg=ansi8(7) bg=ansi256(236) attr=None
+r13 c35-36 "││" fg=ansi256(240) bg=default attr=None
+r13 c37 "3" fg=ansi8(7) bg=ansi256(236) attr=None
+r13 c39-40 "││" fg=ansi256(240) bg=default attr=None
+r13 c41 "4" fg=ansi8(7) bg=ansi256(236) attr=None
+r13 c43-44 "││" fg=ansi256(240) bg=default attr=None
+r13 c45 "5" fg=ansi8(7) bg=ansi256(236) attr=None
+r13 c47-48 "││" fg=ansi256(240) bg=default attr=None
+r13 c49 "6" fg=ansi8(7) bg=ansi256(236) attr=None
+r13 c51-52 "││" fg=ansi256(240) bg=default attr=None
+r13 c53 "7" fg=ansi8(7) bg=ansi256(236) attr=None
+r13 c55-56 "││" fg=ansi256(240) bg=default attr=None
+r13 c57 "8" fg=ansi8(7) bg=ansi256(236) attr=None
+r13 c59-60 "││" fg=ansi256(240) bg=default attr=None
+r13 c61 "9" fg=ansi8(7) bg=ansi256(236) attr=None
+r13 c63-64 "││" fg=ansi256(240) bg=default attr=None
+r13 c65 "0" fg=ansi8(7) bg=ansi256(236) attr=None
+r13 c67-68 "││" fg=ansi256(240) bg=default attr=None
+r13 c69 "-" fg=ansi8(7) bg=ansi256(236) attr=None
+r13 c71-72 "││" fg=ansi256(240) bg=default attr=None
+r13 c73 "=" fg=ansi8(7) bg=ansi256(236) attr=None
+r13 c75-76 "││" fg=ansi256(240) bg=default attr=None
+r13 c78 "⌫" fg=ansi8(7) bg=ansi256(236) attr=None
+r13 c81 "│" fg=ansi256(240) bg=default attr=None
+r14 c19-81 "└───┘└──┘└──┘└──┘└──┘└──┘└──┘└──┘└──┘└──┘└──┘└──┘└──┘└──┘└────┘" fg=ansi256(240) bg=default attr=None
+r15 c19-78 "┌────┐┌──┐┌──┐┌──┐┌──┐┌──┐┌──┐┌──┐┌──┐┌──┐┌──┐┌──┐┌──┐┌────┐" fg=ansi256(240) bg=default attr=None
+r16 c19 "│" fg=ansi256(240) bg=default attr=None
+r16 c21 "⇥" fg=ansi8(7) bg=ansi256(236) attr=None
+r16 c24-25 "││" fg=ansi256(240) bg=default attr=None
+r16 c26 "Q" fg=ansi8(7) bg=ansi256(236) attr=None
+r16 c28-29 "││" fg=ansi256(240) bg=default attr=None
+r16 c30 "W" fg=ansi8(7) bg=ansi256(236) attr=None
+r16 c32-33 "││" fg=ansi256(240) bg=default attr=None
+r16 c34 "E" fg=ansi8(7) bg=ansi256(236) attr=None
+r16 c36-37 "││" fg=ansi256(240) bg=default attr=None
+r16 c38 "R" fg=ansi8(7) bg=ansi256(236) attr=None
+r16 c40-41 "││" fg=ansi256(240) bg=default attr=None
+r16 c42 "T" fg=ansi8(7) bg=ansi256(236) attr=None
+r16 c44-45 "││" fg=ansi256(240) bg=default attr=None
+r16 c46 "Y" fg=ansi8(7) bg=ansi256(236) attr=None
+r16 c48-49 "││" fg=ansi256(240) bg=default attr=None
+r16 c50 "U" fg=ansi8(7) bg=ansi256(236) attr=None
+r16 c52-53 "││" fg=ansi256(240) bg=default attr=None
+r16 c54 "I" fg=ansi8(7) bg=ansi256(236) attr=None
+r16 c56-57 "││" fg=ansi256(240) bg=default attr=None
+r16 c58 "O" fg=ansi8(7) bg=ansi256(236) attr=None
+r16 c60-61 "││" fg=ansi256(240) bg=default attr=None
+r16 c62 "P" fg=ansi8(7) bg=ansi256(236) attr=None
+r16 c64-65 "││" fg=ansi256(240) bg=default attr=None
+r16 c66 "[" fg=ansi8(7) bg=ansi256(236) attr=None
+r16 c68-69 "││" fg=ansi256(240) bg=default attr=None
+r16 c70 "]" fg=ansi8(7) bg=ansi256(236) attr=None
+r16 c72-73 "││" fg=ansi256(240) bg=default attr=None
+r16 c75 "\\" fg=ansi8(7) bg=ansi256(236) attr=None
+r16 c78 "│" fg=ansi256(240) bg=default attr=None
+r17 c19-78 "└────┘└──┘└──┘└──┘└──┘└──┘└──┘└──┘└──┘└──┘└──┘└──┘└──┘└────┘" fg=ansi256(240) bg=default attr=None
+r18 c19-78 "┌─────┐┌──┐┌──┐┌──┐┌──┐┌──┐┌──┐┌──┐┌──┐┌──┐┌──┐┌──┐┌───────┐" fg=ansi256(240) bg=default attr=None
+r19 c19 "│" fg=ansi256(240) bg=default attr=None
+r19 c22 "⇪" fg=ansi8(7) bg=ansi256(236) attr=None
+r19 c25-26 "││" fg=ansi256(240) bg=default attr=None
+r19 c27 "A" fg=ansi8(7) bg=ansi256(236) attr=None
+r19 c29-30 "││" fg=ansi256(240) bg=default attr=None
+r19 c31 "S" fg=ansi8(7) bg=ansi256(236) attr=None
+r19 c33-34 "││" fg=ansi256(240) bg=default attr=None
+r19 c35 "D" fg=ansi8(7) bg=ansi256(236) attr=None
+r19 c37-38 "││" fg=ansi256(240) bg=default attr=None
+r19 c39 "F" fg=ansi8(7) bg=ansi256(236) attr=None
+r19 c41-42 "││" fg=ansi256(240) bg=default attr=None
+r19 c43 "G" fg=ansi8(7) bg=ansi256(236) attr=None
+r19 c45-46 "││" fg=ansi256(240) bg=default attr=None
+r19 c47 "H" fg=ansi8(7) bg=ansi256(236) attr=None
+r19 c49-50 "││" fg=ansi256(240) bg=default attr=None
+r19 c51 "J" fg=ansi8(7) bg=ansi256(236) attr=None
+r19 c53-54 "││" fg=ansi256(240) bg=default attr=None
+r19 c55 "K" fg=ansi8(7) bg=ansi256(236) attr=None
+r19 c57-58 "││" fg=ansi256(240) bg=default attr=None
+r19 c59 "L" fg=ansi8(7) bg=ansi256(236) attr=None
+r19 c61-62 "││" fg=ansi256(240) bg=default attr=None
+r19 c63 ";" fg=ansi8(7) bg=ansi256(236) attr=None
+r19 c65-66 "││" fg=ansi256(240) bg=default attr=None
+r19 c67 "'" fg=ansi8(7) bg=ansi256(236) attr=None
+r19 c69-70 "││" fg=ansi256(240) bg=default attr=None
+r19 c74 "⏎" fg=ansi8(7) bg=ansi256(236) attr=None
+r19 c78 "│" fg=ansi256(240) bg=default attr=None
+r20 c19-78 "└─────┘└──┘└──┘└──┘└──┘└──┘└──┘└──┘└──┘└──┘└──┘└──┘└───────┘" fg=ansi256(240) bg=default attr=None
+r21 c19-78 "┌───────┐┌──┐┌──┐┌──┐┌──┐┌──┐┌──┐┌──┐┌──┐┌──┐┌──┐┌─────────┐" fg=ansi256(240) bg=default attr=None
+r22 c19 "│" fg=ansi256(240) bg=default attr=None
+r22 c23 "⇧" fg=ansi8(7) bg=ansi256(236) attr=None
+r22 c27-28 "││" fg=ansi256(240) bg=default attr=None
+r22 c29 "Z" fg=ansi8(7) bg=ansi256(236) attr=None
+r22 c31-32 "││" fg=ansi256(240) bg=default attr=None
+r22 c33 "X" fg=ansi8(7) bg=ansi256(236) attr=None
+r22 c35-36 "││" fg=ansi256(240) bg=default attr=None
+r22 c37 "C" fg=ansi8(7) bg=ansi256(236) attr=None
+r22 c39-40 "││" fg=ansi256(240) bg=default attr=None
+r22 c41 "V" fg=ansi8(7) bg=ansi256(236) attr=None
+r22 c43-44 "││" fg=ansi256(240) bg=default attr=None
+r22 c45 "B" fg=ansi8(7) bg=ansi256(236) attr=None
+r22 c47-48 "││" fg=ansi256(240) bg=default attr=None
+r22 c49 "N" fg=ansi8(7) bg=ansi256(236) attr=None
+r22 c51-52 "││" fg=ansi256(240) bg=default attr=None
+r22 c53 "M" fg=ansi8(7) bg=ansi256(236) attr=None
+r22 c55-56 "││" fg=ansi256(240) bg=default attr=None
+r22 c57 "," fg=ansi8(7) bg=ansi256(236) attr=None
+r22 c59-60 "││" fg=ansi256(240) bg=default attr=None
+r22 c61 "." fg=ansi8(7) bg=ansi256(236) attr=None
+r22 c63-64 "││" fg=ansi256(240) bg=default attr=None
+r22 c65 "/" fg=ansi8(7) bg=ansi256(236) attr=None
+r22 c67-68 "││" fg=ansi256(240) bg=default attr=None
+r22 c73 "⇧" fg=ansi8(7) bg=ansi256(236) attr=None
+r22 c78 "│" fg=ansi256(240) bg=default attr=None
+r23 c19-78 "└───────┘└──┘└──┘└──┘└──┘└──┘└──┘└──┘└──┘└──┘└──┘└─────────┘" fg=ansi256(240) bg=default attr=None
+r24 c19-80 "┌──────┐┌──────┐┌────────────────────────────┐┌──────┐┌──────┐" fg=ansi256(240) bg=default attr=None
+r25 c19 "│" fg=ansi256(240) bg=default attr=None
+r25 c21-24 "Ctrl" fg=ansi8(7) bg=ansi256(236) attr=None
+r25 c26-27 "││" fg=ansi256(240) bg=default attr=None
+r25 c29-31 "Alt" fg=ansi8(7) bg=ansi256(236) attr=None
+r25 c34-35 "││" fg=ansi256(240) bg=default attr=None
+r25 c49 "␣" fg=ansi8(7) bg=ansi256(236) attr=None
+r25 c64-65 "││" fg=ansi256(240) bg=default attr=None
+r25 c67-69 "Alt" fg=ansi8(7) bg=ansi256(236) attr=None
+r25 c72-73 "││" fg=ansi256(240) bg=default attr=None
+r25 c75-78 "Ctrl" fg=ansi8(7) bg=ansi256(236) attr=None
+r25 c80 "│" fg=ansi256(240) bg=default attr=None
+r26 c19-80 "└──────┘└──────┘└────────────────────────────┘└──────┘└──────┘" fg=ansi256(240) bg=default attr=None
+r28 c21-26 "Mouse:" fg=ansi8(6) bg=default attr=None
+r28 c29-37 "Position:" fg=ansi8(2) bg=default attr=None
+r28 c39-41 "(0," fg=ansi8(2) bg=default attr=None
+r28 c43-44 "0)" fg=ansi8(2) bg=default attr=None
+r32 c14-18 "Press" fg=ansi256(245) bg=default attr=None
+r32 c20-23 "keys" fg=ansi256(245) bg=default attr=None
+r32 c25-26 "to" fg=ansi256(245) bg=default attr=None
+r32 c28-36 "highlight" fg=ansi256(245) bg=default attr=None
+r32 c38 "|" fg=ansi256(245) bg=default attr=None
+r32 c40-51 "Click/scroll" fg=ansi256(245) bg=default attr=None
+r32 c53-60 "anywhere" fg=ansi256(245) bg=default attr=None
+r32 c62 "|" fg=ansi256(245) bg=default attr=None
+r32 c64-66 "ESC" fg=ansi256(245) bg=default attr=None
+r32 c68-69 "or" fg=ansi256(245) bg=default attr=None
+r32 c71-76 "Ctrl+C" fg=ansi256(245) bg=default attr=None
+r32 c78-79 "to" fg=ansi256(245) bg=default attr=None
+r32 c81-84 "quit" fg=ansi256(245) bg=default attr=None

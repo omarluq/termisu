@@ -1,0 +1,215 @@
+ANSI-8 Colors (Basic):
+██ ██ ██ ██ ██ ██ ██ ██
+
+ANSI-256 Bright Colors:
+██ ██ ██ ██ ██ ██ ██ ██
+
+ANSI-256 Color Cube (216 colors):
+████████████████████████████████████████████████████████████████████████
+
+ANSI-256 Grayscale (24 levels):
+██ ██ ██ ██ ██ ██ ██ ██ ██ ██ ██ ██ ██ ██ ██ ██ ██ ██ ██ ██ ██ ██ ██ ██
+
+RGB/TrueColor (16.7M colors):
+████████████████████████████████████████████████████████████
+
+Color Conversions:
+RGB(255,128,64) -> ANSI-256 -> ANSI-8
+████████  ████████  ████████
+
+Hex Colors:
+████    ████    ████    ████    ████    ████
+#FF0000 #00FF00 #0000FF #FFFF00 #FF00FF #00FFFF
+
+Background Colors:
+Text with backgrounds
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# styles
+r1 c0-1 "██" fg=ansi8(0) bg=default attr=None
+r1 c3-4 "██" fg=ansi8(1) bg=default attr=None
+r1 c6-7 "██" fg=ansi8(2) bg=default attr=None
+r1 c9-10 "██" fg=ansi8(3) bg=default attr=None
+r1 c12-13 "██" fg=ansi8(4) bg=default attr=None
+r1 c15-16 "██" fg=ansi8(5) bg=default attr=None
+r1 c18-19 "██" fg=ansi8(6) bg=default attr=None
+r4 c0-1 "██" fg=ansi256(8) bg=default attr=None
+r4 c3-4 "██" fg=ansi256(9) bg=default attr=None
+r4 c6-7 "██" fg=ansi256(10) bg=default attr=None
+r4 c9-10 "██" fg=ansi256(11) bg=default attr=None
+r4 c12-13 "██" fg=ansi256(12) bg=default attr=None
+r4 c15-16 "██" fg=ansi256(13) bg=default attr=None
+r4 c18-19 "██" fg=ansi256(14) bg=default attr=None
+r4 c21-22 "██" fg=ansi256(15) bg=default attr=None
+r7 c0-1 "██" fg=ansi256(16) bg=default attr=None
+r7 c2-3 "██" fg=ansi256(22) bg=default attr=None
+r7 c4-5 "██" fg=ansi256(28) bg=default attr=None
+r7 c6-7 "██" fg=ansi256(34) bg=default attr=None
+r7 c8-9 "██" fg=ansi256(40) bg=default attr=None
+r7 c10-11 "██" fg=ansi256(46) bg=default attr=None
+r7 c12-13 "██" fg=ansi256(52) bg=default attr=None
+r7 c14-15 "██" fg=ansi256(58) bg=default attr=None
+r7 c16-17 "██" fg=ansi256(64) bg=default attr=None
+r7 c18-19 "██" fg=ansi256(70) bg=default attr=None
+r7 c20-21 "██" fg=ansi256(76) bg=default attr=None
+r7 c22-23 "██" fg=ansi256(82) bg=default attr=None
+r7 c24-25 "██" fg=ansi256(88) bg=default attr=None
+r7 c26-27 "██" fg=ansi256(94) bg=default attr=None
+r7 c28-29 "██" fg=ansi256(100) bg=default attr=None
+r7 c30-31 "██" fg=ansi256(106) bg=default attr=None
+r7 c32-33 "██" fg=ansi256(112) bg=default attr=None
+r7 c34-35 "██" fg=ansi256(118) bg=default attr=None
+r7 c36-37 "██" fg=ansi256(124) bg=default attr=None
+r7 c38-39 "██" fg=ansi256(130) bg=default attr=None
+r7 c40-41 "██" fg=ansi256(136) bg=default attr=None
+r7 c42-43 "██" fg=ansi256(142) bg=default attr=None
+r7 c44-45 "██" fg=ansi256(148) bg=default attr=None
+r7 c46-47 "██" fg=ansi256(154) bg=default attr=None
+r7 c48-49 "██" fg=ansi256(160) bg=default attr=None
+r7 c50-51 "██" fg=ansi256(166) bg=default attr=None
+r7 c52-53 "██" fg=ansi256(172) bg=default attr=None
+r7 c54-55 "██" fg=ansi256(178) bg=default attr=None
+r7 c56-57 "██" fg=ansi256(184) bg=default attr=None
+r7 c58-59 "██" fg=ansi256(190) bg=default attr=None
+r7 c60-61 "██" fg=ansi256(196) bg=default attr=None
+r7 c62-63 "██" fg=ansi256(202) bg=default attr=None
+r7 c64-65 "██" fg=ansi256(208) bg=default attr=None
+r7 c66-67 "██" fg=ansi256(214) bg=default attr=None
+r7 c68-69 "██" fg=ansi256(220) bg=default attr=None
+r7 c70-71 "██" fg=ansi256(226) bg=default attr=None
+r10 c0-1 "██" fg=ansi256(232) bg=default attr=None
+r10 c3-4 "██" fg=ansi256(233) bg=default attr=None
+r10 c6-7 "██" fg=ansi256(234) bg=default attr=None
+r10 c9-10 "██" fg=ansi256(235) bg=default attr=None
+r10 c12-13 "██" fg=ansi256(236) bg=default attr=None
+r10 c15-16 "██" fg=ansi256(237) bg=default attr=None
+r10 c18-19 "██" fg=ansi256(238) bg=default attr=None
+r10 c21-22 "██" fg=ansi256(239) bg=default attr=None
+r10 c24-25 "██" fg=ansi256(240) bg=default attr=None
+r10 c27-28 "██" fg=ansi256(241) bg=default attr=None
+r10 c30-31 "██" fg=ansi256(242) bg=default attr=None
+r10 c33-34 "██" fg=ansi256(243) bg=default attr=None
+r10 c36-37 "██" fg=ansi256(244) bg=default attr=None
+r10 c39-40 "██" fg=ansi256(245) bg=default attr=None
+r10 c42-43 "██" fg=ansi256(246) bg=default attr=None
+r10 c45-46 "██" fg=ansi256(247) bg=default attr=None
+r10 c48-49 "██" fg=ansi256(248) bg=default attr=None
+r10 c51-52 "██" fg=ansi256(249) bg=default attr=None
+r10 c54-55 "██" fg=ansi256(250) bg=default attr=None
+r10 c57-58 "██" fg=ansi256(251) bg=default attr=None
+r10 c60-61 "██" fg=ansi256(252) bg=default attr=None
+r10 c63-64 "██" fg=ansi256(253) bg=default attr=None
+r10 c66-67 "██" fg=ansi256(254) bg=default attr=None
+r10 c69-70 "██" fg=ansi256(255) bg=default attr=None
+r13 c0 "█" fg=rgb(128,237,18) bg=default attr=None
+r13 c1 "█" fg=rgb(141,230,11) bg=default attr=None
+r13 c2 "█" fg=rgb(154,222,7) bg=default attr=None
+r13 c3 "█" fg=rgb(167,212,3) bg=default attr=None
+r13 c4 "█" fg=rgb(179,202,1) bg=default attr=None
+r13 c5 "█" fg=rgb(191,191,1) bg=default attr=None
+r13 c6 "█" fg=rgb(202,179,1) bg=default attr=None
+r13 c7 "█" fg=rgb(212,167,3) bg=default attr=None
+r13 c8 "█" fg=rgb(222,154,7) bg=default attr=None
+r13 c9 "█" fg=rgb(230,141,11) bg=default attr=None
+r13 c10 "█" fg=rgb(237,128,18) bg=default attr=None
+r13 c11 "█" fg=rgb(244,114,25) bg=default attr=None
+r13 c12 "█" fg=rgb(248,101,33) bg=default attr=None
+r13 c13 "█" fg=rgb(252,88,43) bg=default attr=None
+r13 c14 "█" fg=rgb(254,76,53) bg=default attr=None
+r13 c15 "█" fg=rgb(255,64,64) bg=default attr=None
+r13 c16 "█" fg=rgb(254,53,76) bg=default attr=None
+r13 c17 "█" fg=rgb(252,43,88) bg=default attr=None
+r13 c18 "█" fg=rgb(248,33,101) bg=default attr=None
+r13 c19 "█" fg=rgb(244,25,114) bg=default attr=None
+r13 c20 "█" fg=rgb(237,18,127) bg=default attr=None
+r13 c21 "█" fg=rgb(230,11,141) bg=default attr=None
+r13 c22 "█" fg=rgb(222,7,154) bg=default attr=None
+r13 c23 "█" fg=rgb(212,3,167) bg=default attr=None
+r13 c24 "█" fg=rgb(202,1,179) bg=default attr=None
+r13 c25 "█" fg=rgb(191,1,191) bg=default attr=None
+r13 c26 "█" fg=rgb(179,1,202) bg=default attr=None
+r13 c27 "█" fg=rgb(167,3,212) bg=default attr=None
+r13 c28 "█" fg=rgb(154,7,222) bg=default attr=None
+r13 c29 "█" fg=rgb(141,11,230) bg=default attr=None
+r13 c30 "█" fg=rgb(128,18,237) bg=default attr=None
+r13 c31 "█" fg=rgb(114,25,244) bg=default attr=None
+r13 c32 "█" fg=rgb(101,33,248) bg=default attr=None
+r13 c33 "█" fg=rgb(88,43,252) bg=default attr=None
+r13 c34 "█" fg=rgb(76,53,254) bg=default attr=None
+r13 c35 "█" fg=rgb(64,64,255) bg=default attr=None
+r13 c36 "█" fg=rgb(53,76,254) bg=default attr=None
+r13 c37 "█" fg=rgb(43,88,252) bg=default attr=None
+r13 c38 "█" fg=rgb(33,101,248) bg=default attr=None
+r13 c39 "█" fg=rgb(25,114,244) bg=default attr=None
+r13 c40 "█" fg=rgb(18,127,237) bg=default attr=None
+r13 c41 "█" fg=rgb(11,141,230) bg=default attr=None
+r13 c42 "█" fg=rgb(7,154,222) bg=default attr=None
+r13 c43 "█" fg=rgb(3,167,212) bg=default attr=None
+r13 c44 "█" fg=rgb(1,179,202) bg=default attr=None
+r13 c45 "█" fg=rgb(1,191,191) bg=default attr=None
+r13 c46 "█" fg=rgb(1,202,179) bg=default attr=None
+r13 c47 "█" fg=rgb(3,212,167) bg=default attr=None
+r13 c48 "█" fg=rgb(7,222,154) bg=default attr=None
+r13 c49 "█" fg=rgb(11,230,141) bg=default attr=None
+r13 c50 "█" fg=rgb(18,237,128) bg=default attr=None
+r13 c51 "█" fg=rgb(25,244,114) bg=default attr=None
+r13 c52 "█" fg=rgb(33,248,101) bg=default attr=None
+r13 c53 "█" fg=rgb(43,252,88) bg=default attr=None
+r13 c54 "█" fg=rgb(53,254,76) bg=default attr=None
+r13 c55 "█" fg=rgb(64,255,64) bg=default attr=None
+r13 c56 "█" fg=rgb(76,254,53) bg=default attr=None
+r13 c57 "█" fg=rgb(88,252,43) bg=default attr=None
+r13 c58 "█" fg=rgb(101,248,33) bg=default attr=None
+r13 c59 "█" fg=rgb(114,244,25) bg=default attr=None
+r17 c0-7 "████████" fg=rgb(255,128,64) bg=default attr=None
+r17 c10-17 "████████" fg=ansi256(209) bg=default attr=None
+r17 c20-27 "████████" fg=ansi8(3) bg=default attr=None
+r20 c0-3 "████" fg=rgb(255,0,0) bg=default attr=None
+r20 c8-11 "████" fg=rgb(0,255,0) bg=default attr=None
+r20 c16-19 "████" fg=rgb(0,0,255) bg=default attr=None
+r20 c24-27 "████" fg=rgb(255,255,0) bg=default attr=None
+r20 c32-35 "████" fg=rgb(255,0,255) bg=default attr=None
+r20 c40-43 "████" fg=rgb(0,255,255) bg=default attr=None
+r24 c0 "T" fg=ansi8(7) bg=ansi256(16) attr=None
+r24 c1 "e" fg=ansi8(7) bg=ansi256(24) attr=None
+r24 c2 "x" fg=ansi8(7) bg=ansi256(32) attr=None
+r24 c3 "t" fg=ansi8(7) bg=ansi256(40) attr=None
+r24 c5 "w" fg=ansi8(7) bg=ansi256(56) attr=None
+r24 c6 "i" fg=ansi8(7) bg=ansi256(64) attr=None
+r24 c7 "t" fg=ansi8(7) bg=ansi256(72) attr=None
+r24 c8 "h" fg=ansi8(7) bg=ansi256(80) attr=None
+r24 c10 "b" fg=ansi8(7) bg=ansi256(96) attr=None
+r24 c11 "a" fg=ansi8(7) bg=ansi256(104) attr=None
+r24 c12 "c" fg=ansi8(7) bg=ansi256(112) attr=None
+r24 c13 "k" fg=ansi8(7) bg=ansi256(120) attr=None
+r24 c14 "g" fg=ansi8(7) bg=ansi256(128) attr=None
+r24 c15 "r" fg=ansi8(7) bg=ansi256(136) attr=None
+r24 c16 "o" fg=ansi8(7) bg=ansi256(144) attr=None
+r24 c17 "u" fg=ansi8(7) bg=ansi256(152) attr=None
+r24 c18 "n" fg=ansi8(7) bg=ansi256(160) attr=None
+r24 c19 "d" fg=ansi8(7) bg=ansi256(168) attr=None
+r24 c20 "s" fg=ansi8(7) bg=ansi256(176) attr=None

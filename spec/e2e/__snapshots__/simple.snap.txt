@@ -1,0 +1,55 @@
+Hi
+Strikethrough
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# styles
+r0 c0 "H" fg=ansi8(1) bg=default attr=Bold|Underline
+r0 c1 "i" fg=ansi8(2) bg=default attr=Bold|Underline
+r1 c0-12 "Strikethrough" fg=ansi8(3) bg=default attr=Strikethrough
