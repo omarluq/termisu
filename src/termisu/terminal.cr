@@ -37,6 +37,10 @@ class Termisu::Terminal < Termisu::Renderer
   @cached_bg : Color?
   @cached_attr : Attribute = Attribute::None
 
+  # Cached terminal size to avoid a TIOCGWINSZ ioctl per write/move_cursor.
+  # Refreshed by resize() and invalidated after mode switches.
+  @cached_size : {Int32, Int32}?
+
   # Creates a new terminal.
   #
   # Parameters:
@@ -122,6 +126,16 @@ class Termisu::Terminal < Termisu::Renderer
     @cached_attr = Attribute::None
   end
 
+  # Precomputed SGR color sequences, indexed by color index.
+  # Entries MUST remain byte-identical to the former string interpolations.
+  # Indices are provably in range: color.default? is handled before the
+  # table lookup, and Color::Validator restricts ansi8 to -1..7 and
+  # ansi256 to -1..255 at construction.
+  private FG_ANSI8   = Array(String).new(8) { |i| "\e[3#{i}m" }
+  private BG_ANSI8   = Array(String).new(8) { |i| "\e[4#{i}m" }
+  private FG_ANSI256 = Array(String).new(256) { |i| "\e[38;5;#{i}m" }
+  private BG_ANSI256 = Array(String).new(256) { |i| "\e[48;5;#{i}m" }
+
   # Sets the foreground color with full ANSI-8, ANSI-256, and RGB support.
   #
   # Caches the color to avoid redundant escape sequences when called
@@ -135,9 +149,9 @@ class Termisu::Terminal < Termisu::Renderer
     else
       case color.mode
       when .ansi8?
-        write("\e[3#{color.index}m")
+        write(FG_ANSI8[color.index])
       when .ansi256?
-        write("\e[38;5;#{color.index}m")
+        write(FG_ANSI256[color.index])
       when .rgb?
         write("\e[38;2;#{color.r};#{color.g};#{color.b}m")
       end
@@ -157,9 +171,9 @@ class Termisu::Terminal < Termisu::Renderer
     else
       case color.mode
       when .ansi8?
-        write("\e[4#{color.index}m")
+        write(BG_ANSI8[color.index])
       when .ansi256?
-        write("\e[48;5;#{color.index}m")
+        write(BG_ANSI256[color.index])
       when .rgb?
         write("\e[48;2;#{color.r};#{color.g};#{color.b}m")
       end
@@ -253,8 +267,21 @@ class Termisu::Terminal < Termisu::Renderer
     @backend.flush
   end
 
-  # Delegates size to backend.
+  # Returns the terminal size as {width, height}.
+  #
+  # The value is cached to avoid an ioctl syscall on every call (write and
+  # move_cursor query size on hot rendering paths). The cache is refreshed
+  # by resize() and invalidated after mode switches. Use query_size to
+  # force a live query.
   def size : {Int32, Int32}
+    @cached_size ||= query_size
+  end
+
+  # Queries the terminal size directly from the backend.
+  #
+  # Always performs the live TIOCGWINSZ ioctl, bypassing the cache.
+  # Intended for resize detection, which must observe external size changes.
+  def query_size : {Int32, Int32}
     @backend.size
   end
 
@@ -370,6 +397,9 @@ class Termisu::Terminal < Termisu::Renderer
     # External programs during the mode block may have changed terminal
     # styling, making our cached fg/bg/attr assumptions stale.
     reset_render_state
+    # Drop the cached size - external programs during the mode block may
+    # have resized the terminal, so the next size call re-queries live.
+    @cached_size = nil
     flush
   end
 
@@ -529,8 +559,10 @@ class Termisu::Terminal < Termisu::Renderer
 
   # Resizes the buffer to new dimensions.
   #
-  # Preserves existing content where possible.
+  # Preserves existing content where possible. Also refreshes the cached
+  # size so subsequent size calls reflect the new dimensions.
   def resize(width : Int32, height : Int32)
+    @cached_size = {width, height}
     @buffer.resize(width, height)
     move_cursor
   end

@@ -187,6 +187,22 @@ describe Termisu::UnicodeWidth do
       Termisu::UnicodeWidth.codepoint_width(0x1F700).should eq(1)
     end
 
+    it "returns 1 for printable codepoints below the first combining range" do
+      # No-break space (untested gap between 0x9F and 0x0300)
+      Termisu::UnicodeWidth.codepoint_width(0x00A0).should eq(1)
+      # Last codepoint before Combining Diacritical Marks (U+0300)
+      Termisu::UnicodeWidth.codepoint_width(0x02FF).should eq(1)
+    end
+
+    it "matches control-character classification for all codepoints below U+0300" do
+      # Locks the fast-path invariant: below U+0300 the only zero-width
+      # codepoints are C0/C1 controls; everything else is width 1.
+      (0..0x02FF).each do |codepoint|
+        expected = codepoint < 32 || (0x7F..0x9F).includes?(codepoint) ? 0 : 1
+        Termisu::UnicodeWidth.codepoint_width(codepoint).should eq(expected)
+      end
+    end
+
     it "returns 2 for emoji within previously overbroad supplementary range" do
       # Geometric Shapes Extended — colored circles/squares ARE emoji
       Termisu::UnicodeWidth.codepoint_width(0x1F7E0).should eq(2) # 🟠
@@ -269,6 +285,21 @@ describe Termisu::UnicodeWidth do
       # US flag: regional indicator U + regional indicator S
       grapheme = "🇺🇸"
       Termisu::UnicodeWidth.grapheme_width(grapheme).should eq(2)
+    end
+
+    it "returns 1 for a lone regional indicator" do
+      Termisu::UnicodeWidth.grapheme_width("\u{1F1FA}").should eq(1) # 🇺
+    end
+
+    it "returns 1 for overlong regional indicator strings" do
+      # Three regional indicators: not a flag pair, falls through to the
+      # lone-regional-indicator base rule.
+      Termisu::UnicodeWidth.grapheme_width("\u{1F1FA}\u{1F1F8}\u{1F1FA}").should eq(1)
+    end
+
+    it "returns 1 for a regional indicator followed by a non-indicator" do
+      # ri_count of 1 blocks the pair rule; base-RI rule yields 1.
+      Termisu::UnicodeWidth.grapheme_width("\u{1F1FA}A").should eq(1)
     end
 
     it "returns 2 for skin tone modified emoji" do

@@ -22,6 +22,12 @@
 # The `_seq` suffix indicates this clearly.
 class Termisu::Terminfo
   Log = Termisu::Logs::Terminfo
+
+  # The standard ANSI cup capability, byte-identical to the xterm/linux
+  # builtins. When the loaded cup matches this exactly, `cursor_position_seq`
+  # takes a direct-interpolation fast path instead of the tparm interpreter.
+  private STANDARD_CUP = "\e[%i%p1%d;%p2%dH"
+
   @caps : Hash(String, String)
 
   # Cached capability strings for frequently-used parametrized capabilities.
@@ -39,6 +45,26 @@ class Termisu::Terminfo
   @cached_il : String?
   @cached_dl : String?
 
+  # Cached capability strings for frequently-emitted attribute and cursor
+  # sequences. These avoid a hash lookup per escape-sequence emission during
+  # rendering (RenderState re-emits them on every style change).
+  @cached_sgr0 : String?
+  @cached_bold : String?
+  @cached_smul : String?
+  @cached_blink : String?
+  @cached_rev : String?
+  @cached_dim : String?
+  @cached_sitm : String?
+  @cached_invis : String?
+  @cached_smxx : String?
+  @cached_cnorm : String?
+  @cached_civis : String?
+  @cached_cvvis : String?
+
+  # True when the loaded cup capability equals STANDARD_CUP. Set once during
+  # initialization and never mutated afterwards (fiber-safe).
+  @cup_is_standard = false
+
   def initialize
     term_name = ENV["TERM"]? || raise Termisu::Error.new("TERM environment variable not set")
     Log.info { "Loading terminfo for TERM=#{term_name}" }
@@ -52,6 +78,7 @@ class Termisu::Terminfo
   # Pre-caches frequently-used parametrized capability strings.
   private def cache_frequent_capabilities
     @cached_cup = get_cap("cup")
+    @cup_is_standard = @cached_cup == STANDARD_CUP
     @cached_setaf = get_cap("setaf")
     @cached_setab = get_cap("setab")
     @cached_cuf = get_cap("cuf")
@@ -63,6 +90,18 @@ class Termisu::Terminfo
     @cached_ech = get_cap("ech")
     @cached_il = get_cap("il")
     @cached_dl = get_cap("dl")
+    @cached_sgr0 = get_cap("sgr0")
+    @cached_bold = get_cap("bold")
+    @cached_smul = get_cap("smul")
+    @cached_blink = get_cap("blink")
+    @cached_rev = get_cap("rev")
+    @cached_dim = get_cap("dim")
+    @cached_sitm = get_cap("sitm")
+    @cached_invis = get_cap("invis")
+    @cached_smxx = get_cap("smxx")
+    @cached_cnorm = get_cap("cnorm")
+    @cached_civis = get_cap("civis")
+    @cached_cvvis = get_cap("cvvis")
   end
 
   # Loads capabilities from the terminfo database.
@@ -128,18 +167,21 @@ class Termisu::Terminfo
   # --- Cursor Control Sequences ---
 
   # Returns escape sequence to show cursor (cnorm).
+  # Uses cached value to avoid hash lookup overhead.
   def show_cursor_seq : String
-    get_cap("cnorm")
+    @cached_cnorm || get_cap("cnorm")
   end
 
   # Returns escape sequence to hide cursor (civis).
+  # Uses cached value to avoid hash lookup overhead.
   def hide_cursor_seq : String
-    get_cap("civis")
+    @cached_civis || get_cap("civis")
   end
 
   # Returns escape sequence to make cursor blink/very visible (cvvis).
+  # Uses cached value to avoid hash lookup overhead.
   def blink_cursor_seq : String
-    get_cap("cvvis")
+    @cached_cvvis || get_cap("cvvis")
   end
 
   # Returns the raw cup capability string (parametrized).
@@ -152,10 +194,15 @@ class Termisu::Terminfo
 
   # Returns escape sequence to move cursor to position (row, col).
   #
-  # Uses the terminfo `cup` capability with tparm processing.
-  # Coordinates are 0-based and will be converted to 1-based by the %i
-  # operation in the capability string.
+  # Coordinates are 0-based and converted to 1-based by the %i operation in
+  # the capability string. When the loaded `cup` is the standard ANSI
+  # template, a direct-interpolation fast path is used (byte-identical to
+  # tparm output); non-standard cup strings fall back to tparm processing.
   def cursor_position_seq(row : Int32, col : Int32) : String
+    # Int64 arithmetic matches tparm's %i semantics exactly (Int32 `+ 1`
+    # would overflow at Int32::MAX where tparm emits "2147483648").
+    return "\e[#{row.to_i64 + 1};#{col.to_i64 + 1}H" if @cup_is_standard
+
     process_param_cap(@cached_cup, "cup", row, col)
   end
 
@@ -251,48 +298,57 @@ class Termisu::Terminfo
   # --- Text Attribute Sequences ---
 
   # Returns escape sequence to reset all attributes (sgr0).
+  # Uses cached value to avoid hash lookup overhead.
   def reset_attrs_seq : String
-    get_cap("sgr0")
+    @cached_sgr0 || get_cap("sgr0")
   end
 
   # Returns escape sequence to enable underline (smul).
+  # Uses cached value to avoid hash lookup overhead.
   def underline_seq : String
-    get_cap("smul")
+    @cached_smul || get_cap("smul")
   end
 
   # Returns escape sequence to enable bold (bold).
+  # Uses cached value to avoid hash lookup overhead.
   def bold_seq : String
-    get_cap("bold")
+    @cached_bold || get_cap("bold")
   end
 
   # Returns escape sequence to enable blink (blink).
+  # Uses cached value to avoid hash lookup overhead.
   def blink_seq : String
-    get_cap("blink")
+    @cached_blink || get_cap("blink")
   end
 
   # Returns escape sequence to enable reverse video (rev).
+  # Uses cached value to avoid hash lookup overhead.
   def reverse_seq : String
-    get_cap("rev")
+    @cached_rev || get_cap("rev")
   end
 
   # Returns escape sequence to enable dim/faint mode (dim).
+  # Uses cached value to avoid hash lookup overhead.
   def dim_seq : String
-    get_cap("dim")
+    @cached_dim || get_cap("dim")
   end
 
   # Returns escape sequence to enable italic/cursive mode (sitm).
+  # Uses cached value to avoid hash lookup overhead.
   def italic_seq : String
-    get_cap("sitm")
+    @cached_sitm || get_cap("sitm")
   end
 
   # Returns escape sequence to enable hidden/invisible mode (invis).
+  # Uses cached value to avoid hash lookup overhead.
   def hidden_seq : String
-    get_cap("invis")
+    @cached_invis || get_cap("invis")
   end
 
   # Returns escape sequence to enable strikethrough mode (smxx).
+  # Uses cached value to avoid hash lookup overhead.
   def strikethrough_seq : String
-    get_cap("smxx")
+    @cached_smxx || get_cap("smxx")
   end
 
   # --- Keypad Control Sequences ---

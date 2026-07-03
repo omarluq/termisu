@@ -105,6 +105,14 @@ describe Termisu::Buffer do
       buffer.set_cell(0, 0, '~').should be_true # 0x7E
     end
 
+    it "pins validation behavior at the single-byte fast-path boundary" do
+      buffer = Termisu::Buffer.new(10, 5)
+      buffer.set_cell(0, 0, "").should be_false                        # empty string rejected
+      buffer.set_cell(0, 0, "\u{7F}").should be_false                  # DEL rejected as control
+      buffer.set_cell(0, 0, '\u{80}').should be_false                  # C1 control rejected (2-byte UTF-8)
+      buffer.set_cell(0, 0, String.new(Bytes[0xFF_u8])).should be_true # invalid byte keeps replacement-char acceptance
+    end
+
     it "sets cell with attributes" do
       buffer = Termisu::Buffer.new(10, 5)
       buffer.set_cell(3, 3, 'B', attr: Termisu::Attribute::Bold)

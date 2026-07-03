@@ -72,7 +72,7 @@ class Termisu::Buffer
     attr : Attribute = Attribute::None,
   ) : Bool
     return false if out_of_bounds?(x, y)
-    return false unless grapheme.grapheme_size == 1
+    return false unless single_grapheme?(grapheme)
     return false if control_char?(grapheme[0])
 
     # Create cell to determine width
@@ -92,6 +92,11 @@ class Termisu::Buffer
     true
   end
 
+  # Interned single-character strings for ASCII, avoiding one Char#to_s heap
+  # allocation per set_cell(Char) call. Control-char entries are harmless:
+  # they are rejected downstream by control_char?, identical to ch.to_s.
+  private ASCII_GRAPHEMES = Array(String).new(128, &.unsafe_chr.to_s)
+
   def set_cell(
     x : Int32,
     y : Int32,
@@ -100,7 +105,9 @@ class Termisu::Buffer
     bg : Color = Color.default,
     attr : Attribute = Attribute::None,
   ) : Bool
-    set_cell(x, y, ch.to_s, fg, bg, attr)
+    # ch.ascii? proves ch.ord is in 0..127, so unsafe_fetch is in bounds.
+    grapheme = ch.ascii? ? ASCII_GRAPHEMES.unsafe_fetch(ch.ord) : ch.to_s
+    set_cell(x, y, grapheme, fg, bg, attr)
   end
 
   # Internal cell writer that handles occupancy invariants and overlap clearing.
@@ -108,7 +115,8 @@ class Termisu::Buffer
   # This is the core write primitive that handles:
   # - Wide character writes (creates leading + continuation cells)
   # - Overlap clearing when overwriting wide cells or their continuations
-  # - Pre-clearing target cells before writing
+  # - Direct overwrite of target cells (assign_back_cell handles count/dirty
+  #   deltas per transition)
   #
   # Assumes caller has validated bounds and fit constraints.
   private def set_cell_internal(x : Int32, y : Int32, cell : Cell, width : UInt8) : Nil
@@ -127,10 +135,9 @@ class Termisu::Buffer
         assign_back_cell(row_start + x + 2, y, Cell.default)
       end
 
-      # Pre-clear both target positions
-      assign_back_cell(row_start + x, y, Cell.default)
-      assign_back_cell(row_start + x + 1, y, Cell.default)
-
+      # Overwrite targets directly: assign_back_cell count/dirty updates depend
+      # only on old/new endpoints, so no pre-clear is needed; a rewrite of an
+      # identical wide cell is a no-op and leaves the row clean.
       # Write leading cell
       assign_back_cell(row_start + x, y, cell)
       # Write continuation cell
@@ -174,12 +181,7 @@ class Termisu::Buffer
       next if @row_non_default_counts[row] == 0
 
       row_start = row * @width
-      row_end = row_start + @width
-      idx = row_start
-      while idx < row_end
-        @back[idx] = Cell.default
-        idx += 1
-      end
+      @back.fill(Cell.default, row_start, @width)
 
       @row_non_default_counts[row] = 0
       mark_row_dirty(row)
@@ -202,9 +204,7 @@ class Termisu::Buffer
     # Using NUL character as the marker since it's never used in normal rendering.
     # Note: This intentionally creates width 0 non-continuation cells as sentinels.
     invalid_cell = Cell.new("\u0000", fg: Color.default, bg: Color.default, attr: Attribute::None)
-    @front.size.times do |index|
-      @front[index] = invalid_cell
-    end
+    @front.fill(invalid_cell)
     @render_state.reset
     mark_all_rows_dirty
   end
@@ -328,6 +328,16 @@ class Termisu::Buffer
     cp < 0x20 || (cp >= 0x7F && cp <= 0x9F)
   end
 
+  # Fast path: a single ASCII byte is always exactly one grapheme cluster,
+  # so skip the full segmentation walk (Char::Reader + property binary
+  # searches) that String#grapheme_size performs even for 1-char strings.
+  # Single bytes >= 0x80 (invalid UTF-8) intentionally fall through to
+  # grapheme_size to preserve existing replacement-character acceptance.
+  private def single_grapheme?(grapheme : String) : Bool
+    return true if grapheme.bytesize == 1 && grapheme.to_unsafe[0] < 0x80
+    grapheme.grapheme_size == 1
+  end
+
   # Assigns a cell in the back buffer while maintaining:
   # - non-default row counts (for selective clear)
   # - dirty row tracking (for selective render diff)
@@ -405,14 +415,22 @@ class Termisu::Buffer
     render_row(renderer, row, diff_only: false)
   end
 
+  # Bounds safety for unsafe_fetch/unsafe_put in render_row, skip_row_cell?,
+  # and render_row_batch: idx = row * @width + col with col < @width (loop
+  # guard) and row < @height (dirty_row_list entries and sync_to's
+  # height.times are always height-validated); @front/@back are always sized
+  # @width * @height (initialize/resize are the only array assignments).
+  # Renderer callbacks must not mutate this buffer reentrantly. If resize is
+  # ever made callable from a fiber other than the render fiber, or a
+  # mark_row_dirty call site is added with an unvalidated row, revisit this.
   private def render_row(renderer : Renderer, row : Int32, *, diff_only : Bool)
     row_start = row * @width
     col = 0
 
     while col < @width
       idx = row_start + col
-      back_cell = @back[idx]
-      front_cell = @front[idx]
+      back_cell = @back.unsafe_fetch(idx)
+      front_cell = @front.unsafe_fetch(idx)
 
       if skip_row_cell?(back_cell, front_cell, idx, diff_only)
         col += 1
@@ -424,12 +442,13 @@ class Termisu::Buffer
     end
   end
 
+  # bounds: see render_row (idx is a caller-validated in-bounds index)
   private def skip_row_cell?(back_cell : Cell, front_cell : Cell, idx : Int32, diff_only : Bool) : Bool
     return true if diff_only && back_cell == front_cell
 
     return false unless back_cell.continuation?
 
-    @front[idx] = back_cell
+    @front.unsafe_put(idx, back_cell)
     true
   end
 
@@ -451,13 +470,13 @@ class Termisu::Buffer
 
     while col < @width
       idx = row_start + col
-      back_cell = @back[idx]
-      front_cell = @front[idx]
+      back_cell = @back.unsafe_fetch(idx)
+      front_cell = @front.unsafe_fetch(idx)
 
       break if diff_only && back_cell == front_cell
 
       if back_cell.continuation?
-        @front[idx] = back_cell
+        @front.unsafe_put(idx, back_cell)
         col += 1
         next
       end
@@ -466,7 +485,7 @@ class Termisu::Buffer
 
       @batch_buffer << back_cell.grapheme
       columns_advanced += back_cell.width
-      @front[idx] = back_cell
+      @front.unsafe_put(idx, back_cell)
       col += 1
     end
 

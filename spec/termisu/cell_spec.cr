@@ -210,6 +210,26 @@ describe Termisu::Cell do
     end
   end
 
+  describe "ASCII fast path" do
+    it "matches UnicodeWidth.grapheme_width for every ASCII codepoint" do
+      (0..127).each do |codepoint|
+        grapheme = codepoint.chr.to_s
+        Termisu::Cell.new(grapheme).width.should eq(Termisu::UnicodeWidth.grapheme_width(grapheme))
+      end
+    end
+
+    it "assigns width 0 to C0 controls and DEL" do
+      Termisu::Cell.new("\u0000").width.should eq(0u8)
+      Termisu::Cell.new("\u007f").width.should eq(0u8)
+    end
+
+    it "stores a single invalid byte >= 0x80 raw with width 1 via the slow path" do
+      cell = Termisu::Cell.new(String.new(Bytes[0xFF_u8]))
+      cell.grapheme.bytesize.should eq(1)
+      cell.width.should eq(1u8)
+    end
+  end
+
   describe "#== with new fields" do
     it "returns false for different grapheme" do
       cell1 = Termisu::Cell.new("A")

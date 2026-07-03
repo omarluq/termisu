@@ -50,7 +50,9 @@ class Termisu
 
     # Create async event sources
     @input_source = Event::Source::Input.new(@reader, @input_parser)
-    @resize_source = Event::Source::Resize.new(-> { @terminal.size })
+    # Must be query_size (live ioctl), not size (cached) - the resize
+    # source detects changes by re-querying the terminal dimensions.
+    @resize_source = Event::Source::Resize.new(-> { @terminal.query_size })
 
     # Timer source is optional (nil by default)
     # Can be either sleep-based Timer or kernel-level SystemTimer

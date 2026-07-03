@@ -304,6 +304,51 @@ describe "Terminal State Caching" do
     end
   end
 
+  describe "Terminal SGR color sequences" do
+    # Locks byte identity of Terminal's precomputed SGR lookup tables at the
+    # table edges, exercising the real Terminal implementation.
+    it "emits exact ANSI-8 sequences at table boundaries" do
+      terminal = CaptureTerminal.new
+
+      terminal.foreground = Termisu::Color.ansi8(0)
+      terminal.writes.should contain("\e[30m")
+      terminal.foreground = Termisu::Color.ansi8(7)
+      terminal.writes.should contain("\e[37m")
+
+      terminal.background = Termisu::Color.ansi8(0)
+      terminal.writes.should contain("\e[40m")
+      terminal.background = Termisu::Color.ansi8(7)
+      terminal.writes.should contain("\e[47m")
+    ensure
+      terminal.try &.close
+    end
+
+    it "emits exact ANSI-256 sequences at table boundaries" do
+      terminal = CaptureTerminal.new
+
+      terminal.foreground = Termisu::Color.ansi256(0)
+      terminal.writes.should contain("\e[38;5;0m")
+      terminal.foreground = Termisu::Color.ansi256(255)
+      terminal.writes.should contain("\e[38;5;255m")
+
+      terminal.background = Termisu::Color.ansi256(0)
+      terminal.writes.should contain("\e[48;5;0m")
+      terminal.background = Termisu::Color.ansi256(255)
+      terminal.writes.should contain("\e[48;5;255m")
+    ensure
+      terminal.try &.close
+    end
+
+    it "emits exact ANSI-256 background sequence" do
+      terminal = CaptureTerminal.new
+
+      terminal.background = Termisu::Color.ansi256(208)
+      terminal.writes.should contain("\e[48;5;208m")
+    ensure
+      terminal.try &.close
+    end
+  end
+
   describe "integration with Buffer rendering" do
     it "caching works through Renderer interface" do
       terminal = CaptureRenderer.new

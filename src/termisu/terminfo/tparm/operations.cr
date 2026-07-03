@@ -1,8 +1,13 @@
-# Operations lookup tables for tparm processor.
+# Operations reference tables for tparm processor.
 #
-# This module provides dispatch tables for the tparm stack machine.
+# This module documents the operation set of the tparm stack machine.
 # The terminfo parametrized string format uses a stack-based language where
 # operations pop operands from the stack, compute results, and push them back.
+#
+# NOTE: These tables are kept as documentation/reference; actual dispatch
+# lives in Processor's inlined case/when methods (dispatch_binary_op,
+# dispatch_non_binary_op and friends), which avoid per-call hash lookups
+# and Proc indirection.
 #
 # ## Operation Categories
 #

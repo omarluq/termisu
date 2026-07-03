@@ -11,13 +11,15 @@ module Termisu::Terminfo::Tparm::Output
   # %d - Pop value and output as decimal integer.
   @[AlwaysInline]
   private def output_decimal
-    @output << pop.to_s
+    # IO#<<(Int64) formats digits directly into the IO without allocating a String.
+    @output << pop
   end
 
   # %s - Pop value and output as string.
   @[AlwaysInline]
   private def output_string
-    @output << pop.to_s
+    # IO#<<(Int64) formats digits directly into the IO without allocating a String.
+    @output << pop
   end
 
   # %l - Pop value, convert to string, push its length.

@@ -20,7 +20,7 @@ module Termisu::Terminfo::Tparm::Variables
     var = @format.byte_at(@pos).unsafe_chr
     val = pop
     if var >= 'a' && var <= 'z'
-      @dynamic_vars[var] = val
+      dynamic_vars[var] = val
     elsif var >= 'A' && var <= 'Z'
       @static_vars[var] = val
     end
@@ -32,7 +32,12 @@ module Termisu::Terminfo::Tparm::Variables
     return if @pos >= @format_size
     var = @format.byte_at(@pos).unsafe_chr
     if var >= 'a' && var <= 'z'
-      push(@dynamic_vars.fetch(var, 0_i64))
+      # Read the raw ivar (not the allocating accessor): unset reads push 0.
+      if vars = @dynamic_vars
+        push(vars.fetch(var, 0_i64))
+      else
+        push(0_i64)
+      end
     elsif var >= 'A' && var <= 'Z'
       push(@static_vars.fetch(var, 0_i64))
     end

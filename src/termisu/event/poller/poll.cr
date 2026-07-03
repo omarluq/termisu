@@ -40,9 +40,15 @@ class Termisu::Event::Poller::Poll < Termisu::Event::Poller
       @next_deadline = monotonic_now + @interval
     end
 
-    # Creates a new state with updated deadline
-    def reset : TimerState
-      TimerState.new(@interval, @repeating)
+    # Anchors the deadline at a caller-provided clock snapshot,
+    # avoiding an extra clock read on the timer re-arm path.
+    def initialize(@interval : Time::Span, @repeating : Bool, now : MonotonicTime)
+      @next_deadline = now + @interval
+    end
+
+    # Creates a new state with the deadline anchored at *now*
+    def reset(now : MonotonicTime) : TimerState
+      TimerState.new(@interval, @repeating, now)
     end
   end
 
@@ -140,45 +146,51 @@ class Termisu::Event::Poller::Poll < Termisu::Event::Poller
     deadline = user_timeout ? monotonic_now + user_timeout : nil
 
     loop do
-      # Calculate effective timeout (factors in both deadline and timer deadlines)
-      timeout_ms = calculate_timeout(deadline)
+      # Single clock snapshot per phase; shared by all pre-poll checks
+      now = monotonic_now
 
       # Check for ready events (timers or fds) before polling
-      if ready = check_ready_events
+      if ready = check_ready_events(now)
         return ready
       end
 
       # Check if user deadline has passed
-      return nil if deadline_expired?(deadline)
+      return nil if deadline_expired?(deadline, now)
+
+      # Calculate effective timeout (factors in both deadline and timer deadlines)
+      timeout_ms = calculate_timeout(deadline, now)
 
       # poll() syscall
       result = poll_with_eintr(timeout_ms)
       raise IO::Error.from_errno("poll") if result < 0
 
-      # Check for ready events after poll
-      if ready = check_ready_events
+      # Check for ready events after poll (fresh snapshot — poll may have blocked)
+      now = monotonic_now
+      if ready = check_ready_events(now)
         return ready
       end
 
       # Check for timeout (no events, no timers, deadline passed)
-      return nil if deadline_expired?(deadline)
+      return nil if deadline_expired?(deadline, now)
       return nil if result == 0 && @timers.empty?
 
       # No events found, continue polling
       # This can happen if timeout was from timer calculation
-      # but timer hasn't quite expired yet due to timing variance
+      # but timer hasn't quite expired yet due to timing variance.
+      # Ready checks use a snapshot taken just before/after poll, so an
+      # event landing in that window is caught on the next iteration.
     end
   end
 
   # Checks if the user-supplied deadline has expired
-  private def deadline_expired?(deadline : MonotonicTime?) : Bool
+  private def deadline_expired?(deadline : MonotonicTime?, now : MonotonicTime) : Bool
     return false unless deadline
-    monotonic_now >= deadline
+    now >= deadline
   end
 
   # Checks for any ready events: expired timers first, then readable fds
-  private def check_ready_events : PollResult?
-    if timer_result = check_expired_timers
+  private def check_ready_events(now : MonotonicTime) : PollResult?
+    if timer_result = check_expired_timers(now)
       return timer_result
     end
     check_fd_events
@@ -199,12 +211,12 @@ class Termisu::Event::Poller::Poll < Termisu::Event::Poller
   end
 
   # Calculates poll timeout based on timer deadlines and user deadline
-  private def calculate_timeout(deadline : MonotonicTime?) : Int32
-    timer_timeout = timer_timeout_ms
+  private def calculate_timeout(deadline : MonotonicTime?, now : MonotonicTime) : Int32
+    timer_timeout = timer_timeout_ms(now)
 
     # Calculate remaining time to user deadline
     user_ms = if deadline
-                remaining = deadline - monotonic_now
+                remaining = deadline - now
                 remaining.total_milliseconds.to_i.clamp(0, Int32::MAX)
               else
                 nil
@@ -227,10 +239,9 @@ class Termisu::Event::Poller::Poll < Termisu::Event::Poller
   end
 
   # Returns timeout until next timer in milliseconds, or nil if no timers
-  private def timer_timeout_ms : Int32?
+  private def timer_timeout_ms(now : MonotonicTime) : Int32?
     return nil if @timers.empty?
 
-    now = monotonic_now
     min_timeout = Int32::MAX
 
     @timers.each_value do |state|
@@ -243,10 +254,8 @@ class Termisu::Event::Poller::Poll < Termisu::Event::Poller
   end
 
   # Checks for expired timers and returns result if found
-  private def check_expired_timers : PollResult?
+  private def check_expired_timers(now : MonotonicTime) : PollResult?
     return nil if @timers.empty?
-
-    now = monotonic_now
 
     @timers.each do |id, state|
       next unless now >= state.next_deadline
@@ -254,7 +263,7 @@ class Termisu::Event::Poller::Poll < Termisu::Event::Poller
       expirations = calculate_expirations(state, now)
 
       if state.repeating?
-        @timers[id] = state.reset
+        @timers[id] = state.reset(now)
       else
         @timers.delete(id)
       end

@@ -503,6 +503,26 @@ describe Termisu::Input::Parser do
           event.y.should eq(1000)
         end
       end
+
+      it "aborts overlong SGR sequences with Key::Unknown" do
+        seq = ("\e[<" + "9" * 40 + "M").to_slice
+        event = parse_sequence(seq)
+        event.should be_a(Termisu::Event::Key)
+        if event.is_a?(Termisu::Event::Key)
+          event.key.should eq(Termisu::Input::Key::Unknown)
+        end
+      end
+
+      it "defaults malformed non-ASCII coordinate params (\\e[<0;\\xC3;5M)" do
+        seq = Bytes[0x1B, '['.ord, '<'.ord, '0'.ord, ';'.ord, 0xC3, ';'.ord, '5'.ord, 'M'.ord]
+        event = parse_sequence(seq)
+        event.should be_a(Termisu::Event::Mouse)
+        if event.is_a?(Termisu::Event::Mouse)
+          event.button.should eq(Termisu::Event::Mouse::Button::Left)
+          event.x.should eq(1) # "\xC3" fails to_i?, defaults to 1
+          event.y.should eq(5)
+        end
+      end
     end
 
     context "normal mouse protocol" do

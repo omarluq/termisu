@@ -36,33 +36,44 @@ class Termisu::Terminfo::Tparm::Processor
   @format : String
   @params : Array(Int64)
   @stack : Array(Int64)
-  @output : IO::Memory
+  @output : String::Builder
   @pos : Int32
   @format_size : Int32
-  @dynamic_vars : Hash(Char, Int64)
+  @dynamic_vars : Hash(Char, Int64)?
   @static_vars : Hash(Char, Int64)
 
   @@static_storage : Hash(Char, Int64) = {} of Char => Int64
 
   def initialize(@format : String, @params : Array(Int64))
     @stack = Array(Int64).new(INITIAL_STACK_CAPACITY)
-    @output = IO::Memory.new(INITIAL_OUTPUT_CAPACITY)
+    @output = String::Builder.new(INITIAL_OUTPUT_CAPACITY)
     @pos = 0
     @format_size = @format.bytesize
-    @dynamic_vars = {} of Char => Int64
+    @dynamic_vars = nil
     @static_vars = @@static_storage
   end
 
   # Executes the tparm processor and returns the formatted string.
+  #
+  # Must be called at most once per Processor instance: the output buffer is
+  # a String::Builder, whose `to_s` is single-shot. Processor is single-use
+  # by design (sole call site: `Tparm.process`).
   def run : String
+    slice = @format.to_slice
+    percent = '%'.ord.to_u8
     while @pos < @format_size
-      byte = @format.byte_at(@pos)
-      if byte == '%'.ord
+      if slice.unsafe_fetch(@pos) == percent
         process_escape
+        @pos += 1
       else
-        @output.write_byte(byte)
+        # Batch the literal run into a single slice write. unsafe_fetch is
+        # in-bounds: @pos < @format_size == slice.size (as in variables.cr).
+        start = @pos
+        while @pos < @format_size && slice.unsafe_fetch(@pos) != percent
+          @pos += 1
+        end
+        @output.write(slice[start, @pos - start])
       end
-      @pos += 1
     end
     @output.to_s
   end
@@ -74,19 +85,65 @@ class Termisu::Terminfo::Tparm::Processor
 
     char = @format.byte_at(@pos).unsafe_chr
 
-    if op = Operations::BINARY[char]?
-      apply_binary_op(op)
-      return
-    end
+    return if dispatch_binary_op(char)
 
     dispatch_non_binary_op(char)
   end
 
-  @[AlwaysInline]
-  private def apply_binary_op(op : Proc(Int64, Int64, Int64))
+  # Pops two operands (right first, then left), applies the block, and pushes
+  # the result. Yield-based so operator bodies inline into the dispatchers.
+  private def binary_op(& : Int64, Int64 -> Int64)
     right = pop
     left = pop
-    push(op.call(left, right))
+    push(yield(left, right))
+  end
+
+  @[AlwaysInline]
+  private def to_flag(value : Bool) : Int64
+    value ? 1_i64 : 0_i64
+  end
+
+  private def dispatch_binary_op(char : Char) : Bool
+    dispatch_arithmetic_op(char) ||
+      dispatch_bitwise_op(char) ||
+      dispatch_compare_op(char)
+  end
+
+  @[AlwaysInline]
+  private def dispatch_arithmetic_op(char : Char) : Bool
+    case char
+    when '+' then binary_op { |left, right| left + right }
+    when '-' then binary_op { |left, right| left - right }
+    when '*' then binary_op { |left, right| left * right }
+    when '/' then binary_op { |left, right| right != 0 ? left // right : 0_i64 }
+    when 'm' then binary_op { |left, right| right != 0 ? left % right : 0_i64 }
+    else          return false
+    end
+    true
+  end
+
+  @[AlwaysInline]
+  private def dispatch_bitwise_op(char : Char) : Bool
+    case char
+    when '&' then binary_op { |left, right| left & right }
+    when '|' then binary_op { |left, right| left | right }
+    when '^' then binary_op { |left, right| left ^ right }
+    else          return false
+    end
+    true
+  end
+
+  @[AlwaysInline]
+  private def dispatch_compare_op(char : Char) : Bool
+    case char
+    when '=' then binary_op { |left, right| to_flag(left == right) }
+    when '<' then binary_op { |left, right| to_flag(left < right) }
+    when '>' then binary_op { |left, right| to_flag(left > right) }
+    when 'A' then binary_op { |left, right| to_flag(left != 0 && right != 0) }
+    when 'O' then binary_op { |left, right| to_flag(left != 0 || right != 0) }
+    else          return false
+    end
+    true
   end
 
   private def dispatch_non_binary_op(char : Char)
@@ -140,6 +197,12 @@ class Termisu::Terminfo::Tparm::Processor
     else          return false
     end
     true
+  end
+
+  # Lazily allocated: %P/%g never appear in hot render-path capabilities
+  # (cup, cuf, setaf...), so most calls never need this hash.
+  private def dynamic_vars : Hash(Char, Int64)
+    @dynamic_vars ||= {} of Char => Int64
   end
 
   # --- Stack Operations ---

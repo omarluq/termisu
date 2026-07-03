@@ -96,6 +96,18 @@ struct Termisu::Cell
     elsif grapheme.empty?
       @grapheme = " "
       @width = 1u8
+    elsif grapheme.bytesize == 1 && grapheme.to_unsafe[0] < 0x80
+      # ASCII fast path: a single byte < 0x80 is by definition exactly one
+      # grapheme cluster, so grapheme extraction (GraphemeIterator + Char#to_s,
+      # two heap allocations) and the truncation log are no-ops here.
+      # Width mirrors UnicodeWidth.grapheme_width over the whole ASCII range:
+      # C0 controls (< 0x20) and DEL (0x7F) are zero-width, everything else 1.
+      # Single bytes >= 0x80 are invalid UTF-8 and MUST fall through to the
+      # slow path so its existing behavior (raw byte stored, width 1) is
+      # preserved bit-for-bit. Do not "fix" this comment to say U+FFFD — the
+      # slow path does NOT substitute the replacement character.
+      byte = grapheme.to_unsafe[0]
+      @width = byte < 0x20 || byte == 0x7F ? 0u8 : 1u8
     else
       # Extract first grapheme cluster to ensure single-grapheme invariant
       first = grapheme.each_grapheme.first.to_s

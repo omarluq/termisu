@@ -266,20 +266,26 @@ class Termisu::Input::Parser
   # CSI format: \e [ <params> <intermediate> <final>
   # Final chars are 0x40-0x7E (@A-Z[\]^_`a-z{|}~)
   private def parse_csi_sequence : Event::Any
+    first = @reader.read_byte
+    return Event::Key.new(Key::Unknown) unless first
+
+    # SGR mouse: \e[<...
+    return parse_sgr_mouse if first == '<'.ord
+
+    # Normal mouse: \e[M... — must be checked before the final-byte fast path
+    # because 'M' (0x4D) is itself inside the 0x40-0x7E final range.
+    return parse_normal_mouse if first == 'M'.ord
+
+    # Fast path: parameterless CSI keys (\e[A, \e[Z, bare \e[u, \e[~) — the
+    # first byte is already the final char, so params is "" (value-identical
+    # to an empty builder's to_s) and no builder allocation is needed.
+    return decode_csi_key("", first.unsafe_chr) if 0x40 <= first <= 0x7E
+
     buffer = String::Builder.new
+    buffer << first.chr
 
     while byte = @reader.read_byte
       char = byte.chr
-
-      # Check for SGR mouse: \e[<...
-      if buffer.empty? && char == '<'
-        return parse_sgr_mouse
-      end
-
-      # Check for normal mouse: \e[M...
-      if buffer.empty? && char == 'M'
-        return parse_normal_mouse
-      end
 
       if byte >= 0x40 && byte <= 0x7E
         # Final character - determines the key
@@ -325,15 +331,23 @@ class Termisu::Input::Parser
       return Event::Key.new(key, modifiers)
     end
 
-    # Check for Linux console sequences (\e[[A etc.)
+    # Standard CSI key lookup first — the hot path (arrows, Home/End, F1-F4,
+    # BackTab) returns before the interpolation below allocates.
+    if key = CSI_KEYS[final]?
+      return Event::Key.new(key, modifiers)
+    end
+
+    # Linux console sequences (\e[[A etc.). Currently unreachable: a second
+    # '[' (0x5B, within the 0x40-0x7E final range) terminates the sequence in
+    # parse_csi_sequence, so params can never contain '['. Fixing Linux
+    # console F1-F5 would require special-casing the second '[' there before
+    # the final-byte check.
     sequence = "[#{params}#{final}"
     if key = LINUX_CONSOLE_KEYS[sequence]?
       return Event::Key.new(key, modifiers)
     end
 
-    # Standard CSI key lookup
-    key = CSI_KEYS[final]? || Key::Unknown
-    Event::Key.new(key, modifiers)
+    Event::Key.new(Key::Unknown, modifiers)
   end
 
   # Parses Kitty keyboard protocol sequence.
@@ -517,15 +531,20 @@ class Termisu::Input::Parser
   #
   # Returns tuple of (raw params string, is_release flag) or nil if overflow/EOF.
   private def read_sgr_sequence : {String, Bool}?
-    buffer = String::Builder.new
+    # Stack buffer of raw bytes (may be invalid UTF-8 on malformed input; the
+    # sole consumer only splits/to_i?). The limit counts raw bytes, not
+    # UTF-8-expanded chars as the old String::Builder did.
+    buf = uninitialized UInt8[MAX_SEQUENCE_LENGTH]
+    len = 0
 
     while byte = @reader.read_byte
-      case byte.chr
-      when 'M' then return {buffer.to_s, false}
-      when 'm' then return {buffer.to_s, true}
+      case byte
+      when 'M'.ord then return {String.new(buf.to_slice[0, len]), false}
+      when 'm'.ord then return {String.new(buf.to_slice[0, len]), true}
       else
-        buffer << byte.chr
-        if buffer.bytesize >= MAX_SEQUENCE_LENGTH
+        buf[len] = byte
+        len += 1
+        if len >= MAX_SEQUENCE_LENGTH
           Log.warn { "SGR mouse sequence too long" }
           return
         end

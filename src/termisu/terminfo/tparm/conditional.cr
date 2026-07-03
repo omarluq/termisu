@@ -26,10 +26,7 @@ module Termisu::Terminfo::Tparm::Conditional
 
     char = @format.byte_at(@pos).unsafe_chr
 
-    if op = Operations::BINARY[char]?
-      apply_binary_op(op)
-      return
-    end
+    return if dispatch_binary_op(char)
 
     case char
     when 'p'  then push_param

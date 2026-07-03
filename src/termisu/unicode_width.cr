@@ -34,6 +34,14 @@ module Termisu::UnicodeWidth
   # UnicodeWidth.codepoint_width(0x0301)  # => 0 (combining acute)
   # ```
   def self.codepoint_width(cp : Int32) : UInt8
+    # Fast path: below U+0300 the only zero-width codepoints are C0/C1
+    # controls (first combining range starts at U+0300, format controls at
+    # U+061C, variation selectors at U+FE00, emoji modifiers at U+1F3FB)
+    # and the lowest wide codepoint is U+1100 (Hangul Jamo).
+    if cp < 0x0300
+      return 0u8 if cp < 32 || (cp >= 0x7F && cp <= 0x9F)
+      return 1u8
+    end
     return 0u8 if zero_width_codepoint?(cp)
     return 2u8 if wide_codepoint?(cp)
     1u8
@@ -58,25 +66,75 @@ module Termisu::UnicodeWidth
   # ```
   def self.grapheme_width(grapheme : String) : UInt8
     return 0u8 if grapheme.empty?
-    return 2u8 if regional_indicator_pair?(grapheme)
 
-    width = calculate_grapheme_raw_width(grapheme)
-    return 0u8 if width == 0
+    # Fast path: single-codepoint grapheme (ASCII, Latin, CJK, lone symbols).
+    # Cluster rules (RI pairs, VS15/VS16, keycap, ZWJ) require >= 2 codepoints:
+    # all their trigger codepoints are themselves zero-width.
+    reader = Char::Reader.new(grapheme)
+    return codepoint_width(reader.current_char.ord) if reader.current_char_width == grapheme.bytesize
 
-    normalize_cluster_width(grapheme, width)
+    scan = scan_cluster(grapheme)
+    return 2u8 if scan.char_count == 2 && scan.ri_count == 2 # Regional indicator flag pair
+    return 0u8 if scan.raw_width == 0
+
+    normalize_cluster_width(scan)
   end
 
-  # Applies cluster normalization rules (VS15/VS16, ZWJ) to raw width.
+  # Applies cluster normalization rules (VS15/VS16, keycap, ZWJ) to a scanned
+  # cluster. The rule order is load-bearing (keycap before VS16) and must
+  # follow the raw_width == 0 check in `grapheme_width` — do not reorder.
   # :nodoc:
-  private def self.normalize_cluster_width(grapheme : String, raw_width : UInt32) : UInt8
-    return 1u8 if grapheme.includes?('\u{FE0E}') # VS15: text presentation
-    base_cp = grapheme.char_at(0).ord
-    return 2u8 if grapheme.includes?('\u{20E3}') && keycap_base?(base_cp)             # Keycap sequence (e.g. #️⃣ 1️⃣)
-    return 2u8 if grapheme.includes?('\u{FE0F}') && emoji_presentation_base?(base_cp) # VS16: emoji-capable bases only
-    return 2u8 if grapheme.includes?('\u{200D}') && raw_width > 1                     # ZWJ with emoji
-    return 1u8 if regional_indicator?(base_cp)                                        # Lone regional indicator
+  private def self.normalize_cluster_width(scan : ClusterScan) : UInt8
+    return 1u8 if scan.has_vs15                                           # VS15: text presentation
+    return 2u8 if scan.has_keycap && keycap_base?(scan.base_cp)           # Keycap sequence (e.g. #️⃣ 1️⃣)
+    return 2u8 if scan.has_vs16 && emoji_presentation_base?(scan.base_cp) # VS16: emoji-capable bases only
+    return 2u8 if scan.has_zwj && scan.raw_width > 1                      # ZWJ with emoji
+    return 1u8 if regional_indicator?(scan.base_cp)                       # Lone regional indicator
 
-    raw_width > 2 ? 2u8 : raw_width.to_u8
+    scan.raw_width > 2 ? 2u8 : scan.raw_width.to_u8
+  end
+
+  # Aggregated per-codepoint facts about a multi-codepoint grapheme cluster,
+  # collected by `scan_cluster` in a single decode pass.
+  # :nodoc:
+  private record ClusterScan,
+    raw_width : UInt32,
+    char_count : Int32,
+    ri_count : Int32,
+    base_cp : Int32,
+    has_vs15 : Bool,
+    has_vs16 : Bool,
+    has_keycap : Bool,
+    has_zwj : Bool
+
+  # Scans a grapheme cluster in one `each_char` pass.
+  # :nodoc:
+  private def self.scan_cluster(grapheme : String) : ClusterScan
+    raw_width = 0u32
+    char_count = 0
+    ri_count = 0
+    base_cp = 0
+    has_vs15 = false
+    has_vs16 = false
+    has_keycap = false
+    has_zwj = false
+
+    grapheme.each_char do |char|
+      cp = char.ord
+      base_cp = cp if char_count == 0
+      char_count += 1
+      ri_count += 1 if regional_indicator?(cp)
+      raw_width += codepoint_width(cp)
+
+      case cp
+      when 0xFE0E then has_vs15 = true
+      when 0xFE0F then has_vs16 = true
+      when 0x20E3 then has_keycap = true
+      when 0x200D then has_zwj = true
+      end
+    end
+
+    ClusterScan.new(raw_width, char_count, ri_count, base_cp, has_vs15, has_vs16, has_keycap, has_zwj)
   end
 
   # :nodoc:
@@ -101,17 +159,6 @@ module Termisu::UnicodeWidth
     (cp >= 0x202A && cp <= 0x202E) || (cp >= 0x2066 && cp <= 0x2069)
   end
 
-  # :nodoc:
-  private def self.calculate_grapheme_raw_width(grapheme : String) : UInt32
-    width = 0u32
-
-    grapheme.each_char do |char|
-      width += codepoint_width(char.ord)
-    end
-
-    width
-  end
-
   # Unicode combining mark ranges for categories Mn (Nonspacing_Mark)
   # and Me (Enclosing_Mark). Sorted by start codepoint for binary search.
   # Derived from Unicode 15.0 character database.
@@ -119,6 +166,10 @@ module Termisu::UnicodeWidth
   # Stored as a flat array of [start, end] pairs (inclusive on both sides).
   # Index `i * 2` = range start, `i * 2 + 1` = range end.
   # Use `COMBINING_MARK_COUNT` for the number of ranges.
+  #
+  # NOTE: `codepoint_width`'s fast path assumes no zero-width or wide entry
+  # exists below U+0300 — do not add a range starting below U+0300 without
+  # revisiting that fast path.
   COMBINING_MARK_RANGES = [
     # BMP: Latin/Cyrillic/Arabic/Indic combining marks
     0x0300, 0x036F, # Combining Diacritical Marks
@@ -483,8 +534,11 @@ module Termisu::UnicodeWidth
 
     while low <= high
       mid = low + (high - low) // 2
-      range_start = COMBINING_MARK_RANGES[mid * 2]
-      range_end = COMBINING_MARK_RANGES[mid * 2 + 1]
+      # SAFETY: loop maintains 0 <= low <= mid <= high <= COMBINING_MARK_COUNT - 1,
+      # so mid * 2 + 1 <= 2 * COMBINING_MARK_COUNT - 1 <= COMBINING_MARK_RANGES.size - 1;
+      # the table is never mutated.
+      range_start = COMBINING_MARK_RANGES.unsafe_fetch(mid * 2)
+      range_end = COMBINING_MARK_RANGES.unsafe_fetch(mid * 2 + 1)
 
       if cp < range_start
         high = mid - 1
@@ -516,19 +570,6 @@ module Termisu::UnicodeWidth
   private def self.regional_indicator?(cp : Int32) : Bool
     # Regional Indicator Symbols (A-Z)
     (0x1F1E6..0x1F1FF).includes?(cp)
-  end
-
-  # :nodoc:
-  private def self.regional_indicator_pair?(grapheme : String) : Bool
-    # Check if string has exactly 2 regional indicators (flag emoji).
-    # Iterates codepoints directly to avoid allocating an intermediate array.
-    count = 0
-    grapheme.each_char do |char|
-      return false unless regional_indicator?(char.ord)
-      count += 1
-      return false if count > 2
-    end
-    count == 2
   end
 
   # Returns true if the codepoint has the Unicode `Emoji` property and can be
