@@ -150,7 +150,7 @@ class Termisu::Event::Poller::Poll < Termisu::Event::Poller
       now = monotonic_now
 
       # Check for ready events (timers or fds) before polling
-      if ready = check_ready_events(now)
+      if ready = check_ready_events(now, deadline)
         return ready
       end
 
@@ -166,7 +166,7 @@ class Termisu::Event::Poller::Poll < Termisu::Event::Poller
 
       # Check for ready events after poll (fresh snapshot — poll may have blocked)
       now = monotonic_now
-      if ready = check_ready_events(now)
+      if ready = check_ready_events(now, deadline)
         return ready
       end
 
@@ -188,9 +188,14 @@ class Termisu::Event::Poller::Poll < Termisu::Event::Poller
     now >= deadline
   end
 
-  # Checks for any ready events: expired timers first, then readable fds
-  private def check_ready_events(now : MonotonicTime) : PollResult?
-    if timer_result = check_expired_timers(now)
+  # Checks for any ready events: expired timers first, then readable fds.
+  #
+  # *deadline* is the user-supplied deadline (nil for an unbounded wait). A timer
+  # whose deadline lands after it is suppressed: a late poll() wakeup can push
+  # *now* past both the user deadline and a not-yet-due timer, and returning that
+  # timer would let it override an already-expired user timeout (BUG-011).
+  private def check_ready_events(now : MonotonicTime, deadline : MonotonicTime?) : PollResult?
+    if timer_result = check_expired_timers(now, deadline)
       return timer_result
     end
     check_fd_events
@@ -254,11 +259,14 @@ class Termisu::Event::Poller::Poll < Termisu::Event::Poller
   end
 
   # Checks for expired timers and returns result if found
-  private def check_expired_timers(now : MonotonicTime) : PollResult?
+  private def check_expired_timers(now : MonotonicTime, deadline : MonotonicTime?) : PollResult?
     return nil if @timers.empty?
 
     @timers.each do |id, state|
       next unless now >= state.next_deadline
+      # A timer due only after the user deadline must not win over that deadline
+      # when a late wakeup crosses both in the same snapshot.
+      next if deadline && state.next_deadline > deadline
 
       expirations = calculate_expirations(state, now)
 
