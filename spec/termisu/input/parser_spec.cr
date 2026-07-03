@@ -378,6 +378,24 @@ describe Termisu::Input::Parser do
       end
     end
 
+    context "Linux console function keys (\\e[[A-\\e[[E)" do
+      it "parses F1 (\\e[[A)" do
+        event = parse_sequence(Bytes[0x1B, '['.ord, '['.ord, 'A'.ord])
+        event.should be_a(Termisu::Event::Key)
+        if event.is_a?(Termisu::Event::Key)
+          event.key.should eq(Termisu::Input::Key::F1)
+        end
+      end
+
+      it "parses F5 (\\e[[E)" do
+        event = parse_sequence(Bytes[0x1B, '['.ord, '['.ord, 'E'.ord])
+        event.should be_a(Termisu::Event::Key)
+        if event.is_a?(Termisu::Event::Key)
+          event.key.should eq(Termisu::Input::Key::F5)
+        end
+      end
+    end
+
     context "Alt+key sequences" do
       it "parses Alt+a (\\ea)" do
         event = parse_sequence(Bytes[0x1B, 'a'.ord])
@@ -513,14 +531,13 @@ describe Termisu::Input::Parser do
         end
       end
 
-      it "defaults malformed non-ASCII coordinate params (\\e[<0;\\xC3;5M)" do
+      it "rejects malformed non-ASCII coordinate params (\\e[<0;\\xC3;5M)" do
         seq = Bytes[0x1B, '['.ord, '<'.ord, '0'.ord, ';'.ord, 0xC3, ';'.ord, '5'.ord, 'M'.ord]
         event = parse_sequence(seq)
-        event.should be_a(Termisu::Event::Mouse)
-        if event.is_a?(Termisu::Event::Mouse)
-          event.button.should eq(Termisu::Event::Mouse::Button::Left)
-          event.x.should eq(1) # "\xC3" fails to_i?, defaults to 1
-          event.y.should eq(5)
+        # A coordinate that fails to_i? must not fabricate a mouse event.
+        event.should be_a(Termisu::Event::Key)
+        if event.is_a?(Termisu::Event::Key)
+          event.key.should eq(Termisu::Input::Key::Unknown)
         end
       end
     end

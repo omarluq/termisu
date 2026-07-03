@@ -276,6 +276,18 @@ class Termisu::Input::Parser
     # because 'M' (0x4D) is itself inside the 0x40-0x7E final range.
     return parse_normal_mouse if first == 'M'.ord
 
+    # Linux console function keys: \e[[A through \e[[E. The second '[' (0x5B) is
+    # itself inside the 0x40-0x7E final range, so it must be handled before the
+    # fast path below — otherwise '[' is consumed as a final byte and the
+    # trailing key letter is lost.
+    if first == '['.ord
+      final = @reader.read_byte
+      return Event::Key.new(Key::Unknown) unless final
+
+      key = LINUX_CONSOLE_KEYS["[[#{final.unsafe_chr}"]? || Key::Unknown
+      return Event::Key.new(key)
+    end
+
     # Fast path: parameterless CSI keys (\e[A, \e[Z, bare \e[u, \e[~) — the
     # first byte is already the final char, so params is "" (value-identical
     # to an empty builder's to_s) and no builder allocation is needed.
@@ -331,19 +343,10 @@ class Termisu::Input::Parser
       return Event::Key.new(key, modifiers)
     end
 
-    # Standard CSI key lookup first — the hot path (arrows, Home/End, F1-F4,
-    # BackTab) returns before the interpolation below allocates.
+    # Standard CSI key lookup — the hot path (arrows, Home/End, F1-F4, BackTab).
+    # Linux console sequences (\e[[A etc.) are handled earlier in
+    # parse_csi_sequence, before the final-byte fast path consumes the '['.
     if key = CSI_KEYS[final]?
-      return Event::Key.new(key, modifiers)
-    end
-
-    # Linux console sequences (\e[[A etc.). Currently unreachable: a second
-    # '[' (0x5B, within the 0x40-0x7E final range) terminates the sequence in
-    # parse_csi_sequence, so params can never contain '['. Fixing Linux
-    # console F1-F5 would require special-casing the second '[' there before
-    # the final-byte check.
-    sequence = "[#{params}#{final}"
-    if key = LINUX_CONSOLE_KEYS[sequence]?
       return Event::Key.new(key, modifiers)
     end
 
@@ -565,8 +568,10 @@ class Termisu::Input::Parser
     return unless parts.size >= 3
 
     cb = parts[0].to_i? || return
-    x = parts[1].to_i? || 1
-    y = parts[2].to_i? || 1
+    # Reject malformed coordinates rather than fabricating a mouse event at a
+    # default position — invalid SGR params must not surface as an observable click.
+    x = parts[1].to_i? || return
+    y = parts[2].to_i? || return
 
     button = Event::Mouse::Button.from_cb(cb)
     # Wheel events are instantaneous - they don't have release events
