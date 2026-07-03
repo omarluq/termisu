@@ -3,7 +3,7 @@ require "../bench_runner"
 module Termisu::Bench
   # Mock renderer for benchmarking flush operations
   class NullRenderer < Renderer
-    def write(data : String); end
+    def write(data : String, columns_advanced = 0); end
 
     def move_cursor(x : Int32, y : Int32); end
 
@@ -31,9 +31,9 @@ module Termisu::Bench
 
     def enable_strikethrough; end
 
-    def write_show_cursor; end
+    def show_cursor; end
 
-    def write_hide_cursor; end
+    def hide_cursor; end
 
     def size : {Int32, Int32}
       {80, 24}
@@ -60,7 +60,6 @@ module Termisu::Bench
       groups << run_render_operations(small_buffer, renderer)
       groups << run_sync_operations(small_buffer, medium_buffer, large_buffer, renderer)
       groups << run_resize_operations
-      groups << run_cursor_operations(small_buffer)
 
       groups
     end
@@ -169,16 +168,6 @@ module Termisu::Bench
       end
 
       BenchGroup.new("Resize Operations", capture.results)
-    end
-
-    private def run_cursor_operations(buffer : Buffer) : BenchGroup
-      capture = BenchCapture.new
-
-      capture.report("set_cursor") { buffer.set_cursor(rand(80), rand(24)) }
-      capture.report("hide_cursor") { buffer.hide_cursor }
-      capture.report("show_cursor") { buffer.show_cursor }
-
-      BenchGroup.new("Cursor Operations", capture.results)
     end
   end
 end
