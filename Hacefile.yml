@@ -105,7 +105,10 @@ tasks:
     always_run: true
     commands: |
       mkdir -p bin
-      crystal build src/termisu.cr --release --cross-compile -o bin/libtermisu
+      # -Dwithout_mt: an embedded runtime must not start the multi-threaded
+      # execution-context scheduler (Crystal >= 1.21 default); its SYSMON
+      # thread crashes inside foreign hosts (Bun, etc.).
+      crystal build src/termisu.cr --release --cross-compile -Dwithout_mt -o bin/libtermisu
       case "$(uname -s)" in
         FreeBSD) DL_LIB="-ldl" ; GC_LIB="-lgc-threaded" ; SYS_LIBS="-L/usr/local/lib -lm" ; SHARED_FLAG="-shared"     ; FFI_OUT="{{FFI_LIB}}" ;;
         Darwin)  DL_LIB=""     ; GC_LIB="-lgc"          ; SYS_LIBS=""                    ; SHARED_FLAG="-dynamiclib" ; FFI_OUT="bin/libtermisu.dylib" ;;
