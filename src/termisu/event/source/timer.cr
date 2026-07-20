@@ -170,7 +170,7 @@ class Termisu::Event::Source::Timer < Termisu::Event::Source
     loop do
       current = @run_token.get
       next_token = current &+ 1_u64
-      return next_token if @run_token.compare_and_set(current, next_token)
+      return next_token if @run_token.compare_and_set(current, next_token)[1]
     end
   end
 end
