@@ -46,6 +46,7 @@ class Termisu::Event::Source::Timer < Termisu::Event::Source
   @start_time : MonotonicTime?
   @last_tick : MonotonicTime?
   @frame : UInt64
+  @run_token : Atomic(UInt64)
 
   # Creates a new timer with the specified interval.
   #
@@ -53,6 +54,7 @@ class Termisu::Event::Source::Timer < Termisu::Event::Source
   def initialize(@interval : Time::Span = DEFAULT_INTERVAL)
     @running = Atomic(Bool).new(false)
     @frame = 0_u64
+    @run_token = Atomic(UInt64).new(0_u64)
   end
 
   # Returns the current interval between ticks.
@@ -78,13 +80,15 @@ class Termisu::Event::Source::Timer < Termisu::Event::Source
   def start(output : Channel(Event::Any)) : Nil
     return unless @running.compare_and_set(false, true)
 
+    run_token = advance_run_token
+
     @output = output
     @frame = 0_u64
     @start_time = monotonic_now
     @last_tick = @start_time
 
     @fiber = spawn(name: "termisu-timer") do
-      run_loop
+      run_loop(run_token)
     end
 
     Log.debug { "Timer started with interval=#{@interval}" }
@@ -97,6 +101,12 @@ class Termisu::Event::Source::Timer < Termisu::Event::Source
   # stop operations - calling stop twice is safe.
   def stop : Nil
     return unless @running.compare_and_set(true, false)
+
+    # Invalidate any fiber still parked in `sleep` so it cannot survive into a
+    # restart: `start` flips @running back to true before the old fiber wakes,
+    # but the stale token makes it exit instead of double-ticking.
+    advance_run_token
+
     Log.debug { "Timer stopped" }
   end
 
@@ -115,7 +125,7 @@ class Termisu::Event::Source::Timer < Termisu::Event::Source
   # Captures start_time and last_tick at loop entry to avoid
   # repeated nil checks. Uses local variable capture pattern
   # for clean, ameba-compliant code.
-  private def run_loop : Nil
+  private def run_loop(run_token : UInt64) : Nil
     output = @output
     start_time = @start_time
     last_tick = @last_tick
@@ -125,11 +135,11 @@ class Termisu::Event::Source::Timer < Termisu::Event::Source
     current_last_tick = last_tick
     pending_missed = 0_u64
 
-    while @running.get
+    while @running.get && @run_token.get == run_token
       sleep @interval
 
-      # Check again after sleep in case we were stopped
-      break unless @running.get
+      # Check again after sleep in case we were stopped or restarted
+      break unless @running.get && @run_token.get == run_token
 
       now = monotonic_now
       elapsed = now - start_time
@@ -153,5 +163,14 @@ class Termisu::Event::Source::Timer < Termisu::Event::Source
   rescue Channel::ClosedError
     # Channel closed during shutdown - exit gracefully
     Log.debug { "Timer channel closed, exiting" }
+  end
+
+  # Advances the run token and returns the new value.
+  private def advance_run_token : UInt64
+    loop do
+      current = @run_token.get
+      next_token = current &+ 1_u64
+      return next_token if @run_token.compare_and_set(current, next_token)
+    end
   end
 end
