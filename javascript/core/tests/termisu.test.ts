@@ -199,7 +199,7 @@ describe("Termisu wrapper behavior", () => {
     expect(batchCalls).toHaveLength(1);
     expect(batchCalls[0]?.args[0]).toBe(1n);
     const opsPtr = batchCalls[0]?.args[1];
-    expect(Number(opsPtr ?? 0) !== 0).toBe(true);
+    expect(Number(opsPtr ?? 0)).not.toBe(0);
     expect(batchCalls[0]?.args[2]).toBe(3n);
   });
 

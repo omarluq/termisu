@@ -266,16 +266,12 @@ export class Termisu {
   }
 
   private ensureStyleScratch(): Scratch {
-    if (!this.styleScratch) {
-      this.styleScratch = createScratch(STRUCT.cellStyle.size);
-    }
+    this.styleScratch ??= createScratch(STRUCT.cellStyle.size);
     return this.styleScratch;
   }
 
   private ensureEventScratch(): Scratch {
-    if (!this.eventScratch) {
-      this.eventScratch = createScratch(STRUCT.event.size);
-    }
+    this.eventScratch ??= createScratch(STRUCT.event.size);
     return this.eventScratch;
   }
 
