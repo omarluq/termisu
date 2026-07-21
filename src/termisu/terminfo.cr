@@ -85,7 +85,7 @@ class Termisu::Terminfo
   # `FFI::ErrorState`): `Terminfo.new` runs on the FFI create path, which may
   # be entered from arbitrary host threads where parking a fiber through the
   # scheduler aborts the process. Critical sections are a single Hash op.
-  @@cache_lock = Atomic(Int32).new(0)
+  @@cache_lock = Atomic(Bool).new(false)
   @@caps_cache = {} of String => Hash(String, String)
 
   def initialize
@@ -131,12 +131,12 @@ class Termisu::Terminfo
   end
 
   private def self.cache_sync(&)
-    until @@cache_lock.compare_and_set(0, 1, :acquire, :relaxed)[1]
+    until @@cache_lock.compare_and_set(false, true, :acquire, :relaxed)[1]
     end
     begin
       yield
     ensure
-      @@cache_lock.set(0, :release)
+      @@cache_lock.set(false, :release)
     end
   end
 

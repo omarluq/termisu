@@ -409,3 +409,69 @@ describe Termisu::Event::Source::Input do
     end
   end
 end
+
+describe Termisu::Event::Source::Input do
+  describe "idle polling" do
+    it "keeps the measured 4ms idle interval" do
+      # Regression pin for the idle busy-poll stopgap: ~978 -> ~244 idle
+      # select(2)/s at the cost of up to 4ms of added idle input latency.
+      Termisu::Event::Source::Input::IDLE_SLEEP.should eq(4.milliseconds)
+    end
+
+    it "delivers input that arrives after an idle stretch" do
+      read_fd, write_fd = create_pipe
+      begin
+        reader = Termisu::Reader.new(read_fd)
+        parser = Termisu::Input::Parser.new(reader)
+        source = Termisu::Event::Source::Input.new(reader, parser)
+        channel = Channel(Termisu::Event::Any).new(10)
+
+        source.start(channel)
+        sleep 30.milliseconds # settle into the idle loop
+
+        LibC.write(write_fd, "a".to_unsafe, 1)
+
+        select
+        when event = channel.receive
+          event.should be_a(Termisu::Event::Key)
+        when timeout(200.milliseconds)
+          fail "input was not delivered after an idle stretch"
+        end
+
+        source.stop
+        channel.close
+      ensure
+        reader.try(&.close)
+        LibC.close(read_fd)
+        LibC.close(write_fd)
+      end
+    end
+
+    it "stops promptly from the idle loop" do
+      read_fd, write_fd = create_pipe
+      begin
+        reader = Termisu::Reader.new(read_fd)
+        parser = Termisu::Input::Parser.new(reader)
+        source = Termisu::Event::Source::Input.new(reader, parser)
+        channel = Channel(Termisu::Event::Any).new(10)
+
+        source.start(channel)
+        sleep 20.milliseconds # ensure the fiber is parked in the idle sleep
+
+        elapsed = Time.measure do
+          source.stop
+          # Give the fiber time to observe the flag and exit its sleep.
+          sleep Termisu::Event::Source::Input::IDLE_SLEEP * 2
+        end
+
+        source.running?.should be_false
+        elapsed.should be < 200.milliseconds
+        channel.close
+      ensure
+        reader.try(&.close)
+        LibC.close(read_fd)
+        LibC.close(write_fd)
+      end
+    end
+  end
+end

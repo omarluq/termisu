@@ -8,7 +8,7 @@ module Termisu::FFI::Registry
   # (non-`execution_context`) builds. Critical sections here are a single Hash op, so
   # busy-waiting is safe on any thread. Heavy work (e.g. `Context#close`) must stay
   # outside `sync` — callers mutate the table under the lock and clean up after.
-  @@lock = Atomic(Int32).new(0)
+  @@lock = Atomic(Bool).new(false)
   @@contexts = {} of UInt64 => Termisu::FFI::Context
   @@next_handle = 1_u64
 
@@ -30,12 +30,12 @@ module Termisu::FFI::Registry
   end
 
   private def self.sync(&)
-    until @@lock.compare_and_set(0, 1, :acquire, :relaxed)[1]
+    until @@lock.compare_and_set(false, true, :acquire, :relaxed)[1]
     end
     begin
       yield
     ensure
-      @@lock.set(0, :release)
+      @@lock.set(false, :release)
     end
   end
 end

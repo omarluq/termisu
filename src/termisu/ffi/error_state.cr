@@ -13,7 +13,7 @@ module Termisu::FFI::ErrorState
   # scheduler, which aborts the process when it happens off the main thread in default
   # (non-`execution_context`) builds. Critical sections here are a single Hash op, so
   # busy-waiting is safe on any thread.
-  @@lock = Atomic(Int32).new(0)
+  @@lock = Atomic(Bool).new(false)
   @@last_error = {} of Thread => String
 
   def self.current : String
@@ -36,12 +36,12 @@ module Termisu::FFI::ErrorState
   end
 
   private def self.sync(&)
-    until @@lock.compare_and_set(0, 1, :acquire, :relaxed)[1]
+    until @@lock.compare_and_set(false, true, :acquire, :relaxed)[1]
     end
     begin
       yield
     ensure
-      @@lock.set(0, :release)
+      @@lock.set(false, :release)
     end
   end
 end

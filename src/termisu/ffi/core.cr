@@ -96,7 +96,7 @@ module Termisu::FFI
       if ok
         Status::Ok
       else
-        ErrorState.set("set_cell rejected (out of bounds or unsupported codepoint)")
+        ErrorState.set("set_cell rejected (out of bounds, unfittable wide char, or zero-width char)")
         Status::Rejected
       end
     end
@@ -127,7 +127,7 @@ module Termisu::FFI
       if rejected.zero?
         Status::Ok
       else
-        ErrorState.set("set_cells rejected #{rejected} of #{count} ops (out of bounds or unsupported codepoint)")
+        ErrorState.set("set_cells rejected #{rejected} of #{count} ops (out of bounds, unfittable wide char, or zero-width char)")
         Status::Rejected
       end
     end

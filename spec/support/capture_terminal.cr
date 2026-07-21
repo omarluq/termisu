@@ -27,8 +27,8 @@ class CaptureTerminal < Termisu::Terminal
   @fake_outfd : Int32 = 1
   @closed : Bool = false
 
-  def initialize(*, sync_updates : Bool = true)
-    super(sync_updates: sync_updates)
+  def initialize(*, sync_updates : Bool = true, terminfo : Termisu::Terminfo = Termisu::Terminfo.new)
+    super(terminfo: terminfo, sync_updates: sync_updates)
   end
 
   def write(data : String)

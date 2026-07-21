@@ -163,20 +163,20 @@ describe "Termisu C ABI" do
       empty_status = termisu_set_cells(handle, Pointer(Termisu::FFI::ABI::CellOp).null, 0_u64)
       empty_status.should eq(Termisu::FFI::Status::Ok.value)
 
-      if size.width > 0 && size.height > 0
-        bad = StaticArray[
-          ffi_cell_op(0, 0, 'F'.ord),
-          ffi_cell_op(0, 0, 0x11_0000),
-        ]
-        bad_status = termisu_set_cells(handle, bad.to_unsafe, bad.size.to_u64)
-        bad_status.should eq(Termisu::FFI::Status::Error.value)
-        termisu_error_message.should contain("Invalid Unicode codepoint")
+      # Codepoint validation raises before any bounds check, so these hold
+      # regardless of the reported terminal size.
+      bad = StaticArray[
+        ffi_cell_op(0, 0, 'F'.ord),
+        ffi_cell_op(0, 0, 0x11_0000),
+      ]
+      bad_status = termisu_set_cells(handle, bad.to_unsafe, bad.size.to_u64)
+      bad_status.should eq(Termisu::FFI::Status::Error.value)
+      termisu_error_message.should contain("Invalid Unicode codepoint")
 
-        negative = StaticArray[ffi_cell_op(0, 0, -1)]
-        negative_status = termisu_set_cells(handle, negative.to_unsafe, 1_u64)
-        negative_status.should eq(Termisu::FFI::Status::Error.value)
-        termisu_error_message.should contain("Invalid Unicode codepoint")
-      end
+      negative = StaticArray[ffi_cell_op(0, 0, -1)]
+      negative_status = termisu_set_cells(handle, negative.to_unsafe, 1_u64)
+      negative_status.should eq(Termisu::FFI::Status::Error.value)
+      termisu_error_message.should contain("Invalid Unicode codepoint")
 
       termisu_enable_timer_ms(handle, 16).should eq(Termisu::FFI::Status::Ok.value)
       termisu_disable_timer(handle).should eq(Termisu::FFI::Status::Ok.value)

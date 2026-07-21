@@ -171,3 +171,73 @@ describe "Terminal#apply_sgr (combined SGR emission)" do
     terminal.try &.close
   end
 end
+
+# The default Renderer#apply_sgr decomposes into the granular methods with the
+# legacy reset-then-reapply semantics; generic renderer subclasses and
+# Terminal's non-standard-terminfo fallback both run this branch.
+describe "Renderer#apply_sgr (default decomposed emission)" do
+  it "resets and reapplies when attributes are removed" do
+    renderer = MockRenderer.new
+    both = Termisu::Attribute::Bold | Termisu::Attribute::Underline
+
+    renderer.apply_sgr(
+      Termisu::Color.red, Termisu::Color.blue, Termisu::Attribute::Underline,
+      Termisu::Color.red, Termisu::Color.blue, both
+    )
+
+    # Removal forces a full reset, which clears colors, so the surviving
+    # attribute and both colors must be re-emitted.
+    renderer.reset_count.should eq(1)
+    renderer.underline_count.should eq(1)
+    renderer.bold_count.should eq(0)
+    renderer.fg_calls.should eq([Termisu::Color.red])
+    renderer.bg_calls.should eq([Termisu::Color.blue])
+  end
+
+  it "adds attributes without a reset when none are removed" do
+    renderer = MockRenderer.new
+
+    renderer.apply_sgr(
+      Termisu::Color.red, Termisu::Color.default, Termisu::Attribute::Bold | Termisu::Attribute::Underline,
+      Termisu::Color.red, Termisu::Color.default, Termisu::Attribute::Bold
+    )
+
+    renderer.reset_count.should eq(0)
+    renderer.underline_count.should eq(1)
+    renderer.bold_count.should eq(0)
+    renderer.fg_calls.should be_empty
+    renderer.bg_calls.should be_empty
+  end
+
+  it "falls back to decomposed emission when terminfo attributes are non-standard" do
+    terminal = CaptureTerminal.new(sync_updates: false, terminfo: NonStandardAttrsTerminfo.new)
+
+    terminal.apply_sgr(
+      Termisu::Color.red, Termisu::Color.default, Termisu::Attribute::Bold,
+      nil, nil, Termisu::Attribute::None
+    )
+    terminal.writes.size.should be > 1 # combined emission is always one write
+    terminal.clear_captured
+
+    terminal.apply_sgr(
+      Termisu::Color.red, Termisu::Color.default, Termisu::Attribute::None,
+      Termisu::Color.red, Termisu::Color.default, Termisu::Attribute::Bold
+    )
+
+    # The decomposed fallback removes attributes via a full reset and never
+    # emits the ECMA-48 selective off codes the combined emitter uses.
+    terminal.writes.none?(&.includes?("22")).should be_true
+    terminal.writes.size.should be > 1
+  ensure
+    terminal.try &.close
+  end
+end
+
+# Forces Terminal#apply_sgr's non-standard-terminfo guard: real terminfo
+# databases (plus the builtin backfill) always report ECMA-standard attribute
+# sequences, so the fallback branch is only reachable with an injected stub.
+private class NonStandardAttrsTerminfo < Termisu::Terminfo
+  def attrs_are_standard?
+    false
+  end
+end
