@@ -5,6 +5,7 @@ import { Color } from "../src/color";
 import { Status } from "../src/constants";
 import { TermisuError } from "../src/errors";
 import { Termisu } from "../src/termisu";
+import type { CellOp } from "../src/types";
 
 type NativeValue = number | bigint | undefined;
 type SymbolFn = (...args: Array<number | bigint>) => NativeValue;
@@ -17,7 +18,7 @@ type TestTermisu = {
   setSyncUpdates(enabled: boolean): void;
   syncUpdates(): boolean;
   setCell(x: number, y: number, char: string | number, style?: unknown): void;
-  setCells(ops: ReadonlyArray<{ x: number; y: number; char: string | number }>): void;
+  setCells(ops: ReadonlyArray<CellOp>): void;
   setCursor(x: number, y: number): void;
   hideCursor(): void;
   showCursor(): void;
@@ -193,6 +194,7 @@ describe("Termisu wrapper behavior", () => {
       { x: 0, y: 0, char: "A" },
       { x: 1, y: 0, char: 66 },
       { x: 2, y: 0, char: "C" },
+      { x: 3, y: 0, char: "D", style: { fg: Color.green, attr: attrs(Attribute.Bold) } },
     ]);
 
     const batchCalls = calls.filter((entry) => entry.name === "termisu_set_cells");
@@ -200,7 +202,7 @@ describe("Termisu wrapper behavior", () => {
     expect(batchCalls[0]?.args[0]).toBe(1n);
     const opsPtr = batchCalls[0]?.args[1];
     expect(Number(opsPtr ?? 0)).not.toBe(0);
-    expect(batchCalls[0]?.args[2]).toBe(3n);
+    expect(batchCalls[0]?.args[2]).toBe(4n);
   });
 
   it("skips the native call for empty setCells batches", () => {

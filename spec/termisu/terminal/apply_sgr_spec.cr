@@ -204,7 +204,7 @@ end
 # databases (plus the builtin backfill) always report ECMA-standard attribute
 # sequences, so the fallback branch is only reachable with an injected stub.
 private class NonStandardAttrsTerminfo < Termisu::Terminfo
-  def attrs_are_standard?
+  def attrs_are_standard? : Bool
     false
   end
 end
