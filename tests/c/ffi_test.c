@@ -36,6 +36,7 @@ int main(void) {
   assert(handle != 0);
   assert(termisu_set_sync_updates(handle, 1) == TERMISU_STATUS_OK);
   assert(termisu_sync_updates(handle) == 1);
+  assert(termisu_set_cells(handle, NULL, 0) == TERMISU_STATUS_OK);
   assert(termisu_last_error_length() == 0);
   assert(termisu_destroy(handle) == TERMISU_STATUS_OK);
 
@@ -54,6 +55,23 @@ int main(void) {
 
   termisu_clear_error();
   assert(termisu_set_cell(1234, 0, 0, 'A', &style) == TERMISU_STATUS_INVALID_HANDLE);
+  read_last_error(error, sizeof(error));
+  assert(strstr(error, "Invalid handle") != NULL);
+
+  termisu_cell_op_t op = {.x = 0, .y = 0, .codepoint = 'A', .style = style};
+
+  termisu_clear_error();
+  assert(termisu_set_cells(1234, &op, 1) == TERMISU_STATUS_INVALID_HANDLE);
+  read_last_error(error, sizeof(error));
+  assert(strstr(error, "Invalid handle") != NULL);
+
+  termisu_clear_error();
+  assert(termisu_set_cells(1234, NULL, 1) == TERMISU_STATUS_INVALID_ARGUMENT);
+  read_last_error(error, sizeof(error));
+  assert(strstr(error, "ops is null") != NULL);
+
+  termisu_clear_error();
+  assert(termisu_set_cells(1234, NULL, 0) == TERMISU_STATUS_INVALID_HANDLE);
   read_last_error(error, sizeof(error));
   assert(strstr(error, "Invalid handle") != NULL);
 

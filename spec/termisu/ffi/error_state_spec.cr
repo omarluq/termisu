@@ -1,4 +1,5 @@
 require "../../spec_helper"
+require "../../../src/termisu_ffi"
 
 describe Termisu::FFI::ErrorState do
   it "stores and clears per-thread error text" do

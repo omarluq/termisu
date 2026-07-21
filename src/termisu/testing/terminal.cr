@@ -149,7 +149,7 @@ module Termisu::Testing
       loop do
         return true if yield
         return false if monotonic_now >= deadline
-        sleep 5.milliseconds
+        sleep 1.millisecond
       end
     end
 
@@ -164,7 +164,7 @@ module Termisu::Testing
         last = @state_lock.synchronize { @last_activity }
         return true if @started.get && (monotonic_now - last) >= quiet_for
         return false if monotonic_now >= deadline
-        sleep 10.milliseconds
+        sleep 5.milliseconds
       end
     end
 

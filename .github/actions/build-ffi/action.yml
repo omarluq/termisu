@@ -19,11 +19,11 @@ runs:
         # execution-context scheduler (Crystal >= 1.21 default); its SYSMON
         # thread crashes inside foreign hosts (Bun, etc.).
         if [[ "$RUNNER_OS" == "Linux" ]]; then
-          crystal build src/termisu.cr --release --cross-compile -Dwithout_mt -o bin/libtermisu
+          crystal build src/termisu_ffi.cr --release --cross-compile -Dwithout_mt -o bin/libtermisu
           cc -shared bin/libtermisu.o -o bin/libtermisu.so "${LIB_FLAGS[@]}" -lgc -lpthread -ldl
         elif [[ "$RUNNER_OS" == "macOS" ]]; then
           SDKROOT="$(xcrun --sdk macosx --show-sdk-path)"
-          crystal build src/termisu.cr --release --cross-compile -Dwithout_mt \
+          crystal build src/termisu_ffi.cr --release --cross-compile -Dwithout_mt \
             --link-flags "$SDKROOT/usr/lib/libiconv.tbd" \
             -o bin/libtermisu
           cc -dynamiclib bin/libtermisu.o -o bin/libtermisu.dylib \

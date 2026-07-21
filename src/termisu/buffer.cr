@@ -10,6 +10,7 @@
 # - Only emits color/attribute escape sequences when they change
 # - Batches consecutive cells on the same row with the same styling
 # - Tracks dirty rows to skip unnecessary render work
+# - Tracks per-row damage ranges to bound diff scans to changed column spans
 #
 # Example:
 # ```
@@ -22,14 +23,35 @@ class Termisu::Buffer
   getter width : Int32
   getter height : Int32
 
-  @front : Array(Cell)                   # Currently displayed buffer
-  @back : Array(Cell)                    # Buffer being written to
+  # Cells are stored structure-of-arrays as packed identity keys (see
+  # Cell#key). The diff scan and write dedup compare bare UInt128s and never
+  # dereference String memory. The grapheme plane holds the String only for
+  # interned (non-ASCII) graphemes — ASCII graphemes are decoded from the key
+  # itself — and is written only when such a cell is drawn. The front buffer
+  # is keys-only: it exists purely for diffing, never for content lookup.
+  @front_keys : Array(UInt128)           # Keys currently displayed on screen
+  @back_keys : Array(UInt128)            # Keys being written to
+  @graphemes : Array(String)             # Back-buffer plane for interned graphemes
   @render_state : RenderState            # Tracks current terminal state for optimization
   @batch_buffer : IO::Memory             # Reusable buffer for character batching
   @row_non_default_counts : Array(Int32) # Number of non-default cells per back-buffer row
   @dirty_rows : Array(Bool)              # Rows that may differ between front/back
   @dirty_row_list : Array(Int32)         # Ordered list of currently dirty row indices
   @any_dirty : Bool                      # Fast-path flag for dirty row checks
+
+  # Per-row damage range, stored as flat buffer indices: for a dirty row,
+  # every cell where back and front may differ lies within
+  # dirty_min_idx..dirty_max_idx. Clean rows hold the empty-range sentinels
+  # (min = Int32::MAX, max = -1). The invariant holds because every
+  # back-buffer mutation flows through assign_back_key (which extends the
+  # range, including wide-cell continuation writes and overlap clears),
+  # except clear/resize/invalidate which mark full-row ranges.
+  @dirty_min_idx : Array(Int32)
+  @dirty_max_idx : Array(Int32)
+
+  # Front-buffer sentinel used by invalidate: a NUL cell key that no back
+  # buffer key can ever equal (see invalidate's invariant note).
+  private INVALID_KEY = Cell.new("\u0000", fg: Color.default, bg: Color.default, attr: Attribute::None).key
 
   # Creates a new Buffer with the specified dimensions.
   #
@@ -38,14 +60,17 @@ class Termisu::Buffer
   # - height: Number of rows
   def initialize(@width : Int32, @height : Int32)
     size = @width * @height
-    @front = Array(Cell).new(size, Cell.default)
-    @back = Array(Cell).new(size, Cell.default)
+    @front_keys = Array(UInt128).new(size, Cell::DEFAULT_KEY)
+    @back_keys = Array(UInt128).new(size, Cell::DEFAULT_KEY)
+    @graphemes = Array(String).new(size, "")
     @render_state = RenderState.new
     @batch_buffer = IO::Memory.new(@width) # Pre-sized for typical row batches
     @row_non_default_counts = Array(Int32).new(@height, 0)
     @dirty_rows = Array(Bool).new(@height, false)
     @dirty_row_list = [] of Int32
     @any_dirty = false
+    @dirty_min_idx = Array(Int32).new(@height, Int32::MAX)
+    @dirty_max_idx = Array(Int32).new(@height, -1)
     Log.debug { "Buffer initialized: #{@width}x#{@height} (#{size} cells)" }
   end
 
@@ -115,7 +140,7 @@ class Termisu::Buffer
   # This is the core write primitive that handles:
   # - Wide character writes (creates leading + continuation cells)
   # - Overlap clearing when overwriting wide cells or their continuations
-  # - Direct overwrite of target cells (assign_back_cell handles count/dirty
+  # - Direct overwrite of target cells (assign_back_key handles count/dirty
   #   deltas per transition)
   #
   # Assumes caller has validated bounds and fit constraints.
@@ -123,7 +148,7 @@ class Termisu::Buffer
     row_start = y * @width
 
     # Clear overlap: if writing into a continuation cell, clear its owner first
-    if @back[row_start + x].continuation?
+    if Cell.key_continuation?(@back_keys[row_start + x])
       clear_continuation_owner(x, y)
     end
 
@@ -131,23 +156,23 @@ class Termisu::Buffer
     if width == 2
       # If x+1 is a wide leading cell, clear its continuation at x+2 first
       # to prevent orphan continuation cells (BUG-008)
-      if x + 2 < @width && @back[row_start + x + 1].width == 2
-        assign_back_cell(row_start + x + 2, y, Cell.default)
+      if x + 2 < @width && Cell.key_width(@back_keys[row_start + x + 1]) == 2
+        assign_back_key(row_start + x + 2, y, Cell::DEFAULT_KEY, "")
       end
 
-      # Overwrite targets directly: assign_back_cell count/dirty updates depend
+      # Overwrite targets directly: assign_back_key count/dirty updates depend
       # only on old/new endpoints, so no pre-clear is needed; a rewrite of an
       # identical wide cell is a no-op and leaves the row clean.
       # Write leading cell
-      assign_back_cell(row_start + x, y, cell)
+      assign_back_key(row_start + x, y, cell.key, cell.grapheme)
       # Write continuation cell
-      assign_back_cell(row_start + x + 1, y, Cell.continuation)
+      assign_back_key(row_start + x + 1, y, Cell::CONTINUATION_KEY, "")
     else
       # Narrow write: clear any wide cell that overlaps next position
-      if x + 1 < @width && @back[row_start + x].width == 2
-        assign_back_cell(row_start + x + 1, y, Cell.default)
+      if x + 1 < @width && Cell.key_width(@back_keys[row_start + x]) == 2
+        assign_back_key(row_start + x + 1, y, Cell::DEFAULT_KEY, "")
       end
-      assign_back_cell(row_start + x, y, cell)
+      assign_back_key(row_start + x, y, cell.key, cell.grapheme)
     end
   end
 
@@ -159,19 +184,23 @@ class Termisu::Buffer
     return if x == 0
 
     row_start = y * @width
-    return unless @back[row_start + x].continuation?
+    return unless Cell.key_continuation?(@back_keys[row_start + x])
 
-    assign_back_cell(row_start + x - 1, y, Cell.default)
+    assign_back_key(row_start + x - 1, y, Cell::DEFAULT_KEY, "")
   end
 
   # Gets a cell at the specified position from the back buffer.
   #
   # Returns nil if coordinates are out of bounds.
+  #
+  # The Cell is reconstructed from the packed key and grapheme plane (cold
+  # path); it compares equal to the cell originally written.
   def get_cell(x : Int32, y : Int32) : Cell?
     return if out_of_bounds?(x, y)
 
     idx = y * @width + x
-    @back[idx]
+    key = @back_keys[idx]
+    Cell.from_key(key, grapheme_for(idx, key))
   end
 
   # Clears the back buffer (fills with default cells).
@@ -181,10 +210,10 @@ class Termisu::Buffer
       next if @row_non_default_counts[row] == 0
 
       row_start = row * @width
-      @back.fill(Cell.default, row_start, @width)
+      @back_keys.fill(Cell::DEFAULT_KEY, row_start, @width)
 
       @row_non_default_counts[row] = 0
-      mark_row_dirty(row)
+      mark_row_damaged_fully(row)
     end
   end
 
@@ -200,11 +229,10 @@ class Termisu::Buffer
   # must never match any normal content, and normal content never passes through
   # set_cell's control_char? guard which would reject it.
   def invalidate
-    # Fill front buffer with invalid marker cells that won't match any real content.
+    # Fill front buffer with invalid marker keys that won't match any real content.
     # Using NUL character as the marker since it's never used in normal rendering.
-    # Note: This intentionally creates width 0 non-continuation cells as sentinels.
-    invalid_cell = Cell.new("\u0000", fg: Color.default, bg: Color.default, attr: Attribute::None)
-    @front.fill(invalid_cell)
+    # Note: This intentionally uses a width 0 non-continuation key as sentinel.
+    @front_keys.fill(INVALID_KEY)
     @render_state.reset
     mark_all_rows_dirty
   end
@@ -229,6 +257,8 @@ class Termisu::Buffer
       @dirty_row_list.each do |row|
         render_row_diff(renderer, row)
         @dirty_rows[row] = false
+        @dirty_min_idx[row] = Int32::MAX
+        @dirty_max_idx[row] = -1
       end
       @dirty_row_list.clear
       @any_dirty = false
@@ -266,8 +296,9 @@ class Termisu::Buffer
     return if new_width == @width && new_height == @height
 
     new_size = new_width * new_height
-    new_back = Array(Cell).new(new_size, Cell.default)
-    new_front = Array(Cell).new(new_size, Cell.default)
+    new_back = Array(UInt128).new(new_size, Cell::DEFAULT_KEY)
+    new_front = Array(UInt128).new(new_size, Cell::DEFAULT_KEY)
+    new_graphemes = Array(String).new(new_size, "")
 
     # Copy existing content (up to new dimensions)
     min_height = Math.min(@height, new_height)
@@ -277,8 +308,9 @@ class Termisu::Buffer
       min_width.times do |col|
         old_idx = row * @width + col
         new_idx = row * new_width + col
-        new_back[new_idx] = @back[old_idx]
-        new_front[new_idx] = @front[old_idx]
+        new_back[new_idx] = @back_keys[old_idx]
+        new_front[new_idx] = @front_keys[old_idx]
+        new_graphemes[new_idx] = @graphemes[old_idx]
       end
 
       # Fix occupancy invariants in new buffer:
@@ -289,17 +321,17 @@ class Termisu::Buffer
         idx = row_start + col
 
         # Wide cell at last column is invalid
-        if col == new_width - 1 && new_back[idx].width == 2
-          new_back[idx] = Cell.default
-          new_front[idx] = Cell.default
+        if col == new_width - 1 && Cell.key_width(new_back[idx]) == 2
+          new_back[idx] = Cell::DEFAULT_KEY
+          new_front[idx] = Cell::DEFAULT_KEY
           next
         end
 
         # Orphan continuation (no leading cell) -> replace with default
-        if new_back[idx].continuation?
-          if col == 0 || new_back[idx - 1].width != 2
-            new_back[idx] = Cell.default
-            new_front[idx] = Cell.default
+        if Cell.key_continuation?(new_back[idx])
+          if col == 0 || Cell.key_width(new_back[idx - 1]) != 2
+            new_back[idx] = Cell::DEFAULT_KEY
+            new_front[idx] = Cell::DEFAULT_KEY
           end
         end
       end
@@ -307,12 +339,15 @@ class Termisu::Buffer
 
     @width = new_width
     @height = new_height
-    @back = new_back
-    @front = new_front
+    @back_keys = new_back
+    @front_keys = new_front
+    @graphemes = new_graphemes
     rebuild_row_non_default_counts
     @dirty_rows = Array(Bool).new(@height, true)
     @dirty_row_list = Array(Int32).new(@height) { |row| row }
     @any_dirty = @height > 0
+    @dirty_min_idx = Array(Int32).new(@height) { |row| row * @width }
+    @dirty_max_idx = Array(Int32).new(@height) { |row| row * @width + @width - 1 }
   end
 
   # Checks if coordinates are within buffer bounds.
@@ -338,21 +373,46 @@ class Termisu::Buffer
     grapheme.grapheme_size == 1
   end
 
-  # Assigns a cell in the back buffer while maintaining:
+  # Assigns a cell key in the back buffer while maintaining:
   # - non-default row counts (for selective clear)
   # - dirty row tracking (for selective render diff)
-  private def assign_back_cell(index : Int32, row : Int32, new_cell : Cell) : Nil
-    old_cell = @back[index]
-    return if old_cell == new_cell
+  # - per-row damage ranges (for bounded diff scans)
+  #
+  # The grapheme is stored in the plane only when the key says it is interned
+  # (non-ASCII); callers writing ASCII-decodable keys (default, continuation)
+  # pass "" which is never read back.
+  private def assign_back_key(index : Int32, row : Int32, new_key : UInt128, grapheme : String) : Nil
+    old_key = @back_keys[index]
+    return if old_key == new_key
 
-    old_default = old_cell.default_state?
-    new_default = new_cell.default_state?
+    old_default = old_key == Cell::DEFAULT_KEY
+    new_default = new_key == Cell::DEFAULT_KEY
     if old_default != new_default
       @row_non_default_counts[row] += new_default ? -1 : 1
     end
 
-    @back[index] = new_cell
+    @back_keys[index] = new_key
+    # unsafe bounds: index is bounds-validated by callers, @graphemes is sized
+    # like @back_keys.
+    @graphemes.unsafe_put(index, grapheme) if Cell.key_grapheme_interned?(new_key)
+
+    # unsafe bounds: row is always height-validated by callers (see the
+    # bounds-safety note on render_row); both arrays are sized @height.
+    @dirty_min_idx.unsafe_put(row, index) if index < @dirty_min_idx.unsafe_fetch(row)
+    @dirty_max_idx.unsafe_put(row, index) if index > @dirty_max_idx.unsafe_fetch(row)
     mark_row_dirty(row)
+  end
+
+  # Resolves the grapheme String for a back-buffer cell: interned (non-ASCII)
+  # graphemes read the plane, everything else decodes from the key alone
+  # (grapheme id is the ASCII byte). Continuation ids (0) only reach this via
+  # get_cell, where Cell's constructor normalizes the grapheme to "".
+  private def grapheme_for(idx : Int32, key : UInt128) : String
+    if Cell.key_grapheme_interned?(key)
+      @graphemes.unsafe_fetch(idx)
+    else
+      ASCII_GRAPHEMES.unsafe_fetch(Cell.key_grapheme_id(key))
+    end
   end
 
   private def mark_row_dirty(row : Int32) : Nil
@@ -362,10 +422,24 @@ class Termisu::Buffer
     @any_dirty = true
   end
 
+  # Marks a row dirty with a full-row damage range. Used when changed cells
+  # are unknown (bulk fills, front-buffer invalidation).
+  private def mark_row_damaged_fully(row : Int32) : Nil
+    row_start = row * @width
+    @dirty_min_idx[row] = row_start
+    @dirty_max_idx[row] = row_start + @width - 1
+    mark_row_dirty(row)
+  end
+
   private def mark_all_rows_dirty : Nil
     @dirty_rows.fill(true)
     @dirty_row_list.clear
-    @height.times { |row| @dirty_row_list << row }
+    @height.times do |row|
+      @dirty_row_list << row
+      row_start = row * @width
+      @dirty_min_idx[row] = row_start
+      @dirty_max_idx[row] = row_start + @width - 1
+    end
     @any_dirty = @height > 0
   end
 
@@ -373,6 +447,8 @@ class Termisu::Buffer
     @dirty_rows.fill(false)
     @dirty_row_list.clear
     @any_dirty = false
+    @dirty_min_idx.fill(Int32::MAX)
+    @dirty_max_idx.fill(-1)
   end
 
   private def rebuild_row_non_default_counts : Nil
@@ -385,7 +461,7 @@ class Termisu::Buffer
       count = 0
 
       while idx < row_end
-        count += 1 unless @back[idx].default_state?
+        count += 1 unless @back_keys[idx] == Cell::DEFAULT_KEY
         idx += 1
       end
 
@@ -417,38 +493,53 @@ class Termisu::Buffer
 
   # Bounds safety for unsafe_fetch/unsafe_put in render_row, skip_row_cell?,
   # and render_row_batch: idx = row * @width + col with col < @width (loop
-  # guard) and row < @height (dirty_row_list entries and sync_to's
-  # height.times are always height-validated); @front/@back are always sized
-  # @width * @height (initialize/resize are the only array assignments).
+  # guard: scan_end <= @width since dirty_max_idx entries are either -1
+  # sentinels, validated in-row indices from assign_back_key, or
+  # row_start + @width - 1 full-row marks; dirty_min_idx entries are
+  # >= row_start by the same sources, and the sentinels yield an empty scan)
+  # and row < @height (dirty_row_list entries and sync_to's height.times are
+  # always height-validated); @front_keys/@back_keys/@graphemes are always
+  # sized @width * @height (initialize/resize are the only array assignments).
   # Renderer callbacks must not mutate this buffer reentrantly. If resize is
   # ever made callable from a fiber other than the render fiber, or a
   # mark_row_dirty call site is added with an unvalidated row, revisit this.
+  #
+  # Diff scans are bounded to the row's damage range: outside it,
+  # back == front by the damage-range invariant, so those cells cannot emit.
+  # The scan compares packed keys only; grapheme Strings are dereferenced
+  # solely for interned graphemes of cells actually emitted.
   private def render_row(renderer : Renderer, row : Int32, *, diff_only : Bool)
     row_start = row * @width
-    col = 0
 
-    while col < @width
+    if diff_only
+      col = @dirty_min_idx[row] - row_start
+      scan_end = @dirty_max_idx[row] + 1 - row_start
+    else
+      col = 0
+      scan_end = @width
+    end
+
+    while col < scan_end
       idx = row_start + col
-      back_cell = @back.unsafe_fetch(idx)
-      front_cell = @front.unsafe_fetch(idx)
+      back_key = @back_keys.unsafe_fetch(idx)
 
-      if skip_row_cell?(back_cell, front_cell, idx, diff_only)
+      if skip_row_cell?(back_key, idx, diff_only)
         col += 1
         next
       end
 
       # Start a batch with current cell's styling
-      col = render_row_batch(renderer, row, row_start, col, back_cell, diff_only)
+      col = render_row_batch(renderer, row, row_start, col, back_key, diff_only)
     end
   end
 
   # bounds: see render_row (idx is a caller-validated in-bounds index)
-  private def skip_row_cell?(back_cell : Cell, front_cell : Cell, idx : Int32, diff_only : Bool) : Bool
-    return true if diff_only && back_cell == front_cell
+  private def skip_row_cell?(back_key : UInt128, idx : Int32, diff_only : Bool) : Bool
+    return true if diff_only && back_key == @front_keys.unsafe_fetch(idx)
 
-    return false unless back_cell.continuation?
+    return false unless Cell.key_continuation?(back_key)
 
-    @front.unsafe_put(idx, back_cell)
+    @front_keys.unsafe_put(idx, back_key)
     true
   end
 
@@ -457,39 +548,44 @@ class Termisu::Buffer
     row : Int32,
     row_start : Int32,
     col : Int32,
-    first_cell : Cell,
+    first_key : UInt128,
     diff_only : Bool,
   ) : Int32
     batch_start = col
-    batch_fg = first_cell.fg
-    batch_bg = first_cell.bg
-    batch_attr = first_cell.attr
+    batch_style = first_key & Cell::KEY_STYLE_MASK
 
     @batch_buffer.clear
     columns_advanced = 0
 
     while col < @width
       idx = row_start + col
-      back_cell = @back.unsafe_fetch(idx)
-      front_cell = @front.unsafe_fetch(idx)
+      back_key = @back_keys.unsafe_fetch(idx)
 
-      break if diff_only && back_cell == front_cell
+      break if diff_only && back_key == @front_keys.unsafe_fetch(idx)
 
-      if back_cell.continuation?
-        @front.unsafe_put(idx, back_cell)
+      if Cell.key_continuation?(back_key)
+        @front_keys.unsafe_put(idx, back_key)
         col += 1
         next
       end
 
-      break if back_cell.fg != batch_fg || back_cell.bg != batch_bg || back_cell.attr != batch_attr
+      break if (back_key & Cell::KEY_STYLE_MASK) != batch_style
 
-      @batch_buffer << back_cell.grapheme
-      columns_advanced += back_cell.width
-      @front.unsafe_put(idx, back_cell)
+      # ASCII graphemes are the key's grapheme-id byte; only interned
+      # (non-ASCII) graphemes touch the String plane.
+      gid = Cell.key_grapheme_id(back_key)
+      if gid < 0x80
+        @batch_buffer.write_byte(gid.to_u8!)
+      else
+        @batch_buffer << @graphemes.unsafe_fetch(idx)
+      end
+      columns_advanced += Cell.key_width(back_key)
+      @front_keys.unsafe_put(idx, back_key)
       col += 1
     end
 
-    render_batch(renderer, batch_start, row, @batch_buffer.to_s, batch_fg, batch_bg, batch_attr, columns_advanced)
+    render_batch(renderer, batch_start, row, @batch_buffer.to_slice,
+      Cell.key_fg(first_key), Cell.key_bg(first_key), Cell.key_attr(first_key), columns_advanced)
     col
   end
 
@@ -502,11 +598,14 @@ class Termisu::Buffer
   # Cursor advancement is based on cell widths (columns_advanced), not
   # codepoint count. This keeps render-state cursor tracking in sync with
   # the terminal's actual cursor position when rendering wide characters.
+  #
+  # The batch content is passed as the scratch buffer's live slice (valid
+  # until the next batch clears it); renderers consume it before returning.
   private def render_batch(
     renderer : Renderer,
     x : Int32,
     y : Int32,
-    chars : String,
+    chars : Bytes,
     fg : Color,
     bg : Color,
     attr : Attribute,

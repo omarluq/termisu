@@ -25,6 +25,8 @@ describe("constants", () => {
     expect(STRUCT.event.size).toBe(128);
     expect(STRUCT.event.preeditLen).toBe(89);
     expect(STRUCT.event.preeditText).toBe(90);
+    expect(STRUCT.cellOp.size).toBe(40);
+    expect(STRUCT.cellOp.style).toBe(12);
   });
 
   it("computes a stable non-zero layout signature", () => {

@@ -22,6 +22,15 @@ private def default_ffi_style : Termisu::FFI::ABI::CellStyle
   style
 end
 
+private def ffi_cell_op(x : Int32, y : Int32, codepoint : Int32) : Termisu::FFI::ABI::CellOp
+  op = uninitialized Termisu::FFI::ABI::CellOp
+  op.x = x
+  op.y = y
+  op.codepoint = codepoint
+  op.style = default_ffi_style
+  op
+end
+
 describe "Termisu C ABI" do
   it "exposes the expected ABI version" do
     termisu_abi_version.should eq(1_u32)
@@ -67,6 +76,27 @@ describe "Termisu C ABI" do
     termisu_error_message.should contain("Invalid handle")
   end
 
+  it "rejects invalid handle for set_cells" do
+    op = ffi_cell_op(0, 0, 'A'.ord)
+    status = termisu_set_cells(9999_u64, pointerof(op), 1_u64)
+    status.should eq(Termisu::FFI::Status::InvalidHandle.value)
+    termisu_error_message.should contain("Invalid handle")
+  end
+
+  it "rejects null ops pointer in set_cells when count is positive" do
+    termisu_clear_error
+    status = termisu_set_cells(0_u64, Pointer(Termisu::FFI::ABI::CellOp).null, 1_u64)
+    status.should eq(Termisu::FFI::Status::InvalidArgument.value)
+    termisu_error_message.should contain("ops is null")
+  end
+
+  it "still validates the handle for an empty set_cells batch" do
+    termisu_clear_error
+    status = termisu_set_cells(0_u64, Pointer(Termisu::FFI::ABI::CellOp).null, 0_u64)
+    status.should eq(Termisu::FFI::Status::InvalidHandle.value)
+    termisu_error_message.should contain("Invalid handle")
+  end
+
   it "supports core operations on a valid handle" do
     termisu_clear_error
     handle = termisu_create(1_u8)
@@ -107,6 +137,44 @@ describe "Termisu C ABI" do
       if size.width > 0 && size.height > 0
         invalid_codepoint = termisu_set_cell(handle, 0, 0, 0x11_0000_u32, pointerof(style))
         invalid_codepoint.should eq(Termisu::FFI::Status::Error.value)
+        termisu_error_message.should contain("Invalid Unicode codepoint")
+      end
+
+      ops = StaticArray[
+        ffi_cell_op(0, 0, 'B'.ord),
+        ffi_cell_op(1, 0, 'C'.ord),
+      ]
+      batch_status = termisu_set_cells(handle, ops.to_unsafe, ops.size.to_u64)
+      if size.width > 1 && size.height > 0
+        batch_status.should eq(Termisu::FFI::Status::Ok.value)
+      else
+        batch_status.should eq(Termisu::FFI::Status::Rejected.value)
+        termisu_error_message.should contain("set_cells rejected")
+      end
+
+      mixed = StaticArray[
+        ffi_cell_op(0, 0, 'D'.ord),
+        ffi_cell_op(size.width, 0, 'E'.ord),
+      ]
+      mixed_status = termisu_set_cells(handle, mixed.to_unsafe, mixed.size.to_u64)
+      mixed_status.should eq(Termisu::FFI::Status::Rejected.value)
+      termisu_error_message.should contain("set_cells rejected")
+
+      empty_status = termisu_set_cells(handle, Pointer(Termisu::FFI::ABI::CellOp).null, 0_u64)
+      empty_status.should eq(Termisu::FFI::Status::Ok.value)
+
+      if size.width > 0 && size.height > 0
+        bad = StaticArray[
+          ffi_cell_op(0, 0, 'F'.ord),
+          ffi_cell_op(0, 0, 0x11_0000),
+        ]
+        bad_status = termisu_set_cells(handle, bad.to_unsafe, bad.size.to_u64)
+        bad_status.should eq(Termisu::FFI::Status::Error.value)
+        termisu_error_message.should contain("Invalid Unicode codepoint")
+
+        negative = StaticArray[ffi_cell_op(0, 0, -1)]
+        negative_status = termisu_set_cells(handle, negative.to_unsafe, 1_u64)
+        negative_status.should eq(Termisu::FFI::Status::Error.value)
         termisu_error_message.should contain("Invalid Unicode codepoint")
       end
 

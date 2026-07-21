@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 
 import { Status } from "../src/constants";
 import { loadNative, ptr } from "../src/native";
-import { createStyleBuffer } from "../src/structs";
+import { createCellOpsBuffer, createStyleBuffer } from "../src/structs";
 import { Termisu } from "../src/termisu";
 
 function asNumber(value: number | bigint): number {
@@ -56,5 +56,28 @@ describe("FFI integration", () => {
 
     expect(status).toBe(Status.InvalidHandle);
     expect(readLastError(native)).toMatch(/Invalid handle/);
+  });
+
+  it("returns InvalidHandle for set_cells on unknown handle", () => {
+    const native = loadNative();
+    native.symbols.termisu_clear_error();
+
+    const ops = createCellOpsBuffer([{ x: 0, y: 0, char: "A" }]);
+    const status = asNumber(
+      native.symbols.termisu_set_cells(9999n, ptr(new Uint8Array(ops)), 1n) as number | bigint
+    );
+
+    expect(status).toBe(Status.InvalidHandle);
+    expect(readLastError(native)).toMatch(/Invalid handle/);
+  });
+
+  it("returns InvalidArgument for set_cells with null ops and positive count", () => {
+    const native = loadNative();
+    native.symbols.termisu_clear_error();
+
+    const status = asNumber(native.symbols.termisu_set_cells(9999n, 0, 1n) as number | bigint);
+
+    expect(status).toBe(Status.InvalidArgument);
+    expect(readLastError(native)).toMatch(/ops is null/);
   });
 });

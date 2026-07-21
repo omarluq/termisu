@@ -1,4 +1,5 @@
 require "../../spec_helper"
+require "../../../src/termisu_ffi"
 
 describe Termisu::FFI::Guards do
   it "returns yielded values and clears stale errors on success" do

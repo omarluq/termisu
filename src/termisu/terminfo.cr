@@ -62,17 +62,82 @@ class Termisu::Terminfo
   @cached_cvvis : String?
 
   # True when the loaded cup capability equals STANDARD_CUP. Set once during
-  # initialization and never mutated afterwards (fiber-safe).
-  @cup_is_standard = false
+  # initialization and never mutated afterwards (fiber-safe). Exposed so
+  # Terminal can stream CSI cursor moves directly (byte-identical to
+  # `cursor_position_seq` output) without a per-move String.
+  getter? cup_is_standard = false
+
+  # True when every attribute-enable capability equals its standard ECMA-48
+  # SGR sequence (byte-identical to the xterm/linux builtins). Set once during
+  # initialization and never mutated afterwards (fiber-safe). Exposed so
+  # Terminal's combined apply_sgr path only emits hardcoded SGR parameters
+  # when they match what the granular terminfo-driven path would produce;
+  # exotic TERMs with non-CSI attribute sequences fall back to that path.
+  getter? attrs_are_standard = false
+
+  # Cross-init cache of merged capability hashes keyed by TERM: locating,
+  # reading, and parsing a terminfo file is invariant per TERM within a
+  # process, so repeated `Terminfo.new` shares one hash. A cached hash is
+  # immutable after being stored — instances only read it via `get_cap` —
+  # which makes sharing safe across fibers and threads.
+  #
+  # The lock is a raw atomic spinlock rather than `Mutex` (same rationale as
+  # `FFI::ErrorState`): `Terminfo.new` runs on the FFI create path, which may
+  # be entered from arbitrary host threads where parking a fiber through the
+  # scheduler aborts the process. Critical sections are a single Hash op.
+  @@cache_lock = Atomic(Int32).new(0)
+  @@caps_cache = {} of String => Hash(String, String)
 
   def initialize
     term_name = ENV["TERM"]? || raise Termisu::Error.new("TERM environment variable not set")
     Log.info { "Loading terminfo for TERM=#{term_name}" }
 
-    @caps = load_from_database(term_name)
-    fill_missing_with_builtins(term_name)
+    @caps = self.class.caps_for(term_name)
     cache_frequent_capabilities
     Log.debug { "Loaded #{@caps.size} capabilities" }
+  end
+
+  # Returns the merged capability hash for *term_name*, building and caching
+  # it on first use. The returned hash is shared and must not be mutated.
+  protected def self.caps_for(term_name : String) : Hash(String, String)
+    if cached = cache_sync { @@caps_cache[term_name]? }
+      return cached
+    end
+
+    # Built outside the lock: loading does file I/O. Concurrent builders may
+    # race, but every result is equivalent and immutable, so last-write wins.
+    caps = build_caps(term_name)
+    cache_sync { @@caps_cache[term_name] = caps }
+    caps
+  end
+
+  # :nodoc:
+  # Test hook: returns the cached hash for *term_name*, if present.
+  def self.cached_caps?(term_name : String) : Hash(String, String)?
+    cache_sync { @@caps_cache[term_name]? }
+  end
+
+  # :nodoc:
+  # Test hook: drops all cached capability hashes.
+  def self.clear_caps_cache : Nil
+    cache_sync { @@caps_cache.clear }
+  end
+
+  # Builds the merged (database + builtin fallback) capability hash.
+  private def self.build_caps(term_name : String) : Hash(String, String)
+    caps = load_from_database(term_name)
+    fill_missing_with_builtins(caps, term_name)
+    caps
+  end
+
+  private def self.cache_sync(&)
+    until @@cache_lock.compare_and_set(0, 1, :acquire, :relaxed)[1]
+    end
+    begin
+      yield
+    ensure
+      @@cache_lock.set(0, :release)
+    end
   end
 
   # Pre-caches frequently-used parametrized capability strings.
@@ -102,10 +167,14 @@ class Termisu::Terminfo
     @cached_cnorm = get_cap("cnorm")
     @cached_civis = get_cap("civis")
     @cached_cvvis = get_cap("cvvis")
+    @attrs_are_standard = @cached_bold == "\e[1m" && @cached_dim == "\e[2m" &&
+                          @cached_sitm == "\e[3m" && @cached_smul == "\e[4m" &&
+                          @cached_blink == "\e[5m" && @cached_rev == "\e[7m" &&
+                          @cached_invis == "\e[8m" && @cached_smxx == "\e[9m"
   end
 
   # Loads capabilities from the terminfo database.
-  private def load_from_database(term_name : String) : Hash(String, String)
+  private def self.load_from_database(term_name : String) : Hash(String, String)
     data = Database.new(term_name).load
     required = Capabilities::REQUIRED_FUNCS + Capabilities::REQUIRED_KEYS
     caps = Parser.parse(data, required)
@@ -117,18 +186,18 @@ class Termisu::Terminfo
   end
 
   # Fills in missing capabilities with hardcoded fallback values.
-  private def fill_missing_with_builtins(term_name : String)
-    before_count = @caps.size
-    fill_capability_group(Capabilities::REQUIRED_FUNCS, Builtin.funcs_for(term_name))
-    fill_capability_group(Capabilities::REQUIRED_KEYS, Builtin.keys_for(term_name))
-    added = @caps.size - before_count
+  private def self.fill_missing_with_builtins(caps : Hash(String, String), term_name : String)
+    before_count = caps.size
+    fill_capability_group(caps, Capabilities::REQUIRED_FUNCS, Builtin.funcs_for(term_name))
+    fill_capability_group(caps, Capabilities::REQUIRED_KEYS, Builtin.keys_for(term_name))
+    added = caps.size - before_count
     Log.debug { "Filled #{added} missing capabilities from builtins" } if added > 0
   end
 
   # Fills missing capabilities from a builtin array.
-  private def fill_capability_group(names : Array(String), values : Array(String))
+  private def self.fill_capability_group(caps : Hash(String, String), names : Array(String), values : Array(String))
     names.each_with_index do |cap_name, idx|
-      @caps[cap_name] ||= values[idx]
+      caps[cap_name] ||= values[idx]
     end
   end
 

@@ -40,6 +40,16 @@ describe Termisu::Buffer do
       cell.as(Termisu::Cell).bg.should eq(Termisu::Color.red)
     end
 
+    it "round-trips the ansi256 default index (-1) through the key planes" do
+      buffer = Termisu::Buffer.new(10, 5)
+      buffer.set_cell(0, 0, 'A', fg: Termisu::Color.ansi256(-1), bg: Termisu::Color.ansi256(-1)).should be_true
+
+      cell = buffer.get_cell(0, 0)
+      cell.should_not be_nil
+      cell.as(Termisu::Cell).fg.should eq(Termisu::Color.ansi256(-1))
+      cell.as(Termisu::Cell).bg.should eq(Termisu::Color.ansi256(-1))
+    end
+
     it "returns false for out of bounds x" do
       buffer = Termisu::Buffer.new(10, 5)
       buffer.set_cell(-1, 2, 'A').should be_false
@@ -137,6 +147,22 @@ describe Termisu::Buffer do
       buffer.get_cell(10, 2).should be_nil
       buffer.get_cell(5, -1).should be_nil
       buffer.get_cell(5, 5).should be_nil
+    end
+
+    it "round-trips a styled wide grapheme through packed key storage" do
+      buffer = Termisu::Buffer.new(10, 5)
+      original = Termisu::Cell.new("中",
+        fg: Termisu::Color.rgb(10, 20, 30),
+        bg: Termisu::Color.ansi256(42),
+        attr: Termisu::Attribute::Bold | Termisu::Attribute::Underline)
+      buffer.set_cell(3, 2, "中", fg: original.fg, bg: original.bg, attr: original.attr)
+
+      buffer.get_cell(3, 2).should eq(original)
+
+      trail = buffer.get_cell(4, 2).as(Termisu::Cell)
+      trail.continuation?.should be_true
+      trail.grapheme.should eq("")
+      trail.width.should eq(0u8)
     end
   end
 
@@ -436,6 +462,64 @@ describe Termisu::Buffer do
       rendered_text.should contain("A")
       rendered_text.should contain("日")
       rendered_text.should contain("B")
+    end
+
+    it "diff-renders a replacement wide grapheme at the same cell" do
+      renderer = MockRenderer.new
+      buffer = Termisu::Buffer.new(10, 1)
+
+      buffer.set_cell(0, 0, '中')
+      buffer.render_to(renderer)
+      renderer.clear
+
+      buffer.set_cell(0, 0, '好')
+      buffer.render_to(renderer)
+
+      rendered_text = renderer.write_calls.join
+      rendered_text.should contain("好")
+      rendered_text.should_not contain("中")
+    end
+
+    it "diff-renders an ASCII overwrite of a wide cell without resurrecting the old grapheme" do
+      renderer = MockRenderer.new
+      buffer = Termisu::Buffer.new(10, 1)
+
+      buffer.set_cell(0, 0, '中')
+      buffer.render_to(renderer)
+      renderer.clear
+
+      buffer.set_cell(0, 0, 'A')
+      buffer.render_to(renderer)
+
+      rendered_text = renderer.write_calls.join
+      rendered_text.should contain("A")
+      rendered_text.should_not contain("中")
+      buffer.get_cell(0, 0).as(Termisu::Cell).grapheme.should eq("A")
+      buffer.get_cell(1, 0).as(Termisu::Cell).grapheme.should eq(" ")
+    end
+
+    it "diff-renders both edges of a row damage range spanning unchanged cells" do
+      renderer = MockRenderer.new
+      buffer = Termisu::Buffer.new(10, 1)
+
+      buffer.set_cell(1, 0, 'L')
+      buffer.set_cell(8, 0, '中', fg: Termisu::Color.red)
+      buffer.render_to(renderer)
+      renderer.clear
+
+      # Damage the row at both extremes; cols 2..7 stay unchanged.
+      buffer.set_cell(1, 0, 'X')
+      buffer.set_cell(8, 0, '日', fg: Termisu::Color.red)
+      buffer.render_to(renderer)
+
+      rendered_text = renderer.write_calls.join
+      rendered_text.should contain("X")
+      rendered_text.should contain("日")
+      rendered_text.should_not contain("L")
+      rendered_text.should_not contain("中")
+      # Unchanged middle cells break the batch: each edge starts its own batch.
+      renderer.move_calls.should contain({1, 0})
+      renderer.move_calls.should contain({8, 0})
     end
   end
 

@@ -91,8 +91,9 @@ class Termisu::Terminfo::Parser
 
   # Parses capability values from terminfo binary data.
   #
-  # Reads the binary format, extracts all string capabilities, then filters
-  # to only the requested capability names using STRING_CAPS ordering.
+  # Resolves each requested capability name to its STRING_CAPS index and
+  # decodes only those entries from the strings section, skipping the
+  # hundreds of unrequested capabilities a terminfo file typically carries.
   #
   # ## Parameters
   #
@@ -116,13 +117,9 @@ class Termisu::Terminfo::Parser
     offsets = calculate_offsets(header)
     validate_offsets!(offsets, header)
 
-    string_count = header[4]
+    string_count = header[4].to_i32
 
-    # Parse all string capabilities from binary format
-    all_capabilities = parse_all_strings(io, string_count, offsets)
-
-    # Filter to only requested capabilities
-    extract_requested_capabilities(all_capabilities, required_caps)
+    read_required_capabilities(io, required_caps, string_count, offsets)
   end
 
   # Validates that data is at least large enough for the header.
@@ -159,40 +156,29 @@ class Termisu::Terminfo::Parser
   # Validates that calculated offsets don't exceed data bounds.
   private def validate_offsets!(offsets : NamedTuple, header : StaticArray(Int16, 6))
     table_size = header[5]
-    expected_end = offsets[:table_offset].to_i32 + table_size.to_i32
+    expected_end = offsets[:table_offset] + table_size.to_i32
 
     if expected_end > @data.size
       raise ParseError.truncated_data(expected_end, @data.size)
     end
   end
 
-  # Parses all string capabilities from the terminfo binary data.
+  # Decodes only the requested capabilities from the strings section.
   #
-  # Reads each string capability offset and extracts the null-terminated
-  # string from the string table.
-  private def parse_all_strings(io, count, offsets)
-    capabilities = {} of Int32 => String
-
-    count.times do |index|
-      offset_position = offsets[:str_offset] + (2_i16 * index)
-      value = read_string_at(io, offset_position, offsets[:table_offset])
-      capabilities[index] = value unless value.empty?
-    end
-
-    capabilities
-  end
-
-  # Extracts requested capabilities from the parsed capability set.
-  #
-  # Uses hash lookup to map capability names to their indices,
-  # then retrieves the corresponding values.
-  private def extract_requested_capabilities(all_caps, requested)
+  # Maps each requested name to its STRING_CAPS index, reads that entry's
+  # 16-bit offset, and extracts the null-terminated string from the string
+  # table. Names beyond the file's string count or with absent (-1) offsets
+  # are omitted, matching a full decode filtered to the same names.
+  private def read_required_capabilities(io, requested, string_count, offsets)
     result = {} of String => String
 
     requested.each do |cap_name|
-      if index = Capabilities.string_cap_index(cap_name)
-        result[cap_name] = all_caps[index] if all_caps.has_key?(index)
-      end
+      index = Capabilities.string_cap_index(cap_name)
+      next unless index && index < string_count
+
+      offset_position = offsets[:str_offset] + (2 * index)
+      value = read_string_at(io, offset_position, offsets[:table_offset])
+      result[cap_name] = value unless value.empty?
     end
 
     result
@@ -218,17 +204,24 @@ class Termisu::Terminfo::Parser
   # The calculation accounts for:
   # - Variable number section size (2 bytes for standard, 4 for extended)
   # - Word boundary alignment for booleans section
+  #
+  # Arithmetic is done in Int32: the header fields are Int16, and summing
+  # maximum-range sections overflows Int16 on large/extended terminfo files.
   private def calculate_offsets(header)
-    magic, names_len, bools_len, nums_len, str_count = header[0], header[1], header[2], header[3], header[4]
+    magic = header[0]
+    names_len = header[1].to_i32
+    bools_len = header[2].to_i32
+    nums_len = header[3].to_i32
+    str_count = header[4].to_i32
 
     # Extended format uses 32-bit numbers instead of 16-bit
-    number_size = (magic == EXTENDED_MAGIC) ? 4_i16 : 2_i16
+    number_size = (magic == EXTENDED_MAGIC) ? 4 : 2
 
     # Align booleans section to word boundary
-    bools_len += 1_i16 if (names_len + bools_len).odd?
+    bools_len += 1 if (names_len + bools_len).odd?
 
-    str_offset = HEADER_LENGTH.to_i16 + names_len + bools_len + (number_size * nums_len)
-    table_offset = str_offset + (2_i16 * str_count)
+    str_offset = HEADER_LENGTH + names_len + bools_len + (number_size * nums_len)
+    table_offset = str_offset + (2 * str_count)
 
     {str_offset: str_offset, table_offset: table_offset}
   end
@@ -244,14 +237,14 @@ class Termisu::Terminfo::Parser
   # ## Returns
   #
   # The null-terminated string, or empty string if offset is -1 (absent capability).
-  private def read_string_at(io : IO::Memory, offset_pos : Int16, table_start : Int16) : String
-    io.pos = offset_pos.to_i
+  private def read_string_at(io : IO::Memory, offset_pos : Int32, table_start : Int32) : String
+    io.pos = offset_pos
     offset = io.read_bytes(Int16, IO::ByteFormat::LittleEndian)
 
     # -1 offset means capability is absent (not an error)
     return "" if offset < 0
 
-    string_pos = (table_start + offset).to_i
+    string_pos = table_start + offset
 
     # Validate the string position is within bounds
     if string_pos >= @data.size

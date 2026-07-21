@@ -14,6 +14,15 @@ abstract class Termisu::Renderer
   # Writes data to the renderer.
   abstract def write(data : String, columns_advanced = 0)
 
+  # Writes raw bytes to the renderer.
+  #
+  # Default implementation delegates to the String overload so existing
+  # renderer implementations work unchanged. Terminal overrides this to
+  # stream the bytes to the backend without materializing a String.
+  def write(data : Bytes, columns_advanced = 0)
+    write(String.new(data), columns_advanced)
+  end
+
   # Flushes any buffered output.
   abstract def flush
 
@@ -70,4 +79,50 @@ abstract class Termisu::Renderer
 
   # Enables strikethrough text (writes escape sequence).
   abstract def enable_strikethrough
+
+  # --- Combined Style Application ---
+
+  # Applies a complete style transition (attributes + colors) in one call.
+  #
+  # *fg*, *bg*, and *attr* are the target style. The *old_* parameters carry
+  # the caller's view of the current terminal style (`nil` = unknown, which
+  # forces emission).
+  #
+  # This default implementation decomposes the transition into the granular
+  # color/attribute methods above with the legacy emission semantics
+  # (reset-then-reapply when any attribute is removed), so existing renderer
+  # implementations need no changes. Terminal overrides this to emit a single
+  # combined SGR sequence per transition instead.
+  #
+  # The branch count is a flat per-attribute dispatch table, not nested logic.
+  # ameba:disable Metrics/CyclomaticComplexity
+  def apply_sgr(
+    fg : Color,
+    bg : Color,
+    attr : Attribute,
+    old_fg : Color?,
+    old_bg : Color?,
+    old_attr : Attribute,
+  ) : Nil
+    if attr != old_attr
+      if (old_attr & ~attr) != Attribute::None
+        # Removing attributes requires a full reset, which also clears
+        # colors, so they must be re-emitted below.
+        reset_attributes
+        old_attr = Attribute::None
+        old_fg = nil
+        old_bg = nil
+      end
+      enable_bold if attr.bold? && !old_attr.bold?
+      enable_underline if attr.underline? && !old_attr.underline?
+      enable_reverse if attr.reverse? && !old_attr.reverse?
+      enable_blink if attr.blink? && !old_attr.blink?
+      enable_dim if attr.dim? && !old_attr.dim?
+      enable_cursive if attr.cursive? && !old_attr.cursive?
+      enable_hidden if attr.hidden? && !old_attr.hidden?
+      enable_strikethrough if attr.strikethrough? && !old_attr.strikethrough?
+    end
+    self.foreground = fg unless fg == old_fg
+    self.background = bg unless bg == old_bg
+  end
 end

@@ -5,6 +5,7 @@ export { TermisuError } from "./errors";
 export { Termisu } from "./termisu";
 export type {
   AnyEvent,
+  CellOp,
   CellStyle,
   KeyEvent,
   ModeChangeEvent,

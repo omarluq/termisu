@@ -88,14 +88,42 @@ class Termisu::Terminal
 
     return if x == @cursor.x && y == @cursor.y
 
-    seq = @terminfo.cursor_position_seq(y, x)
-    if seq.empty?
-      write("\e[#{y + 1};#{x + 1}H")
+    if @terminfo.cup_is_standard?
+      write_cup_direct(x, y)
     else
-      write(seq)
+      seq = @terminfo.cursor_position_seq(y, x)
+      if seq.empty?
+        write("\e[#{y + 1};#{x + 1}H")
+      else
+        write(seq)
+      end
     end
 
     @cursor.x, @cursor.y = x, y
+  end
+
+  # Streams the standard CSI cursor-position sequence through the scratch
+  # buffer (byte-identical to cursor_position_seq output) so per-move String
+  # allocation is avoided on the rendering hot path.
+  private def write_cup_direct(x : Int32, y : Int32) : Nil
+    buf = @seq_buffer
+    buf.clear
+    buf << "\e["
+    append_decimal(buf, y + 1)
+    buf.write_byte 0x3B_u8 # ';'
+    append_decimal(buf, x + 1)
+    buf.write_byte 0x48_u8 # 'H'
+    write(buf.to_slice)
+  end
+
+  # Coordinates are 1-based and clamped to the terminal size, so values
+  # beyond the DECIMAL table only occur on very large terminals.
+  private def append_decimal(buf : IO::Memory, value : Int32) : Nil
+    if 0 <= value < 256
+      buf << DECIMAL[value]
+    else
+      value.to_s(buf)
+    end
   end
 
   private def with_ephemeral_cursor(visible : Bool = false, &)
@@ -115,6 +143,20 @@ class Termisu::Terminal
   # cursor beyond the terminal's width, it will wrap into the next line
   def write(data : String, columns_advanced = 0)
     @backend.write(data)
+    advance_cursor(columns_advanced)
+  end
+
+  # Byte overload of `write` for pre-composed escape sequences and batch
+  # content; streams to the backend without materializing a String.
+  def write(data : Bytes, columns_advanced = 0)
+    @backend.write(data)
+    advance_cursor(columns_advanced)
+  end
+
+  private def advance_cursor(columns_advanced : Int32) : Nil
+    # Skipping the wrap arithmetic assumes @cursor.x < width, which holds
+    # except transiently after a shrink-resize before the next move_cursor.
+    return if columns_advanced == 0
 
     width, height = size
     return if width <= 0 || height <= 0

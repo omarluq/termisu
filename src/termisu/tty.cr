@@ -42,6 +42,10 @@ class Termisu::TTY
     @out.print(data)
   end
 
+  def write(data : Bytes)
+    @out.write(data)
+  end
+
   def flush
     @out.flush
   end

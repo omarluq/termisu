@@ -67,6 +67,14 @@ fun termisu_set_cell(
   Termisu::FFI::Guards.safe_status { Termisu::FFI.set_cell(handle, x, y, codepoint, style) }
 end
 
+fun termisu_set_cells(
+  handle : UInt64,
+  ops : Termisu::FFI::ABI::CellOp*,
+  count : UInt64,
+) : Int32
+  Termisu::FFI::Guards.safe_status { Termisu::FFI.set_cells(handle, ops, count) }
+end
+
 fun termisu_enable_timer_ms(handle : UInt64, interval_ms : Int32) : Int32
   Termisu::FFI::Guards.safe_status { Termisu::FFI.enable_timer_ms(handle, interval_ms) }
 end

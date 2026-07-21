@@ -1,4 +1,5 @@
 require "../../spec_helper"
+require "../../../src/termisu_ffi"
 
 describe Termisu::FFI::Runtime do
   it "returns immediately when the runtime is already bootstrapped" do

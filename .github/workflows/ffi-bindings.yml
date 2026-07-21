@@ -3,7 +3,7 @@ on:
   push:
     branches: [main]
     paths:
-      - "src/termisu/ffi.cr"
+      - "src/termisu_ffi.cr"
       - "src/termisu/ffi/**/*.cr"
       - "include/termisu/ffi.h"
       - "examples/c/**/*.c"
@@ -21,7 +21,7 @@ on:
   pull_request:
     branches: [main]
     paths:
-      - "src/termisu/ffi.cr"
+      - "src/termisu_ffi.cr"
       - "src/termisu/ffi/**/*.cr"
       - "include/termisu/ffi.h"
       - "examples/c/**/*.c"

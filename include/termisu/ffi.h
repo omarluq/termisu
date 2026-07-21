@@ -68,6 +68,15 @@ typedef struct termisu_size {
   int32_t height;
 } termisu_size_t;
 
+/* One batched cell write for termisu_set_cells. Natural alignment leaves no
+ * padding: style is 4-byte aligned at offset 12, total size 40 bytes. */
+typedef struct termisu_cell_op {
+  int32_t x;
+  int32_t y;
+  int32_t codepoint;
+  termisu_cell_style_t style;
+} termisu_cell_op_t;
+
 typedef struct termisu_event {
   uint8_t event_type;
   uint8_t modifiers;
@@ -125,6 +134,14 @@ TERMISU_STATIC_ASSERT(sizeof(termisu_size_t) == 8, "termisu_size_t size mismatch
 TERMISU_STATIC_ASSERT(offsetof(termisu_size_t, width) == 0, "termisu_size_t.width offset mismatch");
 TERMISU_STATIC_ASSERT(offsetof(termisu_size_t, height) == 4,
                       "termisu_size_t.height offset mismatch");
+
+TERMISU_STATIC_ASSERT(sizeof(termisu_cell_op_t) == 40, "termisu_cell_op_t size mismatch");
+TERMISU_STATIC_ASSERT(offsetof(termisu_cell_op_t, x) == 0, "termisu_cell_op_t.x offset mismatch");
+TERMISU_STATIC_ASSERT(offsetof(termisu_cell_op_t, y) == 4, "termisu_cell_op_t.y offset mismatch");
+TERMISU_STATIC_ASSERT(offsetof(termisu_cell_op_t, codepoint) == 8,
+                      "termisu_cell_op_t.codepoint offset mismatch");
+TERMISU_STATIC_ASSERT(offsetof(termisu_cell_op_t, style) == 12,
+                      "termisu_cell_op_t.style offset mismatch");
 
 TERMISU_STATIC_ASSERT(sizeof(termisu_event_t) == 128, "termisu_event_t size mismatch");
 TERMISU_STATIC_ASSERT(offsetof(termisu_event_t, event_type) == 0,
@@ -193,6 +210,15 @@ int32_t termisu_hide_cursor(termisu_handle_t handle);
 int32_t termisu_show_cursor(termisu_handle_t handle);
 int32_t termisu_set_cell(termisu_handle_t handle, int32_t x, int32_t y, uint32_t codepoint,
                          const termisu_cell_style_t *style);
+
+/* Applies count cell writes with a single handle lookup. Per-op semantics
+ * match termisu_set_cell: ops rejected by the buffer (out of bounds, wide
+ * char that cannot fit, zero-width char) are skipped and the call returns
+ * TERMISU_STATUS_REJECTED after processing every op; a malformed op (invalid
+ * codepoint, color mode, or attribute bits) aborts the batch with
+ * TERMISU_STATUS_ERROR, leaving prior ops applied. ops may be NULL only when
+ * count is 0 (a no-op returning TERMISU_STATUS_OK for a live handle). */
+int32_t termisu_set_cells(termisu_handle_t handle, const termisu_cell_op_t *ops, uint64_t count);
 
 /* Input and timer */
 int32_t termisu_enable_timer_ms(termisu_handle_t handle, int32_t interval_ms);

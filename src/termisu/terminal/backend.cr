@@ -67,6 +67,11 @@ class Termisu::Terminal::Backend
     @tty.write(data)
   end
 
+  # Writes raw bytes to the terminal output.
+  def write(data : Bytes)
+    @tty.write(data)
+  end
+
   # Flushes the output buffer to the terminal.
   def flush
     @tty.flush

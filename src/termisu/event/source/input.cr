@@ -35,7 +35,13 @@ class Termisu::Event::Source::Input < Termisu::Event::Source
   #
   # Keeps CPU usage low without introducing long blocking waits that
   # can starve high-frequency timers.
-  IDLE_SLEEP = 1.millisecond
+  #
+  # 4ms is a measured stopgap for the idle busy-poll: it cuts idle
+  # select(2) calls from ~978/s to ~244/s at the cost of up to 4ms of
+  # added input latency when idle. The proper fix (deferred) is evented
+  # IO on the input fd — cooperative IO::FileDescriptor wakeup on data,
+  # ~20 wakeups/s with lower latency than any fixed sleep.
+  IDLE_SLEEP = 4.milliseconds
 
   # Maximum events drained per loop iteration.
   #

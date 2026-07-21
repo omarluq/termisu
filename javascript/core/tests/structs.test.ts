@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 
 import { ColorMode, EventType, STRUCT } from "../src/constants";
 import {
+  createCellOpsBuffer,
   createEventBuffer,
   createSizeBuffer,
   createStyleBuffer,
@@ -177,5 +178,53 @@ describe("struct helpers", () => {
       current: 2,
       previous: null,
     });
+  });
+
+  it("marshals cell ops into one contiguous buffer", () => {
+    const buffer = createCellOpsBuffer([
+      {
+        x: 2,
+        y: 3,
+        char: "🙂",
+        style: {
+          fg: { mode: ColorMode.Rgb, r: 1, g: 2, b: 3 },
+          bg: { mode: ColorMode.Ansi256, index: 201 },
+          attr: 0xff,
+        },
+      },
+      { x: 4, y: 5, char: 65 },
+    ]);
+    const view = new DataView(buffer);
+
+    expect(buffer.byteLength).toBe(2 * STRUCT.cellOp.size);
+
+    expect(view.getInt32(STRUCT.cellOp.x, LE)).toBe(2);
+    expect(view.getInt32(STRUCT.cellOp.y, LE)).toBe(3);
+    expect(view.getInt32(STRUCT.cellOp.codepoint, LE)).toBe("🙂".codePointAt(0) ?? 0);
+    const style = STRUCT.cellOp.style;
+    expect(view.getUint8(style + STRUCT.cellStyle.fg + STRUCT.color.mode)).toBe(ColorMode.Rgb);
+    expect(view.getUint8(style + STRUCT.cellStyle.fg + STRUCT.color.r)).toBe(1);
+    expect(view.getUint8(style + STRUCT.cellStyle.fg + STRUCT.color.g)).toBe(2);
+    expect(view.getUint8(style + STRUCT.cellStyle.fg + STRUCT.color.b)).toBe(3);
+    expect(view.getUint8(style + STRUCT.cellStyle.bg + STRUCT.color.mode)).toBe(ColorMode.Ansi256);
+    expect(view.getInt32(style + STRUCT.cellStyle.bg + STRUCT.color.index, LE)).toBe(201);
+    expect(view.getUint16(style + STRUCT.cellStyle.attr, LE)).toBe(0xff);
+
+    const second = STRUCT.cellOp.size;
+    expect(view.getInt32(second + STRUCT.cellOp.x, LE)).toBe(4);
+    expect(view.getInt32(second + STRUCT.cellOp.y, LE)).toBe(5);
+    expect(view.getInt32(second + STRUCT.cellOp.codepoint, LE)).toBe(65);
+    expect(view.getUint8(second + style + STRUCT.cellStyle.fg + STRUCT.color.mode)).toBe(
+      ColorMode.Default
+    );
+    expect(view.getInt32(second + style + STRUCT.cellStyle.fg + STRUCT.color.index, LE)).toBe(-1);
+    expect(view.getUint16(second + style + STRUCT.cellStyle.attr, LE)).toBe(0);
+  });
+
+  it("returns an empty buffer for zero cell ops and rejects empty chars", () => {
+    expect(createCellOpsBuffer([]).byteLength).toBe(0);
+    expect(() => createCellOpsBuffer([{ x: 0, y: 0, char: "" }])).toThrow(
+      "Character must not be empty"
+    );
   });
 });

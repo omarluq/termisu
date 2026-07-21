@@ -210,6 +210,56 @@ describe Termisu::Cell do
     end
   end
 
+  describe "single-grapheme cluster fast path" do
+    it "stores a CJK cluster as the input String without copying" do
+      input = "中"
+      cell = Termisu::Cell.new(input)
+      cell.grapheme.should be(input)
+      cell.width.should eq(2u8)
+    end
+
+    it "stores an emoji cluster as the input String without copying" do
+      input = "😀"
+      cell = Termisu::Cell.new(input)
+      cell.grapheme.should be(input)
+      cell.width.should eq(2u8)
+    end
+
+    it "stores a ZWJ family sequence as one cluster without copying" do
+      input = "👨\u{200D}👩\u{200D}👧\u{200D}👦"
+      cell = Termisu::Cell.new(input)
+      cell.grapheme.should be(input)
+      cell.width.should eq(2u8)
+    end
+
+    it "stores a regional-indicator flag pair as one cluster without copying" do
+      input = "🇺🇸"
+      cell = Termisu::Cell.new(input)
+      cell.grapheme.should be(input)
+      cell.width.should eq(2u8)
+    end
+
+    it "stores a combining sequence as one cluster without copying" do
+      input = "e\u{0301}"
+      cell = Termisu::Cell.new(input)
+      cell.grapheme.should be(input)
+      cell.width.should eq(1u8)
+    end
+
+    it "stores a skin-tone modifier sequence as one cluster without copying" do
+      input = "👍\u{1F3FC}"
+      cell = Termisu::Cell.new(input)
+      cell.grapheme.should be(input)
+      cell.width.should eq(2u8)
+    end
+
+    it "matches UnicodeWidth.grapheme_width for every cluster type" do
+      ["中", "😀", "👨\u{200D}👩\u{200D}👧\u{200D}👦", "🇺🇸", "e\u{0301}", "👍\u{1F3FC}"].each do |grapheme|
+        Termisu::Cell.new(grapheme).width.should eq(Termisu::UnicodeWidth.grapheme_width(grapheme))
+      end
+    end
+  end
+
   describe "ASCII fast path" do
     it "matches UnicodeWidth.grapheme_width for every ASCII codepoint" do
       (0..127).each do |codepoint|
@@ -227,6 +277,75 @@ describe Termisu::Cell do
       cell = Termisu::Cell.new(String.new(Bytes[0xFF_u8]))
       cell.grapheme.bytesize.should eq(1)
       cell.width.should eq(1u8)
+    end
+  end
+
+  describe "#key" do
+    it "is equal exactly when cells are equal" do
+      a = Termisu::Cell.new("A", fg: Termisu::Color.green, bg: Termisu::Color.red, attr: Termisu::Attribute::Bold)
+      b = Termisu::Cell.new("A", fg: Termisu::Color.green, bg: Termisu::Color.red, attr: Termisu::Attribute::Bold)
+      a.key.should eq(b.key)
+    end
+
+    it "differs for different grapheme, colors, and attributes" do
+      base = Termisu::Cell.new("A")
+      Termisu::Cell.new("B").key.should_not eq(base.key)
+      Termisu::Cell.new("A", fg: Termisu::Color.red).key.should_not eq(base.key)
+      Termisu::Cell.new("A", bg: Termisu::Color.blue).key.should_not eq(base.key)
+      Termisu::Cell.new("A", attr: Termisu::Attribute::Bold).key.should_not eq(base.key)
+    end
+
+    it "distinguishes same-index colors across modes" do
+      ansi8 = Termisu::Cell.new("A", fg: Termisu::Color.ansi8(3))
+      ansi256 = Termisu::Cell.new("A", fg: Termisu::Color.ansi256(3))
+      ansi8.key.should_not eq(ansi256.key)
+    end
+
+    it "accepts the ansi256 default index (-1) without overflow" do
+      cell = Termisu::Cell.new("A", fg: Termisu::Color.ansi256(-1), bg: Termisu::Color.ansi256(-1))
+      cell.fg.should eq(Termisu::Color.ansi256(-1))
+      cell.key.should_not eq(Termisu::Cell.new("A", fg: Termisu::Color.ansi8(-1)).key)
+    end
+
+    it "matches for identical RGB colors and differs for different ones" do
+      a = Termisu::Cell.new("A", fg: Termisu::Color.rgb(10, 20, 30))
+      b = Termisu::Cell.new("A", fg: Termisu::Color.rgb(10, 20, 30))
+      c = Termisu::Cell.new("A", fg: Termisu::Color.rgb(10, 20, 31))
+      a.key.should eq(b.key)
+      a.key.should_not eq(c.key)
+    end
+
+    it "interns non-ASCII graphemes consistently" do
+      a = Termisu::Cell.new("中")
+      b = Termisu::Cell.new(String.new("中".to_slice))
+      a.key.should eq(b.key)
+      a.key.should_not eq(Termisu::Cell.new("界").key)
+    end
+
+    it "distinguishes continuation cells from NUL sentinel cells" do
+      sentinel = Termisu::Cell.new("\u0000", fg: Termisu::Color.default, bg: Termisu::Color.default)
+      Termisu::Cell.continuation.key.should_not eq(sentinel.key)
+    end
+
+    it "is recomputed by property setters" do
+      cell = Termisu::Cell.new
+      cell.fg = Termisu::Color.yellow
+      cell.key.should eq(Termisu::Cell.new(fg: Termisu::Color.yellow).key)
+      cell.bg = Termisu::Color.magenta
+      cell.attr = Termisu::Attribute::Reverse
+      cell.grapheme = "Z"
+      expected = Termisu::Cell.new("Z", fg: Termisu::Color.yellow, bg: Termisu::Color.magenta,
+        attr: Termisu::Attribute::Reverse)
+      cell.key.should eq(expected.key)
+    end
+  end
+
+  describe "#default_state?" do
+    it "is true only for the canonical default cell" do
+      Termisu::Cell.new.default_state?.should be_true
+      Termisu::Cell.default.default_state?.should be_true
+      Termisu::Cell.new("A").default_state?.should be_false
+      Termisu::Cell.continuation.default_state?.should be_false
     end
   end
 

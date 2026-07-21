@@ -41,6 +41,12 @@ class Termisu::Terminal < Termisu::Renderer
   # Refreshed by resize() and invalidated after mode switches.
   @cached_size : {Int32, Int32}?
 
+  # Reusable scratch buffer for composed escape sequences (combined SGR,
+  # RGB colors, cursor moves). Composing here and writing the slice avoids
+  # a String allocation per sequence. Never used reentrantly: each composer
+  # fills and writes it before returning, and rendering is single-fiber.
+  @seq_buffer = IO::Memory.new(64)
+
   # Creates a new terminal.
   #
   # Parameters:
@@ -136,6 +142,16 @@ class Termisu::Terminal < Termisu::Renderer
   private FG_ANSI256 = Array(String).new(256) { |i| "\e[38;5;#{i}m" }
   private BG_ANSI256 = Array(String).new(256) { |i| "\e[48;5;#{i}m" }
 
+  # Precomputed SGR parameter fragments (no CSI framing) for the combined
+  # apply_sgr emitter, plus decimal images for RGB components and cursor
+  # coordinates. Appending these is a memcpy — measured faster than
+  # composing digits one at a time.
+  private SGR_FG_ANSI8   = Array(String).new(8) { |i| "3#{i}" }
+  private SGR_BG_ANSI8   = Array(String).new(8) { |i| "4#{i}" }
+  private SGR_FG_ANSI256 = Array(String).new(256) { |i| "38;5;#{i}" }
+  private SGR_BG_ANSI256 = Array(String).new(256) { |i| "48;5;#{i}" }
+  private DECIMAL        = Array(String).new(256, &.to_s)
+
   # Sets the foreground color with full ANSI-8, ANSI-256, and RGB support.
   #
   # Caches the color to avoid redundant escape sequences when called
@@ -153,7 +169,7 @@ class Termisu::Terminal < Termisu::Renderer
       when .ansi256?
         write(FG_ANSI256[color.index])
       when .rgb?
-        write("\e[38;2;#{color.r};#{color.g};#{color.b}m")
+        write_rgb_sgr("\e[38;2;", color)
       end
     end
   end
@@ -175,8 +191,129 @@ class Termisu::Terminal < Termisu::Renderer
       when .ansi256?
         write(BG_ANSI256[color.index])
       when .rgb?
-        write("\e[48;2;#{color.r};#{color.g};#{color.b}m")
+        write_rgb_sgr("\e[48;2;", color)
       end
+    end
+  end
+
+  # Composes a full true-color SGR sequence into the scratch buffer and
+  # writes it as bytes, avoiding the former per-call String interpolation.
+  private def write_rgb_sgr(intro : String, color : Color) : Nil
+    buf = @seq_buffer
+    buf.clear
+    buf << intro
+    buf << DECIMAL[color.r]
+    buf.write_byte 0x3B_u8 # ';'
+    buf << DECIMAL[color.g]
+    buf.write_byte 0x3B_u8
+    buf << DECIMAL[color.b]
+    buf.write_byte 0x6D_u8 # 'm'
+    write(buf.to_slice)
+  end
+
+  # Emits a full style transition as one combined SGR sequence
+  # (`\e[p1;p2;...m`) instead of one write per granular change.
+  #
+  # The transition is computed against the terminal's own cached style, not
+  # the caller's *old_* view: the cache also tracks direct API calls
+  # (`foreground=`, `enable_bold`, ...), so it is at least as current —
+  # mirroring how the granular setters have always consulted it.
+  #
+  # Attribute removal uses the ECMA-48 selective off codes
+  # (22/23/24/25/27/28/29) so colors survive attribute drops without the
+  # sgr0-plus-recolor round trip. SGR 22 clears both bold and dim, so
+  # whichever of the two the target style retains is re-emitted after it.
+  def apply_sgr(
+    fg : Color,
+    bg : Color,
+    attr : Attribute,
+    old_fg : Color?,
+    old_bg : Color?,
+    old_attr : Attribute,
+  ) : Nil
+    # The combined emitter hardcodes ECMA-48 SGR parameters; when the loaded
+    # attribute capabilities are non-standard, defer to the granular
+    # terminfo-driven decomposition (mirrors the cup_is_standard? guard).
+    return super unless @terminfo.attrs_are_standard?
+
+    cached_attr = @cached_attr
+    removed = cached_attr & ~attr
+    added = attr & ~cached_attr
+    fg_changed = @cached_fg != fg
+    bg_changed = @cached_bg != bg
+    # Explicit None comparisons: the flags-generated `none?` predicate is
+    # `includes?(None)`, which is vacuously true for every value.
+    return if removed == Attribute::None && added == Attribute::None && !fg_changed && !bg_changed
+
+    buf = @seq_buffer
+    buf.clear
+    buf << "\e["
+    append_attr_params(buf, attr, cached_attr, removed, added)
+    append_color_param(buf, fg, foreground: true) if fg_changed
+    append_color_param(buf, bg, foreground: false) if bg_changed
+    buf.write_byte 0x6D_u8 # 'm'
+    write(buf.to_slice)
+
+    @cached_attr = attr
+    @cached_fg = fg
+    @cached_bg = bg
+  end
+
+  # Appends attribute off/on SGR parameters for the transition to *attr*.
+  #
+  # The branch count is a flat per-attribute dispatch table, not nested logic.
+  # ameba:disable Metrics/CyclomaticComplexity
+  private def append_attr_params(
+    buf : IO::Memory,
+    attr : Attribute,
+    cached_attr : Attribute,
+    removed : Attribute,
+    added : Attribute,
+  ) : Nil
+    intensity_off = removed.bold? || removed.dim?
+    sgr_param(buf, "22") if intensity_off
+    sgr_param(buf, "23") if removed.cursive?
+    sgr_param(buf, "24") if removed.underline?
+    sgr_param(buf, "25") if removed.blink?
+    sgr_param(buf, "27") if removed.reverse?
+    sgr_param(buf, "28") if removed.hidden?
+    sgr_param(buf, "29") if removed.strikethrough?
+    sgr_param(buf, "1") if attr.bold? && (intensity_off || !cached_attr.bold?)
+    sgr_param(buf, "2") if attr.dim? && (intensity_off || !cached_attr.dim?)
+    sgr_param(buf, "3") if added.cursive?
+    sgr_param(buf, "4") if added.underline?
+    sgr_param(buf, "5") if added.blink?
+    sgr_param(buf, "7") if added.reverse?
+    sgr_param(buf, "8") if added.hidden?
+    sgr_param(buf, "9") if added.strikethrough?
+  end
+
+  # Appends one SGR parameter, inserting the ';' separator when the buffer
+  # already holds a parameter (anything beyond the 2-byte "\e[" framing).
+  private def sgr_param(buf : IO::Memory, param : String) : Nil
+    buf.write_byte 0x3B_u8 if buf.size > 2 # ';'
+    buf << param
+  end
+
+  # Appends the SGR parameter fragment selecting *color*.
+  private def append_color_param(buf : IO::Memory, color : Color, *, foreground : Bool) : Nil
+    if color.default?
+      sgr_param(buf, foreground ? "39" : "49")
+      return
+    end
+
+    case color.mode
+    in .ansi8?
+      sgr_param(buf, foreground ? SGR_FG_ANSI8[color.index] : SGR_BG_ANSI8[color.index])
+    in .ansi256?
+      sgr_param(buf, foreground ? SGR_FG_ANSI256[color.index] : SGR_BG_ANSI256[color.index])
+    in .rgb?
+      sgr_param(buf, foreground ? "38;2;" : "48;2;")
+      buf << DECIMAL[color.r]
+      buf.write_byte 0x3B_u8
+      buf << DECIMAL[color.g]
+      buf.write_byte 0x3B_u8
+      buf << DECIMAL[color.b]
     end
   end
 

@@ -36,6 +36,11 @@ class CaptureTerminal < Termisu::Terminal
     # Don't call super - we don't want to write to real TTY
   end
 
+  def write(data : Bytes, columns_advanced = 0)
+    @writes << String.new(data)
+    # Don't call super - we don't want to write to real TTY
+  end
+
   def flush
     @captured_flush_count += 1
     # Don't call super - we don't want to flush real TTY

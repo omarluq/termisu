@@ -1,4 +1,5 @@
 require "../../spec_helper"
+require "../../../src/termisu_ffi"
 
 private def abi_color(
   mode : UInt8,
@@ -107,6 +108,40 @@ describe Termisu::FFI::Conversions do
     blank.event_type.should eq(Termisu::FFI::EventType::None.value)
     blank.key_char.should eq(-1)
     blank.modifiers.should eq(0_u8)
+  end
+
+  it "writes events in place without pre-zeroing the buffer" do
+    abi = uninitialized Termisu::FFI::ABI::Event
+    dirty = Slice.new(pointerof(abi).as(UInt8*), sizeof(Termisu::FFI::ABI::Event))
+
+    # Every field a reader may touch for the written type must be set even
+    # when the buffer starts dirty, including explicit zeros for absent
+    # optional fields (resize_old_*, mode_previous) and modifiers.
+    dirty.fill(0xAA_u8)
+    partial_resize = Termisu::Event::Resize.new(100, 30, 80, nil)
+    Termisu::FFI::Conversions.write_abi_event(partial_resize, pointerof(abi))
+    abi.event_type.should eq(Termisu::FFI::EventType::Resize.value)
+    abi.modifiers.should eq(0_u8)
+    abi.resize_width.should eq(100)
+    abi.resize_height.should eq(30)
+    abi.resize_has_old.should eq(0_u8)
+    abi.resize_old_width.should eq(0)
+    abi.resize_old_height.should eq(0)
+
+    dirty.fill(0xAA_u8)
+    mode = Termisu::Event::ModeChange.new(Termisu::Terminal::Mode::Canonical)
+    Termisu::FFI::Conversions.write_abi_event(mode, pointerof(abi))
+    abi.event_type.should eq(Termisu::FFI::EventType::ModeChange.value)
+    abi.modifiers.should eq(0_u8)
+    abi.mode_current.should eq(Termisu::Terminal::Mode::Canonical.value.to_u32)
+    abi.mode_has_previous.should eq(0_u8)
+    abi.mode_previous.should eq(0_u32)
+
+    dirty.fill(0xAA_u8)
+    Termisu::FFI::Conversions.write_blank_event(pointerof(abi))
+    abi.event_type.should eq(Termisu::FFI::EventType::None.value)
+    abi.modifiers.should eq(0_u8)
+    abi.key_char.should eq(-1)
   end
 
   it "marshals Preedit text into the inline UTF-8 buffer" do

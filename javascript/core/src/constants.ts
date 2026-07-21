@@ -73,6 +73,13 @@ export const STRUCT = {
     preeditText: 90,
     preeditTextCapacity: 32,
   },
+  cellOp: {
+    size: 40,
+    x: 0,
+    y: 4,
+    codepoint: 8,
+    style: 12,
+  },
 } as const;
 
 const FNV_OFFSET_BASIS = 0xcbf29ce484222325n;
@@ -120,6 +127,11 @@ const STRUCT_LAYOUT_VALUES = [
   STRUCT.event.modeHasPrevious,
   STRUCT.event.preeditLen,
   STRUCT.event.preeditText,
+  STRUCT.cellOp.size,
+  STRUCT.cellOp.x,
+  STRUCT.cellOp.y,
+  STRUCT.cellOp.codepoint,
+  STRUCT.cellOp.style,
 ] as const;
 
 export const STRUCT_LAYOUT_SIGNATURE = STRUCT_LAYOUT_VALUES.reduce(

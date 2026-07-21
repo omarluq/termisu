@@ -102,6 +102,37 @@ module Termisu::FFI
     end
   end
 
+  # Applies `count` cell writes with a single guard + registry fetch.
+  #
+  # Per-op semantics match set_cell: ops rejected by the buffer (out of
+  # bounds, unfittable wide char, zero-width char) are skipped and the call
+  # returns Rejected after processing every op; malformed ops (invalid
+  # codepoint, color mode, or attribute bits) raise and abort the batch with
+  # Error, leaving prior ops applied. `ops` may be null only when count is 0.
+  def self.set_cells(handle : UInt64, ops : ABI::CellOp*, count : UInt64) : Status
+    return invalid_argument_status("ops is null") if ops.null? && count > 0_u64
+
+    with_context(handle) do |context|
+      termisu = context.termisu
+      rejected = 0_u64
+      i = 0_u64
+      while i < count
+        op = ops[i]
+        ch = Conversions.codepoint_to_char(op.codepoint.to_u32!)
+        fg, bg, attr = Conversions.style_from_abi(op.style)
+        rejected += 1 unless termisu.set_cell(op.x, op.y, ch, fg: fg, bg: bg, attr: attr)
+        i += 1
+      end
+
+      if rejected.zero?
+        Status::Ok
+      else
+        ErrorState.set("set_cells rejected #{rejected} of #{count} ops (out of bounds or unsupported codepoint)")
+        Status::Rejected
+      end
+    end
+  end
+
   def self.enable_timer_ms(handle : UInt64, interval_ms : Int32) : Status
     return invalid_argument_status("interval_ms must be > 0") if interval_ms <= 0
 
@@ -166,10 +197,12 @@ module Termisu::FFI
               end
 
       if event
-        out_event.value = Conversions.to_abi_event(event)
+        Conversions.write_abi_event(event, out_event)
         Status::Ok
       else
-        out_event.value = Conversions.blank_event
+        # Timeout: only the None marker fields are written (readers never
+        # touch the rest for a None event -- see Conversions.write_blank_event).
+        Conversions.write_blank_event(out_event)
         Status::Timeout
       end
     end

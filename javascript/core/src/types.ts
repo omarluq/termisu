@@ -40,6 +40,15 @@ export interface CellStyle {
   attr?: number;
 }
 
+// One batched cell write for Termisu.setCells. An omitted style marshals the
+// same bytes as an empty style object (terminal default colors, no attrs).
+export interface CellOp {
+  x: number;
+  y: number;
+  char: string | number;
+  style?: CellStyle;
+}
+
 interface BaseEvent {
   type: EventType;
   modifiers: number;

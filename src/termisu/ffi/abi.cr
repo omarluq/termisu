@@ -23,6 +23,16 @@ module Termisu::FFI
       height : Int32
     end
 
+    # One batched cell write for termisu_set_cells. Field order keeps natural
+    # C alignment padding-free (style is 4-byte aligned at offset 12), so the
+    # 40-byte layout is identical on packed and unpacked compilers.
+    struct CellOp
+      x : Int32
+      y : Int32
+      codepoint : Int32
+      style : CellStyle
+    end
+
     struct Event
       event_type : UInt8
       modifiers : UInt8

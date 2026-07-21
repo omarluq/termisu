@@ -1,5 +1,5 @@
 import { ColorMode, EventType, STRUCT } from "./constants";
-import type { AnyEvent, CellStyle, Size } from "./types";
+import type { AnyEvent, CellOp, CellStyle, Size } from "./types";
 
 const LITTLE_ENDIAN = true;
 const PREEDIT_DECODER = new TextDecoder("utf-8");
@@ -31,13 +31,50 @@ function writeColor(view: DataView, offset: number, color?: CellStyle["fg"]): vo
   view.setUint8(offset + STRUCT.color.b, color?.b ?? 0);
 }
 
-export function createStyleBuffer(style?: CellStyle): ArrayBuffer {
-  const buffer = new ArrayBuffer(STRUCT.cellStyle.size);
-  const view = new DataView(buffer);
-
+// Writes every meaningful field, so a reused scratch view never leaks
+// values from a previous call (untouched padding bytes stay zero).
+export function writeStyle(view: DataView, style?: CellStyle): void {
   writeColor(view, STRUCT.cellStyle.fg, style?.fg);
   writeColor(view, STRUCT.cellStyle.bg, style?.bg);
   view.setUint16(STRUCT.cellStyle.attr, style?.attr ?? 0, LITTLE_ENDIAN);
+}
+
+export function createStyleBuffer(style?: CellStyle): ArrayBuffer {
+  const buffer = new ArrayBuffer(STRUCT.cellStyle.size);
+  writeStyle(new DataView(buffer), style);
+  return buffer;
+}
+
+function opCodepoint(char: string | number): number {
+  if (typeof char === "number") {
+    return char;
+  }
+  const codepoint = char.codePointAt(0);
+  if (codepoint === undefined) {
+    throw new Error("Character must not be empty");
+  }
+  return codepoint;
+}
+
+// Marshals every op into one contiguous termisu_cell_op_t array so a whole
+// frame crosses the FFI boundary with a single pointer.
+export function createCellOpsBuffer(ops: readonly CellOp[]): ArrayBuffer {
+  const buffer = new ArrayBuffer(STRUCT.cellOp.size * ops.length);
+  const view = new DataView(buffer);
+
+  let offset = 0;
+  for (const op of ops) {
+    view.setInt32(offset + STRUCT.cellOp.x, op.x, LITTLE_ENDIAN);
+    view.setInt32(offset + STRUCT.cellOp.y, op.y, LITTLE_ENDIAN);
+    view.setInt32(offset + STRUCT.cellOp.codepoint, opCodepoint(op.char), LITTLE_ENDIAN);
+
+    const styleOffset = offset + STRUCT.cellOp.style;
+    writeColor(view, styleOffset + STRUCT.cellStyle.fg, op.style?.fg);
+    writeColor(view, styleOffset + STRUCT.cellStyle.bg, op.style?.bg);
+    view.setUint16(styleOffset + STRUCT.cellStyle.attr, op.style?.attr ?? 0, LITTLE_ENDIAN);
+
+    offset += STRUCT.cellOp.size;
+  }
 
   return buffer;
 }
@@ -47,7 +84,12 @@ export function createEventBuffer(): ArrayBuffer {
 }
 
 export function readEvent(buffer: ArrayBuffer): AnyEvent {
-  const view = new DataView(buffer);
+  return readEventFrom(new DataView(buffer));
+}
+
+// Returns a freshly allocated event; the view (and its backing buffer) may be
+// a reused scratch that the next native call overwrites.
+export function readEventFrom(view: DataView): AnyEvent {
   const type = view.getUint8(STRUCT.event.eventType) as EventType;
   const modifiers = view.getUint8(STRUCT.event.modifiers);
 
@@ -109,7 +151,7 @@ export function readEvent(buffer: ArrayBuffer): AnyEvent {
       // can't read past the buffer (RangeError) and crash event decoding.
       const rawLen = view.getUint8(STRUCT.event.preeditLen);
       const len = Math.min(rawLen, STRUCT.event.preeditTextCapacity);
-      const bytes = new Uint8Array(buffer, STRUCT.event.preeditText, len);
+      const bytes = new Uint8Array(view.buffer, view.byteOffset + STRUCT.event.preeditText, len);
       return {
         type,
         modifiers,

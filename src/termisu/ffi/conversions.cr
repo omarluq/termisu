@@ -18,10 +18,13 @@ module Termisu::FFI::Conversions
   def self.style_from_ptr(style : Termisu::FFI::ABI::CellStyle*) : {Color, Color, Attribute}
     return {Color.white, Color.default, Attribute::None} if style.null?
 
-    style_value = style.value
-    fg = color_from_abi(style_value.fg)
-    bg = color_from_abi(style_value.bg)
-    attr = attr_from_bits(style_value.attr)
+    style_from_abi(style.value)
+  end
+
+  def self.style_from_abi(style : Termisu::FFI::ABI::CellStyle) : {Color, Color, Attribute}
+    fg = color_from_abi(style.fg)
+    bg = color_from_abi(style.bg)
+    attr = attr_from_bits(style.attr)
     {fg, bg, attr}
   end
 
@@ -57,83 +60,106 @@ module Termisu::FFI::Conversions
   end
 
   def self.to_abi_event(event : Event::Any) : Termisu::FFI::ABI::Event
+    abi = blank_event
+    write_abi_event(event, pointerof(abi))
+    abi
+  end
+
+  # Writes `event` into the caller's struct in place, without zeroing it
+  # first. ABI readers dispatch on event_type and only touch that type's
+  # fields (see readEvent in javascript/core/src/structs.ts): event_type and
+  # modifiers are always read; key_*, mouse_*, resize_*, tick_*, mode_* and
+  # preedit_* only for their own type, with resize_old_*/mode_previous
+  # gated behind their has_* flags. Each writer below sets exactly that
+  # read-set (writing explicit zeros for absent optional fields), so any
+  # other byte in the caller's buffer may keep stale content.
+  def self.write_abi_event(event : Event::Any, out_event : Termisu::FFI::ABI::Event*) : Nil
     case event
     when Event::Key
-      key_event(event)
+      write_key_event(event, out_event)
     when Event::Mouse
-      mouse_event(event)
+      write_mouse_event(event, out_event)
     when Event::Resize
-      resize_event(event)
+      write_resize_event(event, out_event)
     when Event::Tick
-      tick_event(event)
+      write_tick_event(event, out_event)
     when Event::ModeChange
-      mode_change_event(event)
+      write_mode_change_event(event, out_event)
     when Event::Preedit
-      preedit_event(event)
+      write_preedit_event(event, out_event)
     else
-      blank_event
+      write_blank_event(out_event)
     end
   end
 
-  private def self.key_event(event : Event::Key) : Termisu::FFI::ABI::Event
-    out = blank_event
-    out.event_type = Termisu::FFI::EventType::Key.value
-    out.modifiers = event.modifiers.value.to_u8
-    out.key_code = event.key.value
-    out.key_char = event.char.try(&.ord) || -1
-    out
+  # No-event marker (poll timeout): readers only touch event_type and
+  # modifiers for a None event; key_char = -1 is kept as the "no char"
+  # sentinel blank_event has always guaranteed.
+  def self.write_blank_event(out_event : Termisu::FFI::ABI::Event*) : Nil
+    out_event.value.event_type = Termisu::FFI::EventType::None.value
+    out_event.value.modifiers = 0_u8
+    out_event.value.key_char = -1
   end
 
-  private def self.mouse_event(event : Event::Mouse) : Termisu::FFI::ABI::Event
-    out = blank_event
-    out.event_type = Termisu::FFI::EventType::Mouse.value
-    out.modifiers = event.modifiers.value.to_u8
-    out.mouse_x = event.x
-    out.mouse_y = event.y
-    out.mouse_button = event.button.value
-    out.mouse_motion = event.motion? ? 1_u8 : 0_u8
-    out
+  private def self.write_key_event(event : Event::Key, out_event : Termisu::FFI::ABI::Event*) : Nil
+    out_event.value.event_type = Termisu::FFI::EventType::Key.value
+    out_event.value.modifiers = event.modifiers.value.to_u8
+    out_event.value.key_code = event.key.value
+    out_event.value.key_char = event.char.try(&.ord) || -1
   end
 
-  private def self.resize_event(event : Event::Resize) : Termisu::FFI::ABI::Event
-    out = blank_event
-    out.event_type = Termisu::FFI::EventType::Resize.value
-    out.resize_width = event.width
-    out.resize_height = event.height
-    if old_width = event.old_width
-      if old_height = event.old_height
-        out.resize_old_width = old_width
-        out.resize_old_height = old_height
-        out.resize_has_old = 1_u8
-      end
+  private def self.write_mouse_event(event : Event::Mouse, out_event : Termisu::FFI::ABI::Event*) : Nil
+    out_event.value.event_type = Termisu::FFI::EventType::Mouse.value
+    out_event.value.modifiers = event.modifiers.value.to_u8
+    out_event.value.mouse_x = event.x
+    out_event.value.mouse_y = event.y
+    out_event.value.mouse_button = event.button.value
+    out_event.value.mouse_motion = event.motion? ? 1_u8 : 0_u8
+  end
+
+  private def self.write_resize_event(event : Event::Resize, out_event : Termisu::FFI::ABI::Event*) : Nil
+    out_event.value.event_type = Termisu::FFI::EventType::Resize.value
+    out_event.value.modifiers = 0_u8
+    out_event.value.resize_width = event.width
+    out_event.value.resize_height = event.height
+    old_width = event.old_width
+    old_height = event.old_height
+    if old_width && old_height
+      out_event.value.resize_old_width = old_width
+      out_event.value.resize_old_height = old_height
+      out_event.value.resize_has_old = 1_u8
+    else
+      out_event.value.resize_old_width = 0
+      out_event.value.resize_old_height = 0
+      out_event.value.resize_has_old = 0_u8
     end
-    out
   end
 
-  private def self.tick_event(event : Event::Tick) : Termisu::FFI::ABI::Event
-    out = blank_event
-    out.event_type = Termisu::FFI::EventType::Tick.value
-    out.tick_frame = event.frame
-    out.tick_elapsed_ns = event.elapsed.total_nanoseconds.to_i64
-    out.tick_delta_ns = event.delta.total_nanoseconds.to_i64
-    out.tick_missed_ticks = event.missed_ticks
-    out
+  private def self.write_tick_event(event : Event::Tick, out_event : Termisu::FFI::ABI::Event*) : Nil
+    out_event.value.event_type = Termisu::FFI::EventType::Tick.value
+    out_event.value.modifiers = 0_u8
+    out_event.value.tick_frame = event.frame
+    out_event.value.tick_elapsed_ns = event.elapsed.total_nanoseconds.to_i64
+    out_event.value.tick_delta_ns = event.delta.total_nanoseconds.to_i64
+    out_event.value.tick_missed_ticks = event.missed_ticks
   end
 
-  private def self.mode_change_event(event : Event::ModeChange) : Termisu::FFI::ABI::Event
-    out = blank_event
-    out.event_type = Termisu::FFI::EventType::ModeChange.value
-    out.mode_current = event.mode.value.to_u32
+  private def self.write_mode_change_event(event : Event::ModeChange, out_event : Termisu::FFI::ABI::Event*) : Nil
+    out_event.value.event_type = Termisu::FFI::EventType::ModeChange.value
+    out_event.value.modifiers = 0_u8
+    out_event.value.mode_current = event.mode.value.to_u32
     if previous = event.previous_mode
-      out.mode_previous = previous.value.to_u32
-      out.mode_has_previous = 1_u8
+      out_event.value.mode_previous = previous.value.to_u32
+      out_event.value.mode_has_previous = 1_u8
+    else
+      out_event.value.mode_previous = 0_u32
+      out_event.value.mode_has_previous = 0_u8
     end
-    out
   end
 
-  private def self.preedit_event(event : Event::Preedit) : Termisu::FFI::ABI::Event
-    out = blank_event
-    out.event_type = Termisu::FFI::EventType::Preedit.value
+  private def self.write_preedit_event(event : Event::Preedit, out_event : Termisu::FFI::ABI::Event*) : Nil
+    out_event.value.event_type = Termisu::FFI::EventType::Preedit.value
+    out_event.value.modifiers = 0_u8
 
     # Copy UTF-8 bytes into the inline buffer, stopping before any char that
     # would overflow it so the text is never split mid-codepoint. Trailing
@@ -147,11 +173,12 @@ module Termisu::FFI::Conversions
         len += 1
       end
     end
-    out.preedit_text = buf
-    out.preedit_len = len.to_u8
-    out
+    out_event.value.preedit_text = buf
+    out_event.value.preedit_len = len.to_u8
   end
 
+  # Fully zeroed None event, deterministic across every field. The FFI poll
+  # hot path uses write_blank_event instead, which skips the memset.
   def self.blank_event : Termisu::FFI::ABI::Event
     event = uninitialized Termisu::FFI::ABI::Event
     pointerof(event).as(UInt8*).clear(sizeof(Termisu::FFI::ABI::Event))

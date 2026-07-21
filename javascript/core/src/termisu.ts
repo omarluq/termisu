@@ -1,16 +1,30 @@
 import { ptr } from "bun:ffi";
 
-import { EventType, Status } from "./constants";
+import { EventType, STRUCT, Status } from "./constants";
 import { TermisuError } from "./errors";
 import { loadNative, type NativeLibrary } from "./native";
 import {
-  createEventBuffer,
+  createCellOpsBuffer,
   createSizeBuffer,
-  createStyleBuffer,
-  readEvent,
+  readEventFrom,
   readSize,
+  writeStyle,
 } from "./structs";
-import type { AnyEvent, CellStyle, TermisuOptions } from "./types";
+import type { AnyEvent, CellOp, CellStyle, TermisuOptions } from "./types";
+
+const ERROR_DECODER = new TextDecoder();
+
+interface Scratch {
+  view: DataView;
+  pointer: number;
+}
+
+// The view retains the backing buffer, keeping the pointer valid for the
+// lifetime of the scratch.
+function createScratch(size: number): Scratch {
+  const bytes = new Uint8Array(size);
+  return { view: new DataView(bytes.buffer), pointer: ptr(bytes) };
+}
 
 function asBigInt(value: number | bigint): bigint {
   return typeof value === "bigint" ? value : BigInt(value);
@@ -31,6 +45,12 @@ function firstCodepoint(input: string): number {
 export class Termisu {
   private readonly native: NativeLibrary;
   private handle: bigint;
+
+  // Reused marshalling scratch, created on first use: JS is single-threaded
+  // and each native call consumes the buffer before returning, so the bytes
+  // are rewritten in place instead of allocated (and ptr-registered) per call.
+  private styleScratch: Scratch | null = null;
+  private eventScratch: Scratch | null = null;
 
   constructor(options: TermisuOptions = {}) {
     this.native = loadNative(options.libraryPath);
@@ -122,8 +142,12 @@ export class Termisu {
     this.assertAlive();
 
     const codepoint = typeof char === "number" ? char : firstCodepoint(char);
-    const styleBuffer = style ? createStyleBuffer(style) : null;
-    const stylePtr = styleBuffer ? ptr(new Uint8Array(styleBuffer)) : 0;
+    let stylePtr = 0;
+    if (style) {
+      const scratch = this.ensureStyleScratch();
+      writeStyle(scratch.view, style);
+      stylePtr = scratch.pointer;
+    }
 
     const status = asNumber(
       this.native.symbols.termisu_set_cell(this.handle, x, y, codepoint, stylePtr) as
@@ -131,6 +155,24 @@ export class Termisu {
         | bigint
     );
     this.assertStatus(status, "termisu_set_cell");
+  }
+
+  // Batched setCell: marshals all ops into one typed array and crosses the
+  // FFI boundary once, instead of one native call (and guard + handle
+  // lookup) per cell.
+  setCells(ops: readonly CellOp[]): void {
+    this.assertAlive();
+    if (ops.length === 0) return;
+
+    const buffer = createCellOpsBuffer(ops);
+    const status = asNumber(
+      this.native.symbols.termisu_set_cells(
+        this.handle,
+        ptr(new Uint8Array(buffer)),
+        BigInt(ops.length)
+      ) as number | bigint
+    );
+    this.assertStatus(status, "termisu_set_cells");
   }
 
   enableTimer(intervalMs: number): void {
@@ -172,9 +214,9 @@ export class Termisu {
   pollEvent(timeoutMs: number = -1): AnyEvent | null {
     this.assertAlive();
 
-    const buffer = createEventBuffer();
+    const scratch = this.ensureEventScratch();
     const status = asNumber(
-      this.native.symbols.termisu_poll_event(this.handle, timeoutMs, ptr(new Uint8Array(buffer))) as
+      this.native.symbols.termisu_poll_event(this.handle, timeoutMs, scratch.pointer) as
         | number
         | bigint
     );
@@ -184,7 +226,7 @@ export class Termisu {
     }
 
     this.assertStatus(status, "termisu_poll_event");
-    const event = readEvent(buffer);
+    const event = readEventFrom(scratch.view);
     return event.type === EventType.None ? null : event;
   }
 
@@ -198,7 +240,7 @@ export class Termisu {
 
     const firstNul = bytes.indexOf(0);
     const slice = firstNul >= 0 ? bytes.subarray(0, firstNul) : bytes;
-    return new TextDecoder().decode(slice);
+    return ERROR_DECODER.decode(slice);
   }
 
   clearError(): void {
@@ -221,6 +263,20 @@ export class Termisu {
     this.assertAlive();
     const status = asNumber(this.native.symbols[symbolName](this.handle) as number | bigint);
     this.assertStatus(status, symbolName);
+  }
+
+  private ensureStyleScratch(): Scratch {
+    if (!this.styleScratch) {
+      this.styleScratch = createScratch(STRUCT.cellStyle.size);
+    }
+    return this.styleScratch;
+  }
+
+  private ensureEventScratch(): Scratch {
+    if (!this.eventScratch) {
+      this.eventScratch = createScratch(STRUCT.event.size);
+    }
+    return this.eventScratch;
   }
 
   private assertAlive(): void {

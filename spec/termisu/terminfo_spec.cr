@@ -328,6 +328,55 @@ describe Termisu::Terminfo do
     end
   end
 
+  describe "cross-init capability cache" do
+    it "caches the merged caps hash by TERM and hits it on subsequent inits" do
+      original_term = ENV["TERM"]?
+
+      begin
+        ENV["TERM"] = "xterm"
+        Termisu::Terminfo.clear_caps_cache
+        Termisu::Terminfo.cached_caps?("xterm").should be_nil
+
+        first = Termisu::Terminfo.new
+        cached = Termisu::Terminfo.cached_caps?("xterm")
+        cached.should_not be_nil
+
+        second = Termisu::Terminfo.new
+        # A cache hit leaves the stored hash object untouched; a miss would
+        # rebuild and replace it with a new object.
+        Termisu::Terminfo.cached_caps?("xterm").should be(cached)
+
+        second.clear_screen_seq.should eq(first.clear_screen_seq)
+        second.cup_seq.should eq(first.cup_seq)
+        second.bold_seq.should eq(first.bold_seq)
+      ensure
+        Termisu::Terminfo.clear_caps_cache
+        ENV["TERM"] = original_term if original_term
+      end
+    end
+
+    it "keys cached capabilities by TERM so terminals do not collide" do
+      original_term = ENV["TERM"]?
+
+      begin
+        Termisu::Terminfo.clear_caps_cache
+
+        ENV["TERM"] = "linux-unknown"
+        linux_term = Termisu::Terminfo.new
+        ENV["TERM"] = "totally-unknown-terminal"
+        xterm_term = Termisu::Terminfo.new
+
+        linux_term.clear_screen_seq.should eq("\e[H\e[J")
+        xterm_term.clear_screen_seq.should eq("\e[H\e[2J")
+        Termisu::Terminfo.cached_caps?("linux-unknown").should_not be_nil
+        Termisu::Terminfo.cached_caps?("totally-unknown-terminal").should_not be_nil
+      ensure
+        Termisu::Terminfo.clear_caps_cache
+        ENV["TERM"] = original_term if original_term
+      end
+    end
+  end
+
   describe "cursor positioning (cup capability)" do
     it "provides cup_seq accessor" do
       original_term = ENV["TERM"]?

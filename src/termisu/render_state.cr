@@ -38,71 +38,28 @@ struct Termisu::RenderState
 
   # Applies style to renderer, only emitting changes.
   #
-  # Returns true if any escape sequences were emitted.
+  # The full transition is delegated to `Renderer#apply_sgr` in one call so
+  # renderers can coalesce it into a single escape sequence; the default
+  # `apply_sgr` decomposes into the granular color/attribute methods with the
+  # same emission semantics as before.
+  #
+  # Returns true if the style changed (i.e. the renderer was invoked).
   def apply_style(
     renderer : Renderer,
     fg : Color,
     bg : Color,
     attr : Attribute,
   ) : Bool
-    changed = false
+    return false if attr == @attr && fg == @fg && bg == @bg
 
-    # Handle attribute changes
-    if attr != @attr
-      apply_attribute_change(renderer, attr)
-      changed = true
-    end
-
-    # Handle foreground color change
-    if fg != @fg
-      renderer.foreground = fg
-      @fg = fg
-      changed = true
-    end
-
-    # Handle background color change
-    if bg != @bg
-      renderer.background = bg
-      @bg = bg
-      changed = true
-    end
-
-    changed
+    renderer.apply_sgr(fg, bg, attr, @fg, @bg, @attr)
+    @fg = fg
+    @bg = bg
+    @attr = attr
+    true
   end
 
   private def default_state : Tuple(Color?, Color?, Attribute)
     {nil, nil, Attribute::None}
-  end
-
-  private def apply_attribute_change(renderer : Renderer, new_attr : Attribute)
-    reset_if_removing_attrs(renderer, new_attr)
-    apply_new_attributes(renderer, new_attr)
-    @attr = new_attr
-  end
-
-  # Resets all attributes if any are being removed.
-  private def reset_if_removing_attrs(renderer : Renderer, new_attr : Attribute)
-    if (@attr & ~new_attr) != Attribute::None
-      renderer.reset_attributes
-      @fg = nil # Reset clears colors too
-      @bg = nil
-    end
-  end
-
-  # Applies individual attributes that are newly enabled.
-  private def apply_new_attributes(renderer : Renderer, new_attr : Attribute)
-    renderer.enable_bold if needs_attr?(new_attr, Attribute::Bold)
-    renderer.enable_underline if needs_attr?(new_attr, Attribute::Underline)
-    renderer.enable_reverse if needs_attr?(new_attr, Attribute::Reverse)
-    renderer.enable_blink if needs_attr?(new_attr, Attribute::Blink)
-    renderer.enable_dim if needs_attr?(new_attr, Attribute::Dim)
-    renderer.enable_cursive if needs_attr?(new_attr, Attribute::Cursive)
-    renderer.enable_hidden if needs_attr?(new_attr, Attribute::Hidden)
-    renderer.enable_strikethrough if needs_attr?(new_attr, Attribute::Strikethrough)
-  end
-
-  # Checks if an attribute needs to be enabled (present in new but not current).
-  private def needs_attr?(new_attr : Attribute, flag : Attribute) : Bool
-    new_attr.includes?(flag) && !@attr.includes?(flag)
   end
 end

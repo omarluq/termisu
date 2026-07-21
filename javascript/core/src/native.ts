@@ -23,6 +23,7 @@ const SYMBOLS = {
   termisu_hide_cursor: { args: ["u64"], returns: "i32" },
   termisu_show_cursor: { args: ["u64"], returns: "i32" },
   termisu_set_cell: { args: ["u64", "i32", "i32", "u32", "ptr"], returns: "i32" },
+  termisu_set_cells: { args: ["u64", "ptr", "u64"], returns: "i32" },
 
   termisu_enable_timer_ms: { args: ["u64", "i32"], returns: "i32" },
   termisu_enable_system_timer_ms: { args: ["u64", "i32"], returns: "i32" },
