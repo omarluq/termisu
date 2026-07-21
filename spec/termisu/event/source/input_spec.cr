@@ -458,12 +458,18 @@ describe Termisu::Event::Source::Input do
         source.start(channel)
         sleep 20.milliseconds # ensure the fiber is parked in the idle sleep
 
+        fiber = source.@fiber || fail "input fiber not started"
         elapsed = Time.measure do
           source.stop
-          # Give the fiber time to observe the flag and exit its sleep.
-          sleep Termisu::Event::Source::Input::IDLE_SLEEP * 2
+          # Await actual loop termination, not just the cleared flag: a
+          # stalled fiber fails the dead? assertion below after ~200ms.
+          200.times do
+            break if fiber.dead?
+            sleep 1.millisecond
+          end
         end
 
+        fiber.dead?.should be_true
         source.running?.should be_false
         elapsed.should be < 200.milliseconds
         channel.close
