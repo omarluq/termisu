@@ -1,6 +1,49 @@
 require "../../../spec_helper"
 
+# Exposes the private CAS retry loop so specs can pin its contract.
+private class TimerTokenProbe < Termisu::Event::Source::Timer
+  def advance_token : UInt64
+    advance_run_token
+  end
+
+  def current_token : UInt64
+    @run_token.get
+  end
+end
+
 describe Termisu::Event::Source::Timer do
+  describe "#advance_run_token" do
+    it "installs and returns each token sequentially" do
+      probe = TimerTokenProbe.new
+      first = probe.advance_token
+      probe.advance_token.should eq(first + 1)
+      probe.current_token.should eq(first + 1)
+    end
+
+    it "returns only successfully installed tokens under thread contention" do
+      # A failed compare_and_set must retry instead of returning a token that
+      # was never installed: across N threads x M advances every returned token
+      # is unique and the counter lands exactly N*M higher.
+      probe = TimerTokenProbe.new
+      start = probe.current_token
+      thread_count = 8
+      per_thread = 1000
+      results = Array(Array(UInt64)).new(thread_count) { Array(UInt64).new(per_thread) }
+
+      threads = (0...thread_count).map do |i|
+        Thread.new do
+          per_thread.times { results[i] << probe.advance_token }
+        end
+      end
+      threads.each(&.join)
+
+      tokens = results.flatten
+      tokens.size.should eq(thread_count * per_thread)
+      tokens.uniq.size.should eq(thread_count * per_thread)
+      probe.current_token.should eq(start + (thread_count * per_thread).to_u64)
+    end
+  end
+
   describe "#initialize" do
     it "creates with default interval (16ms)" do
       timer = Termisu::Event::Source::Timer.new
