@@ -4,7 +4,6 @@ require "../../spec_helper"
 # Specific to parser tests - uses create_pipe from PipeHelpers.
 private def parse_sequence(bytes : Bytes) : Termisu::Event::Any?
   read_fd, write_fd = create_pipe
-  reader = nil
   begin
     LibC.write(write_fd, bytes, bytes.size)
     reader = Termisu::Reader.new(read_fd)
@@ -627,7 +626,6 @@ end
 # path that immediately follows it.
 private def parse_events(bytes : Bytes, count : Int32) : Array(Termisu::Event::Any?)
   read_fd, write_fd = create_pipe
-  reader = nil
   events = [] of Termisu::Event::Any?
   begin
     LibC.write(write_fd, bytes, bytes.size)

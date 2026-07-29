@@ -9,8 +9,15 @@ targets:
   ameba:
     main: lib/ameba/src/cli.cr
 development_dependencies:
+  # Pinned past the last release: ameba 1.6.4 calls Crystal::Lexer#next_string_array_token,
+  # which Crystal 1.21 removed, so its postinstall aborts `shards install` on 1.21. This
+  # commit carries the 1.21 support and no longer ships a postinstall build step. Requires
+  # Crystal >= 1.19 to *build*, which only the lint job and local dev do; older matrix
+  # versions merely install it (shards warns, does not fail).
+  # TODO: switch back to a version constraint once ameba 1.7.0 is released.
   ameba:
     github: crystal-ameba/ameba
+    commit: cdd58b34b0d8a9c785d67183a7a8f07541549e55
   hace:
     github: ralsina/hace
 license: MIT

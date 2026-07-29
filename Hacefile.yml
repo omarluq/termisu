@@ -65,23 +65,34 @@ tasks:
     always_run: true
     commands: |
       crystal tool format --check
+  ameba:build:
+    description: Rebuild bin/ameba when the pinned linter moves
+    phony: true
+    always_run: true
+    commands: |
+      # bin/ is gitignored, so a binary built from an older pin survives a pull
+      # and lints with different rules than CI, which builds ameba fresh.
+      [ bin/ameba -nt shard.yml ] || shards build ameba
   ameba:
     description: Run Ameba linter
     phony: true
     always_run: true
     commands: |
+      bin/hace ameba:build
       bin/ameba
   ameba:fix:
     description: Run Ameba linter
     phony: true
     always_run: true
     commands: |
+      bin/hace ameba:build
       bin/ameba --fix
   ameba:gen-config:
     description: Run Ameba linter
     phony: true
     always_run: true
     commands: |
+      bin/hace ameba:build
       bin/ameba --gen-config
   clean:
     description: Clean build artifacts

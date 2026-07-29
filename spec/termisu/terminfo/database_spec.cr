@@ -25,14 +25,13 @@ describe Termisu::Terminfo::Database do
       it "returns Bytes when terminal found" do
         # This test depends on system having xterm terminfo
         # Skip if not available
-        begin
-          db = Termisu::Terminfo::Database.new("xterm")
-          data = db.load
-          data.should be_a(Bytes)
-          data.size.should be > 0
-        rescue
-          pending "xterm terminfo not available on this system"
-        end
+
+        db = Termisu::Terminfo::Database.new("xterm")
+        data = db.load
+        data.should be_a(Bytes)
+        data.size.should be > 0
+      rescue
+        pending "xterm terminfo not available on this system"
       end
     end
 
@@ -115,60 +114,50 @@ describe Termisu::Terminfo::Database do
 
   describe "data format" do
     it "returns raw bytes from terminfo file" do
-      begin
-        db = Termisu::Terminfo::Database.new("xterm")
-        data = db.load
-        data.should be_a(Bytes)
-        # Terminfo files have a magic number at start
-        data.size.should be >= 12 # Minimum header size
-      rescue
-        pending "xterm terminfo not available"
-      end
+      db = Termisu::Terminfo::Database.new("xterm")
+      data = db.load
+      data.should be_a(Bytes)
+      # Terminfo files have a magic number at start
+      data.size.should be >= 12 # Minimum header size
+    rescue
+      pending "xterm terminfo not available"
     end
   end
 
   describe "multiple load calls" do
     it "can load same terminal multiple times" do
-      begin
-        db = Termisu::Terminfo::Database.new("xterm")
-        data1 = db.load
-        data2 = db.load
-        data1.should eq(data2)
-      rescue
-        pending "xterm terminfo not available"
-      end
+      db = Termisu::Terminfo::Database.new("xterm")
+      data1 = db.load
+      data2 = db.load
+      data1.should eq(data2)
+    rescue
+      pending "xterm terminfo not available"
     end
   end
 
   describe "common terminals" do
     it "can find linux terminal if available" do
-      begin
-        db = Termisu::Terminfo::Database.new("linux")
-        data = db.load
-        data.should be_a(Bytes)
-      rescue
-        pending "linux terminfo not available"
-      end
+      db = Termisu::Terminfo::Database.new("linux")
+      data = db.load
+      data.should be_a(Bytes)
+    rescue
+      pending "linux terminfo not available"
     end
 
     it "can find screen terminal if available" do
-      begin
-        db = Termisu::Terminfo::Database.new("screen")
-        data = db.load
-        data.should be_a(Bytes)
-      rescue
-        pending "screen terminfo not available"
-      end
+      db = Termisu::Terminfo::Database.new("screen")
+      data = db.load
+      data.should be_a(Bytes)
+    rescue
+      pending "screen terminfo not available"
     end
 
     it "can find tmux terminal if available" do
-      begin
-        db = Termisu::Terminfo::Database.new("tmux")
-        data = db.load
-        data.should be_a(Bytes)
-      rescue
-        pending "tmux terminfo not available"
-      end
+      db = Termisu::Terminfo::Database.new("tmux")
+      data = db.load
+      data.should be_a(Bytes)
+    rescue
+      pending "tmux terminfo not available"
     end
   end
 end

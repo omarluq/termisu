@@ -23,9 +23,14 @@ runs:
         path: |
           lib
           ~/.cache/crystal
-        key: ${{ runner.os }}-shards-${{ hashFiles('shard.lock') }}
+        # shard.lock is gitignored, so hashing it yielded an empty digest: one
+        # constant key per OS, shared across every Crystal version and blind to
+        # dependency changes. That cached a lib/ built by one compiler for all
+        # the others and hid a dependency break for days until the cache expired.
+        # Hash the tracked manifest and scope the key to the compiler instead.
+        key: ${{ runner.os }}-crystal-${{ inputs.crystal-version }}-shards-${{ hashFiles('shard.yml') }}
         restore-keys: |
-          ${{ runner.os }}-shards-
+          ${{ runner.os }}-crystal-${{ inputs.crystal-version }}-shards-
     - name: Install shards dependencies
       if: inputs.install-shards == 'true'
       shell: bash

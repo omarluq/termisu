@@ -297,67 +297,61 @@ describe Termisu::Terminfo::Parser do
 
   describe "real terminfo data" do
     it "can parse actual xterm-256color terminfo if available" do
-      begin
-        db = Termisu::Terminfo::Database.new("xterm-256color")
-        data = db.load
-        parser = Termisu::Terminfo::Parser.new(data)
+      db = Termisu::Terminfo::Database.new("xterm-256color")
+      data = db.load
+      parser = Termisu::Terminfo::Parser.new(data)
 
-        cap_names = ["clear", "civis", "cnorm", "bold", "smul"]
-        result = parser.parse(cap_names)
+      cap_names = ["clear", "civis", "cnorm", "bold", "smul"]
+      result = parser.parse(cap_names)
 
-        result.should be_a(Hash(String, String))
-        result.size.should be > 0
+      result.should be_a(Hash(String, String))
+      result.size.should be > 0
 
-        # Verify they're valid ANSI sequences
-        result.values.each do |value|
-          (value.starts_with?("\e") || value.starts_with?("\033")).should be_true
-        end
-      rescue Termisu::ParseError
-        pending "xterm-256color terminfo parsing failed"
-      rescue
-        pending "xterm-256color terminfo not available"
+      # Verify they're valid ANSI sequences
+      result.values.each do |value|
+        (value.starts_with?("\e") || value.starts_with?("\033")).should be_true
       end
+    rescue Termisu::ParseError
+      pending "xterm-256color terminfo parsing failed"
+    rescue
+      pending "xterm-256color terminfo not available"
     end
 
     it "correctly parses smcup/rmcup for xterm-256color" do
-      begin
-        db = Termisu::Terminfo::Database.new("xterm-256color")
-        data = db.load
+      db = Termisu::Terminfo::Database.new("xterm-256color")
+      data = db.load
 
-        result = Termisu::Terminfo::Parser.parse(data, ["smcup", "rmcup"])
+      result = Termisu::Terminfo::Parser.parse(data, ["smcup", "rmcup"])
 
-        result["smcup"]?.should_not be_nil
-        result["rmcup"]?.should_not be_nil
-        result["smcup"].should contain("\e[?1049")
-        result["rmcup"].should contain("\e[?1049")
-      rescue Termisu::ParseError
-        pending "xterm-256color terminfo parsing failed"
-      rescue
-        pending "xterm-256color terminfo not available"
-      end
+      result["smcup"]?.should_not be_nil
+      result["rmcup"]?.should_not be_nil
+      result["smcup"].should contain("\e[?1049")
+      result["rmcup"].should contain("\e[?1049")
+    rescue Termisu::ParseError
+      pending "xterm-256color terminfo parsing failed"
+    rescue
+      pending "xterm-256color terminfo not available"
     end
   end
 
   describe "required-only decode" do
     it "is byte-identical to a full parse-all-then-filter decode for xterm-256color" do
-      begin
-        data = Termisu::Terminfo::Database.new("xterm-256color").load
-        required = Termisu::Terminfo::Capabilities::REQUIRED_FUNCS +
-                   Termisu::Terminfo::Capabilities::REQUIRED_KEYS
+      data = Termisu::Terminfo::Database.new("xterm-256color").load
+      required = Termisu::Terminfo::Capabilities::REQUIRED_FUNCS +
+                 Termisu::Terminfo::Capabilities::REQUIRED_KEYS
 
-        fast = Termisu::Terminfo::Parser.parse(data, required)
-        reference = reference_parse_all_then_filter(data, required)
+      fast = Termisu::Terminfo::Parser.parse(data, required)
+      reference = reference_parse_all_then_filter(data, required)
 
-        fast.size.should be > 0
-        fast.keys.should eq(reference.keys)
-        reference.each do |name, value|
-          fast[name].to_slice.should eq(value.to_slice)
-        end
-      rescue Termisu::ParseError
-        pending "xterm-256color terminfo parsing failed"
-      rescue
-        pending "xterm-256color terminfo not available"
+      fast.size.should be > 0
+      fast.keys.should eq(reference.keys)
+      reference.each do |name, value|
+        fast[name].to_slice.should eq(value.to_slice)
       end
+    rescue Termisu::ParseError
+      pending "xterm-256color terminfo parsing failed"
+    rescue
+      pending "xterm-256color terminfo not available"
     end
 
     it "matches the reference decode on mock terminfo data" do
@@ -373,60 +367,54 @@ describe Termisu::Terminfo::Parser do
 
   describe "integration with Capabilities" do
     it "can parse all REQUIRED_FUNCS capabilities" do
-      begin
-        db = Termisu::Terminfo::Database.new("xterm")
-        data = db.load
+      db = Termisu::Terminfo::Database.new("xterm")
+      data = db.load
 
-        result = Termisu::Terminfo::Parser.parse(data, Termisu::Terminfo::Capabilities::REQUIRED_FUNCS)
+      result = Termisu::Terminfo::Parser.parse(data, Termisu::Terminfo::Capabilities::REQUIRED_FUNCS)
 
-        result.should be_a(Hash(String, String))
-        result.size.should be > 0
-      rescue Termisu::ParseError
-        pending "xterm terminfo parsing failed"
-      rescue
-        pending "xterm terminfo not available"
-      end
+      result.should be_a(Hash(String, String))
+      result.size.should be > 0
+    rescue Termisu::ParseError
+      pending "xterm terminfo parsing failed"
+    rescue
+      pending "xterm terminfo not available"
     end
 
     it "can parse all REQUIRED_KEYS capabilities" do
-      begin
-        db = Termisu::Terminfo::Database.new("xterm")
-        data = db.load
+      db = Termisu::Terminfo::Database.new("xterm")
+      data = db.load
 
-        result = Termisu::Terminfo::Parser.parse(data, Termisu::Terminfo::Capabilities::REQUIRED_KEYS)
+      result = Termisu::Terminfo::Parser.parse(data, Termisu::Terminfo::Capabilities::REQUIRED_KEYS)
 
-        result.should be_a(Hash(String, String))
-        result.size.should be > 0
-      rescue Termisu::ParseError
-        pending "xterm terminfo parsing failed"
-      rescue
-        pending "xterm terminfo not available"
-      end
+      result.should be_a(Hash(String, String))
+      result.size.should be > 0
+    rescue Termisu::ParseError
+      pending "xterm terminfo parsing failed"
+    rescue
+      pending "xterm terminfo not available"
     end
   end
 
   describe "extended format handling" do
     it "correctly handles extended 32-bit format" do
-      begin
-        db = Termisu::Terminfo::Database.new("xterm-256color")
-        data = db.load
+      db = Termisu::Terminfo::Database.new("xterm-256color")
+      data = db.load
 
-        # Check magic number
-        io = IO::Memory.new(data)
-        magic = io.read_bytes(Int16, IO::ByteFormat::LittleEndian)
+      # Check magic number
+      io = IO::Memory.new(data)
+      magic = io.read_bytes(Int16, IO::ByteFormat::LittleEndian)
 
-        if magic == 542
-          parser = Termisu::Terminfo::Parser.new(data)
-          result = parser.parse(["clear", "bold"])
+      if magic == 542
+        parser = Termisu::Terminfo::Parser.new(data)
+        result = parser.parse(["clear", "bold"])
 
-          result.should be_a(Hash(String, String))
-          result.size.should be > 0
-        end
-      rescue Termisu::ParseError
-        pending "xterm-256color terminfo parsing failed"
-      rescue
-        pending "xterm-256color terminfo not available"
+        result.should be_a(Hash(String, String))
+        result.size.should be > 0
       end
+    rescue Termisu::ParseError
+      pending "xterm-256color terminfo parsing failed"
+    rescue
+      pending "xterm-256color terminfo not available"
     end
   end
 

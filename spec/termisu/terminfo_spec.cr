@@ -40,112 +40,88 @@ describe Termisu::Terminfo do
 
   describe "sequence accessors" do
     it "provides enter_ca_seq accessor" do
-      begin
-        term = Termisu::Terminfo.new
-        term.enter_ca_seq.should be_a(String)
-      rescue
-        pending "Terminfo not available"
-      end
+      term = Termisu::Terminfo.new
+      term.enter_ca_seq.should be_a(String)
+    rescue
+      pending "Terminfo not available"
     end
 
     it "provides exit_ca_seq accessor" do
-      begin
-        term = Termisu::Terminfo.new
-        term.exit_ca_seq.should be_a(String)
-      rescue
-        pending "Terminfo not available"
-      end
+      term = Termisu::Terminfo.new
+      term.exit_ca_seq.should be_a(String)
+    rescue
+      pending "Terminfo not available"
     end
 
     it "provides show_cursor_seq accessor" do
-      begin
-        term = Termisu::Terminfo.new
-        term.show_cursor_seq.should be_a(String)
-      rescue
-        pending "Terminfo not available"
-      end
+      term = Termisu::Terminfo.new
+      term.show_cursor_seq.should be_a(String)
+    rescue
+      pending "Terminfo not available"
     end
 
     it "provides hide_cursor_seq accessor" do
-      begin
-        term = Termisu::Terminfo.new
-        term.hide_cursor_seq.should be_a(String)
-      rescue
-        pending "Terminfo not available"
-      end
+      term = Termisu::Terminfo.new
+      term.hide_cursor_seq.should be_a(String)
+    rescue
+      pending "Terminfo not available"
     end
 
     it "provides clear_screen_seq accessor" do
-      begin
-        term = Termisu::Terminfo.new
-        term.clear_screen_seq.should be_a(String)
-        term.clear_screen_seq.should_not be_empty
-      rescue
-        pending "Terminfo not available"
-      end
+      term = Termisu::Terminfo.new
+      term.clear_screen_seq.should be_a(String)
+      term.clear_screen_seq.should_not be_empty
+    rescue
+      pending "Terminfo not available"
     end
 
     it "provides reset_attrs_seq accessor" do
-      begin
-        term = Termisu::Terminfo.new
-        term.reset_attrs_seq.should be_a(String)
-      rescue
-        pending "Terminfo not available"
-      end
+      term = Termisu::Terminfo.new
+      term.reset_attrs_seq.should be_a(String)
+    rescue
+      pending "Terminfo not available"
     end
 
     it "provides underline_seq accessor" do
-      begin
-        term = Termisu::Terminfo.new
-        term.underline_seq.should be_a(String)
-      rescue
-        pending "Terminfo not available"
-      end
+      term = Termisu::Terminfo.new
+      term.underline_seq.should be_a(String)
+    rescue
+      pending "Terminfo not available"
     end
 
     it "provides bold_seq accessor" do
-      begin
-        term = Termisu::Terminfo.new
-        term.bold_seq.should be_a(String)
-      rescue
-        pending "Terminfo not available"
-      end
+      term = Termisu::Terminfo.new
+      term.bold_seq.should be_a(String)
+    rescue
+      pending "Terminfo not available"
     end
 
     it "provides blink_seq accessor" do
-      begin
-        term = Termisu::Terminfo.new
-        term.blink_seq.should be_a(String)
-      rescue
-        pending "Terminfo not available"
-      end
+      term = Termisu::Terminfo.new
+      term.blink_seq.should be_a(String)
+    rescue
+      pending "Terminfo not available"
     end
 
     it "provides reverse_seq accessor" do
-      begin
-        term = Termisu::Terminfo.new
-        term.reverse_seq.should be_a(String)
-      rescue
-        pending "Terminfo not available"
-      end
+      term = Termisu::Terminfo.new
+      term.reverse_seq.should be_a(String)
+    rescue
+      pending "Terminfo not available"
     end
 
     it "provides enter_keypad_seq accessor" do
-      begin
-        term = Termisu::Terminfo.new
-        term.enter_keypad_seq.should be_a(String)
-      rescue
-        pending "Terminfo not available"
-      end
+      term = Termisu::Terminfo.new
+      term.enter_keypad_seq.should be_a(String)
+    rescue
+      pending "Terminfo not available"
     end
 
     it "provides exit_keypad_seq accessor" do
-      begin
-        term = Termisu::Terminfo.new
-        term.exit_keypad_seq.should be_a(String)
-      rescue
-        pending "Terminfo not available"
-      end
+      term = Termisu::Terminfo.new
+      term.exit_keypad_seq.should be_a(String)
+    rescue
+      pending "Terminfo not available"
     end
   end
 
@@ -184,70 +160,60 @@ describe Termisu::Terminfo do
 
   describe "capability array sizes" do
     it "has 12 function capabilities" do
-      begin
-        term = Termisu::Terminfo.new
-        # Verify all 12 accessors work
-        [
-          term.enter_ca_seq,
-          term.exit_ca_seq,
-          term.show_cursor_seq,
-          term.hide_cursor_seq,
-          term.clear_screen_seq,
-          term.reset_attrs_seq,
-          term.underline_seq,
-          term.bold_seq,
-          term.blink_seq,
-          term.reverse_seq,
-          term.enter_keypad_seq,
-          term.exit_keypad_seq,
-        ].size.should eq(12)
-      rescue
-        pending "Terminfo not available"
-      end
+      term = Termisu::Terminfo.new
+      # Verify all 12 accessors work
+      [
+        term.enter_ca_seq,
+        term.exit_ca_seq,
+        term.show_cursor_seq,
+        term.hide_cursor_seq,
+        term.clear_screen_seq,
+        term.reset_attrs_seq,
+        term.underline_seq,
+        term.bold_seq,
+        term.blink_seq,
+        term.reverse_seq,
+        term.enter_keypad_seq,
+        term.exit_keypad_seq,
+      ].size.should eq(12)
+    rescue
+      pending "Terminfo not available"
     end
   end
 
   describe "escape sequence format" do
     it "returns ANSI escape sequences" do
-      begin
-        term = Termisu::Terminfo.new
+      term = Termisu::Terminfo.new
 
-        # Clear screen should have escape sequence
-        term.clear_screen_seq.should contain("\e")
-      rescue
-        pending "Terminfo not available"
-      end
+      # Clear screen should have escape sequence
+      term.clear_screen_seq.should contain("\e")
+    rescue
+      pending "Terminfo not available"
     end
 
     it "bold capability contains escape sequence" do
-      begin
-        term = Termisu::Terminfo.new
-        term.bold_seq.should contain("\e")
-      rescue
-        pending "Terminfo not available"
-      end
+      term = Termisu::Terminfo.new
+      term.bold_seq.should contain("\e")
+    rescue
+      pending "Terminfo not available"
     end
   end
 
   describe "integration with subsystems" do
     it "integrates with Database for loading" do
-      begin
-        term = Termisu::Terminfo.new
-        # If we get here, Database integration worked
-        term.should be_a(Termisu::Terminfo)
-      rescue
-        pending "Terminfo database not available"
-      end
+      term = Termisu::Terminfo.new
+      # If we get here, Database integration worked
+      term.should be_a(Termisu::Terminfo)
+    rescue
+      pending "Terminfo database not available"
     end
 
     it "integrates with Parser for parsing" do
-      begin
-        term = Termisu::Terminfo.new
-        # Parser should have extracted capabilities
-        term.clear_screen_seq.should be_a(String)
-      rescue
-        pending "Terminfo not available"
-      end
+      term = Termisu::Terminfo.new
+      # Parser should have extracted capabilities
+      term.clear_screen_seq.should be_a(String)
+    rescue
+      pending "Terminfo not available"
     end
 
     it "integrates with Builtin for fallback" do
@@ -264,13 +230,11 @@ describe Termisu::Terminfo do
     end
 
     it "integrates with Capabilities for indices" do
-      begin
-        term = Termisu::Terminfo.new
-        # Capabilities indices should map correctly
-        term.should be_a(Termisu::Terminfo)
-      rescue
-        pending "Terminfo not available"
-      end
+      term = Termisu::Terminfo.new
+      # Capabilities indices should map correctly
+      term.should be_a(Termisu::Terminfo)
+    rescue
+      pending "Terminfo not available"
     end
   end
 
