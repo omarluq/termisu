@@ -1,28 +1,38 @@
 require "./spec_helper"
 
+# Whether this process has a usable controlling terminal.
+#
+# `File.exists?("/dev/tty")` is not enough: the node exists in CI containers and
+# sandboxes that have no controlling terminal, where opening it fails with ENXIO.
+# Opening it is what distinguishes the two, and it is what `Termisu.new` effectively
+# does — so this guard runs the spec below on exactly the machines where it is
+# meaningful, instead of skipping it wherever the node happens to exist.
+private def controlling_tty? : Bool
+  File.open("/dev/tty", "w", &.close)
+  true
+rescue
+  false
+end
+
 describe Termisu do
   it "has a version number" do
     Termisu::VERSION.should_not be_nil
   end
 
   describe ".new" do
-    it "initializes components without errors" do
-      # Note: Full Termisu.new initialization is tested in examples/demo.cr
-      # Unit tests focus on individual components to avoid alternate screen
-      # disruption during test runs
-
-      # Only test if TTY is not available to avoid spec output disruption
-      if !File.exists?("/dev/tty")
+    # Successful initialization is exercised in examples/demo.cr: constructing Termisu
+    # here would switch to the alternate screen and corrupt spec output. What is worth
+    # asserting in-suite is the failure path, and that needs a machine without a
+    # controlling terminal — so the guard is applied when the spec is declared rather
+    # than swallowed at runtime.
+    if controlling_tty?
+      pending "raises IO::Error without a controlling TTY (this process has one)"
+    else
+      it "raises IO::Error without a controlling TTY" do
         expect_raises(IO::Error) do
           Termisu.new
         end
-      else
-        # Skip actual initialization test locally - tested in demo
-        true.should be_true
       end
-    rescue ex
-      # Handle any other errors
-      true.should be_true
     end
   end
 
