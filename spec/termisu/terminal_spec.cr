@@ -624,8 +624,17 @@ describe Termisu::Terminal do
         terminal = CaptureTerminal.new
         terminal.clear_captured
 
-        terminal.with_mode(Termisu::Terminal::Mode.cooked, preserve_screen: true) { }
+        during = ""
+        terminal.with_mode(Termisu::Terminal::Mode.cooked, preserve_screen: true) do
+          during = terminal.output
+        end
 
+        # Sampled inside the block, because the flush count alone does not pin this:
+        # a suspend that wrote the disables and skipped the flush would leave the count
+        # at 1 and pass. What must hold is that nothing was emitted for a mouse this
+        # caller never turned on.
+        during.should_not contain(Termisu::Terminal::MOUSE_DISABLE_SGR)
+        during.should_not contain(Termisu::Terminal::MOUSE_DISABLE_NORMAL)
         terminal.captured_flush_count.should eq 1
       ensure
         terminal.try &.close
