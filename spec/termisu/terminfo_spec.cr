@@ -1,5 +1,12 @@
 require "../spec_helper"
 
+# The accessor examples below are gated on `Terminfo.new` succeeding, and that check
+# runs when they are *declared* — before any example body can set `ENV["TERM"]`. With
+# TERM unset the whole group would silently go pending, so pin a default here instead
+# of inheriting whatever the invoking shell happens to export. Examples that care about
+# a specific TERM still set and restore it themselves.
+ENV["TERM"] ||= "xterm-256color"
+
 describe Termisu::Terminfo do
   describe "#initialize" do
     it "creates a Terminfo instance" do

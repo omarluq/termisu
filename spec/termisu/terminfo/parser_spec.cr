@@ -396,25 +396,21 @@ describe Termisu::Terminfo::Parser do
   end
 
   describe "extended format handling" do
-    if TerminfoHelpers.terminfo_db_available?("xterm-256color")
+    # Gated on the host entry actually being extended, not just present. The magic
+    # check used to sit inside the example around its assertions, so on a machine
+    # whose xterm-256color is standard-format the example ran to completion having
+    # asserted nothing and still reported as a pass.
+    if TerminfoHelpers.terminfo_db_extended?("xterm-256color")
       it "correctly handles extended 32-bit format" do
-        db = Termisu::Terminfo::Database.new("xterm-256color")
-        data = db.load
+        data = Termisu::Terminfo::Database.new("xterm-256color").load
 
-        # Check magic number
-        io = IO::Memory.new(data)
-        magic = io.read_bytes(Int16, IO::ByteFormat::LittleEndian)
+        result = Termisu::Terminfo::Parser.new(data).parse(["clear", "bold"])
 
-        if magic == 542
-          parser = Termisu::Terminfo::Parser.new(data)
-          result = parser.parse(["clear", "bold"])
-
-          result.should be_a(Hash(String, String))
-          result.size.should be > 0
-        end
+        result.should be_a(Hash(String, String))
+        result.size.should be > 0
       end
     else
-      pending "extended 32-bit format handling (no xterm-256color terminfo on this system)"
+      pending "extended 32-bit format handling (no extended-format xterm-256color entry here)"
     end
   end
 

@@ -19,6 +19,17 @@ module TerminfoHelpers
     false
   end
 
+  # Whether *name*'s compiled entry uses the extended 32-bit number format
+  # (magic 542) rather than the legacy 16-bit one (282). Which one a system ships
+  # is a property of how its terminfo was compiled, so specs covering the extended
+  # reader have to check rather than assume.
+  def terminfo_db_extended?(name : String) : Bool
+    data = Termisu::Terminfo::Database.new(name).load
+    IO::Memory.new(data).read_bytes(Int16, IO::ByteFormat::LittleEndian) == 542
+  rescue
+    false
+  end
+
   # Whether `Termisu::Terminfo.new` succeeds for the ambient TERM.
   def terminfo_available? : Bool
     Termisu::Terminfo.new
