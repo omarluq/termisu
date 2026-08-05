@@ -1,0 +1,925 @@
+# Termisu — LLM Reference
+
+**Project:** Pure-Crystal terminal UI library, termbox-style, cell-based double buffering, async event multiplexing, zero runtime dependencies, plus a C ABI for embedding.
+
+**Version:** 0.4.5  •  **Crystal:** >= 1.17.0  •  **License:** MIT  •  **Generated:** 2026-04-22
+
+This file is the canonical context for LLMs working on Termisu. It is dense and file-anchored — every claim cites `file:line`. Read it top-to-bottom once to understand the wiring; jump in by section when working on a specific subsystem.
+
+---
+
+## 0. Orientation map
+
+Four user-facing concerns, one embedding concern:
+
+| Concern | Key files | Role |
+|---|---|---|
+| Rendering | `buffer.cr`, `cell.cr`, `render_state.cr`, `renderer.cr`, `terminal.cr` | Cells → diff → batched SGR/CUP → bytes |
+| Terminal I/O | `tty.cr`, `termios.cr`, `terminal/backend.cr`, `terminal/mode.cr`, `reader.cr` | `/dev/tty`, termios modes, alternate screen, mouse, buffered input |
+| Events | `event/*.cr`, `event/source/*.cr`, `event/poller*.cr`, `input/parser.cr` | One channel, many sources, platform pollers |
+| Capabilities | `terminfo/*.cr`, `terminfo/tparm/*.cr` | `$TERM` lookup + parametrized-string interpreter |
+| Embedding | `ffi.cr`, `ffi/*.cr` | C-callable `termisu_*` functions with opaque handles |
+
+Facade `Termisu::Termisu` (in `src/termisu/termisu.cr`) instantiates every subsystem. User code interacts almost exclusively with the facade.
+
+---
+
+## 1. Top-level ownership graph
+
+```
+Termisu::Termisu              (facade, src/termisu/termisu.cr)
+├── Terminal                  src/termisu/terminal.cr        (implements Renderer)
+│   ├── Terminal::Backend     src/termisu/terminal/backend.cr
+│   │   ├── TTY               src/termisu/tty.cr               (/dev/tty fd)
+│   │   └── Termios           src/termisu/termios.cr           (tcgetattr/tcsetattr)
+│   ├── Terminfo              src/termisu/terminfo.cr
+│   │   ├── Database          src/termisu/terminfo/database.cr (file lookup)
+│   │   ├── Parser            src/termisu/terminfo/parser.cr   (binary format)
+│   │   ├── Capabilities      src/termisu/terminfo/capabilities.cr
+│   │   ├── Builtin           src/termisu/terminfo/builtin.cr  (xterm/linux fallback)
+│   │   └── Tparm             src/termisu/terminfo/tparm*.cr   (stack VM)
+│   ├── Buffer                src/termisu/buffer.cr
+│   │   ├── Cell[]            src/termisu/cell.cr + unicode_width.cr
+│   │   └── RenderState       src/termisu/render_state.cr      (SGR cache)
+│   └── Cursor                src/termisu/terminal/cursor.cr
+├── Reader                    src/termisu/reader.cr            (4 KB poll+read buffer)
+├── Input::Parser             src/termisu/input/parser.cr      (ESC state machine)
+└── Event::Loop               src/termisu/event/loop.cr        (one shared channel)
+    ├── Source::Input         event/source/input.cr            (fiber "termisu-input")
+    ├── Source::Resize        event/source/resize.cr           (SIGWINCH + 100ms poll hybrid)
+    ├── Source::Timer         event/source/timer.cr            (sleep-based)
+    └── Source::SystemTimer   event/source/system_timer.cr
+        └── Poller            event/poller/{linux,kqueue,poll}.cr  (compile-time dispatched)
+
+Termisu::FFI (parallel embedding surface, src/termisu/ffi/*)
+├── Registry                  ffi/registry.cr   (Hash UInt64 → Context, Mutex-guarded)
+├── Context                   ffi/context.cr    (wraps a ::Termisu + Atomic(Bool) closed flag)
+├── Guards                    ffi/guards.cr     (exception → status code translation)
+├── ErrorState                ffi/error_state.cr (thread-local last-error string)
+├── Exports                   ffi/exports.cr    (21 `fun termisu_*` symbols)
+└── Runtime                   ffi/runtime.cr    (ensure_initialized for .so mode)
+```
+
+---
+
+## 2. Complete file index (what's where, why)
+
+### 2.1 Core rendering
+
+| File | Role | Key types/methods |
+|---|---|---|
+| `src/termisu.cr` | Loader (`require "./termisu/*"`) | — |
+| `src/termisu/termisu.cr` | Facade class `Termisu::Termisu` | `set_cell`, `render`, `poll_event`, `suspend`, mode switchers. Instantiates Terminal, Reader, Parser, Event::Loop at `termisu.cr:38-72` |
+| `src/termisu/terminal.cr` | `class Terminal` implementing abstract `Renderer` | Owns Backend, Terminfo, Buffer, Cursor, cached SGR state `@cached_fg/@cached_bg/@cached_attr` (l.36-38). `foreground=`/`background=` emit SGR per color mode (l.129-167). Attribute setters (l.182-249). `render` → `Buffer.render_to` (l.481). `suspend`, `with_mode`, `with_password_mode`, `with_cbreak_mode` implement block-scoped mode switches |
+| `src/termisu/buffer.cr` | Double-buffered cell grid | `@front`/`@back : Array(Cell)`, `@render_state`, `@batch_buffer : IO::Memory`, `@row_non_default_counts`, `@dirty_rows`, `@dirty_row_list`, `@any_dirty` (l.25-32). `set_cell` (l.66) → `set_cell_internal` (l.106-158) handles wide-char leading+continuation pair + overlap clearing. `render_to` (l.212-238) walks dirty rows. `render_row_diff` (l.394-475) skips unchanged cells and batches same-styled runs. `invalidate` (l.200) fills front with NUL sentinels to force full redraw. `resize` (l.265-316) copies min dims, fixes orphan continuations, rebuilds dirty tracking |
+| `src/termisu/cell.cr` | `struct Cell` | Fields: `grapheme : String`, `width : UInt8 (0/1/2)`, `continuation : Bool`, `fg : Color`, `bg : Color`, `attr : Attribute` (l.43-48). Initializer extracts first grapheme cluster, computes width via `UnicodeWidth.grapheme_width` (l.92-108). Default equality drives diff |
+| `src/termisu/renderer.cr` | Abstract `Renderer` interface | `write`, `flush`, `size`, `close`, `move_cursor`, `show_cursor`, `hide_cursor`, `foreground=`, `background=`, `reset_attributes`, `enable_bold`, `enable_underline`, etc. Implemented by Terminal; mock renderers live in `spec/support/mock_renderers.cr` |
+| `src/termisu/render_state.cr` | SGR escape-sequence optimizer | Tracks current `@fg/@bg/@attr` (l.22-28). `apply_style` (l.42-101) compares desired to current, emits only deltas. If any attribute removed, emits `SGR 0` then re-applies active ones. State resets on buffer invalidate (l.208) and on mode switches that clear screen |
+| `src/termisu/unicode_width.cr` | East Asian Wide / grapheme width | `UnicodeWidth.grapheme_width(cluster : String) : UInt8` returns 0/1/2. Handles combining marks (binary search over ranges, l.478-499), CJK wide ranges (block checks, l.668-706), ZWJ sequences, VS15/VS16, regional indicator flags, keycaps (l.71-80, 521-532) |
+| `src/termisu/terminal/cursor.cr` | `struct Cursor` + movement/visibility | `x`, `y`, `visible`, `blink`, `shape` (Block=1/Underline=3/Bar=5). Owned by Terminal as `@cursor`. `move_cursor` uses terminfo `cup`, falls back to `\e[y;xH` (l.79-99). `show_cursor`/`hide_cursor` emit terminfo `civis`/`cnorm` (l.33-44). Ephemeral cursor pattern: hide during render, restore after (l.101-111) |
+| `src/termisu/color.cr` | `struct Color` | Mode discriminator enum (l.40-44): Default/ANSI8/ANSI256/RGB, carrying either index (UInt8) or r/g/b. Named factories: `Color.red`, `Color.bright_red`, `Color.ansi256(N)`, `Color.rgb(r,g,b)`, `Color.from_hex(hex)` |
+| `src/termisu/color/conversions.cr` | Color-space conversions | RGB↔ANSI256 via 6×6×6 cube + grayscale ramp (l.42-54, 114-131). RGB↔ANSI8 via threshold mapping (l.56-63). ANSI→RGB uses lookup tables (l.17-29, 108-111) |
+| `src/termisu/color/palette.cr` | Named-color factory methods | basic (l.9-24) + bright (l.27-48) ANSI colors |
+| `src/termisu/color/validator.cr` | Range checks | Raises `ArgumentError` for invalid index/rgb values (l.9-33) |
+| `src/termisu/color/formatters.cr` | `Color#to_s` debug format | (l.8-17) |
+| `src/termisu/attribute.cr` | `@[Flags] enum Attribute : UInt16` | None=0, Bold=1, Underline=2, Reverse=4, Blink=8, Dim=16, Italic/Cursive=32, Hidden=64, Strikethrough=128. Bitwise OR to combine. Individual SGR codes emitted per bit |
+
+### 2.2 Terminal I/O
+
+| File | Role | Key types/methods |
+|---|---|---|
+| `src/termisu/tty.cr` | `class TTY` wrapping `/dev/tty` fd | `TTY.open` calls `LibC.open("/dev/tty", O_RDWR)` (l.16) + `LibC.isatty` (l.23). Raises `Termisu::Error` if no tty — **no fallback to stdin/stdout**. `fd : Int32` accessor, `close` is idempotent (checks `@fd >= 0`) |
+| `src/termisu/termios.cr` | `class Termios` raw-mode save/restore | Ctor calls `tcgetattr` saving `@original`; `apply!` calls `tcsetattr(TCSANOW)` with `@current` (l.12, 44). `raw!` clears input flags `IGNBRK|BRKINT|PARMRK|ISTRIP|INLCR|IGNCR|ICRNL|IXON` and local flags `ECHO|ECHONL|ICANON|ISIG|IEXTEN`, sets `VMIN=1`/`VTIME=0` (l.56-68). `cooked!` re-enables them (l.74-81). Compile-time struct-size check guards Linux/BSD NCCS difference (l.8-11) |
+| `src/termisu/terminal/mode.cr` | `@[Flags] enum Mode` | Primitives: `None=0`, `Echo=1<<0`, `Canonical=1<<1`, `Signals=1<<2`, `ProcessOutput=1<<3`, `Extended=1<<4` (l.7-13). Named combos (l.16-36): **Raw**=None, **SemiRaw**=Signals, **Cbreak**=Echo|Signals, **Password**=Canonical|Signals|ProcessOutput|Extended, **Cooked**/**FullCooked**=all five |
+| `src/termisu/terminal/backend.cr` | `class Backend` low-level I/O | State: `@tty`, `@termios`, `@mode`, `@alternate_screen`, `@mouse_enabled` (l.14-19). `apply_mode(mode)` translates bitflag → termios c_iflag/c_oflag/c_lflag, calls `@termios.apply!`, returns previous mode (l.142-160). `alternate_screen=` writes `\e[?1049h/l` (l.119-132). `mouse_enabled=` writes all three protocols `\e[?1000h`, `\e[?1002h`, `\e[?1006h` (l.137). `write(data : Bytes)` calls `LibC.write(tty_fd, data, data.size)` — no buffering, partial writes raise (l.95). `close` restores original termios and closes TTY |
+| `src/termisu/reader.cr` | `class Reader` buffered non-blocking input | `@fd`, `@buffer : Bytes (4096)`, `@buffer_pos`, `@buffer_len` (l.13-17). `read_char` blocks via `LibC.poll` no-timeout, refills buffer via `LibC.read` (l.52-74). `read_char_available` uses poll timeout 0. EINTR retried in tight loop (l.63-70). Not thread-safe, but fiber-safe (blocking poll yields) |
+
+### 2.3 Event system
+
+| File | Role | Key types/methods |
+|---|---|---|
+| `src/termisu/event.cr` | `alias Event::Any = Key \| Mouse \| Resize \| Tick \| ModeChange` (l.41) | Module body empty; file requires `./event/*` and `./event/source/*` |
+| `src/termisu/event/key.cr` | `struct Event::Key` | `key : Input::Key`, `modifiers : Input::Modifier`. Predicates: `ctrl?`/`alt?`/`shift?`/`meta?` delegate to modifiers; shorthand `ctrl_c?`/`ctrl_d?`/`ctrl_z?`/`ctrl_q?` (l.71-73); `char : Char?` → `key.to_char` (l.68) |
+| `src/termisu/event/mouse.cr` | `struct Event::Mouse` | Fields: `x`, `y`, `button : Button`, `modifiers`, `motion : Bool`. Nested enum `Button`: None/Left/Middle/Right/WheelUp/WheelDown/WheelLeft/WheelRight/Release/Button4/Button5. `Button.from_cb(cb)` (l.78-100): `WHEEL_BIT=64` bit-6 selects wheel, `BUTTON_MASK=3` low-2 selects button. Predicates `press?`, `wheel?` (l.133, 137) |
+| `src/termisu/event/resize.cr` | `struct Event::Resize` | `width`, `height`, `old_width : Int32?`, `old_height : Int32?`. `changed?` returns true if prev nil or differ (l.43-49) |
+| `src/termisu/event/tick.cr` | `struct Event::Tick` | `elapsed : Time::Span`, `delta : Time::Span`, `frame : UInt64`, `missed_ticks : UInt64 = 0`. Docstring at l.44-46 specifies: SystemTimer reports kernel-level drops + channel backpressure; sleep-based Timer reports only channel backpressure |
+| `src/termisu/event/mode_change.cr` | `struct Event::ModeChange` | `mode : Terminal::Mode`, `previous_mode : Terminal::Mode?`. Predicates: `to_raw?` (l.35), `from_raw?` (l.38-42), `changed?` (l.52-56), `to_user_interactive?` (l.62), `from_user_interactive?` (l.66-70) |
+| `src/termisu/event/source.cr` | Abstract `class Event::Source` | Abstract: `start(Channel(Event::Any))`, `stop`, `running?`, `name`. Protected helpers: `send_nonblocking(output, event) : Bool` using `select/else` (l.82-89), `next_pending_missed(delivered, missed)` for backpressure accounting (l.91-93). Invariant: all impls use `Atomic(Bool)` + `compare_and_set` for idempotent lifecycle |
+| `src/termisu/event/loop.cr` | `class Event::Loop` multiplexer | One shared `Channel(Event::Any)` cap `DEFAULT_BUFFER_SIZE=32` (l.53). `@running : Atomic(Bool)`, `@sources : Array(Source)` (l.58-60). `add_source`: append, if running call `source.start(@output)` — hot-add. `start` CAS-flips then `source.start(@output)` on each (l.116). `stop` CAS-flips, `source.stop` on each, `sleep SHUTDOWN_TIMEOUT_MS/10` + `Fiber.yield`, closes channel. Exposes `getter output : Channel(Any)` (l.177). **Note:** `poll_event` and `each_event` live on the facade, not here — they read from `loop.output` |
+| `src/termisu/event/source/input.cr` | `class Source::Input` | `@running : Atomic(Bool)`, `@reader`, `@parser : Input::Parser`. `start` spawns named fiber `"termisu-input"` running `run_loop`. Loop drains up to `MAX_DRAIN_PER_CYCLE=64` events per cycle via `@parser.poll_event(0)`, each `output.send(event)` is **blocking** — backpressure blocks this fiber. After drain: `Fiber.yield` if emitted, else `sleep IDLE_SLEEP=1ms` (l.99-127). Graceful close on `Channel::ClosedError` |
+| `src/termisu/event/source/resize.cr` | `class Source::Resize` hybrid detector | `Signal::WINCH.trap` handler (l.174-178) flips `@signal_received : Atomic(Bool)` (signal-safe, non-blocking). Poll loop at `DEFAULT_POLL_INTERVAL=100ms` (l.186): `@signal_received.swap(false)`; if signaled skip sleep else `sleep @poll_interval`. Generation counter `@generation : Atomic(Int32)` stales in-flight fibers on stop+restart. `check_and_emit_resize` calls `@size_provider.call` (proc wrapping `backend.size` which `ioctl TIOCGWINSZ`) and compares against `@last_width`/`@last_height`. Stop resets `Signal::WINCH` |
+| `src/termisu/event/source/timer.cr` | `class Source::Timer` sleep-based | `run_loop` (l.118) calls `sleep @interval`; computes `elapsed`, `delta` from monotonic clock; uses `send_nonblocking` (inherited). Channel-full ⇒ `pending_missed += 1` via `next_pending_missed`. `interval=` setter (l.67) takes effect on next sleep. No kernel drop detection |
+| `src/termisu/event/source/system_timer.cr` | `class Source::SystemTimer` kernel-based | Uses `Event::Poller.create` (l.91); `@timer_handle = poller.add_timer(@interval, repeating: true)` (l.93). `run_loop` (l.129) blocks on `poller.wait` (epoll_wait/kevent). Reads `result.timer_expirations` — kernel's count of firings since last read. `missed_ticks = (expirations - 1) + pending_missed` (l.219). `interval=` calls `poller.modify_timer` (live kernel update, l.68-72). Stop-race safety: poller.close makes `poller.wait` raise `IO::Error`; re-raise only if `@running` still true and `wait_token == @run_token` (l.159-166) |
+
+### 2.4 Platform pollers
+
+| File | Role | Key types/methods |
+|---|---|---|
+| `src/termisu/event/poller.cr` | Abstract `class Event::Poller` | Contract: `register_fd(fd, FDEvents) : Nil`, `unregister_fd(fd) : Nil`, `add_timer(Time::Span, repeating : Bool) : TimerHandle`, `modify_timer(TimerHandle, Time::Span) : Nil`, `remove_timer(TimerHandle) : Nil`, `wait : PollResult?`, `wait(Time::Span) : PollResult?`, `close`. Inner types: `FDEvents` (@[Flags] Read\|Write\|Error), `TimerHandle` (opaque UInt64), `PollResult` struct. `Poller.create` (l.189-197) compile-time picks Linux/Kqueue/Poll by OS flag |
+| `src/termisu/event/poller/linux.cr` | `Poller::Linux` (epoll + timerfd) | `{% if flag?(:linux) %}` guard (l.22). `epoll_create1(EPOLL_CLOEXEC)` (l.49). Level-triggered `EPOLLIN` (no ET). `MAX_EVENTS=16` (l.30) but only `events[0]` consumed per wait. Timer: one `timerfd_create(CLOCK_MONOTONIC, TFD_NONBLOCK\|TFD_CLOEXEC)` per timer, `arm_timerfd` sets it_value + it_interval (kernel auto-rearms for repeating), added to same epoll fd with `EPOLLIN`. `@fd_to_timer : Hash(Int32, UInt64)` maps fd→id. `read_timerfd` reads 8-byte expiration count (l.244) with EINTR/EAGAIN handling. Timeout: `-1` for infinite, else `total_milliseconds.to_i` |
+| `src/termisu/event/poller/kqueue.cr` | `Poller::Kqueue` | `{% if flag?(:darwin) \|\| flag?(:freebsd) \|\| flag?(:openbsd) %}` guard (l.22). `LibC.kqueue` single syscall. `apply_changes` calls `LibC.kevent(@kq, changes, changes.size, nil, 0, nil)` changelist-only (l.274-283), EINTR retried. `EVFILT_READ`/`EVFILT_WRITE` for fds. **Timers use `EVFILT_TIMER` directly — no extra fd**. `EV_ONESHOT` added for non-repeating. Interval passed as ms in `change.data`. Expiration count from `event.data`, clamped to min 1. FreeBSD/OpenBSD require custom bindings from `lib_c/kqueue.cr`; macOS uses stdlib `c/sys/event` |
+| `src/termisu/event/poller/poll.cr` | `Poller::Poll` (fallback) | Always compiled (no guard) — it's the `else` branch. `@fds : Array(System::Poll::Pollfd)`. Flags: `POLLIN`/`POLLOUT` registration; `POLLERR\|POLLNVAL\|POLLHUP` all map to `FDError` (l.309-323). **Software timers**: `TimerState` records `next_deadline : MonotonicTime`. `calculate_timeout` (l.202) = min(user deadline, earliest timer deadline). `check_expired_timers` computes missed expirations via `calculate_expirations` (l.273-278). Repeating: `state.reset` (new deadline = now + interval). EINTR retry subtracts elapsed time from remaining (l.283-298) |
+| `src/termisu/system/poll.cr` | `lib Termisu::System::Poll` | Thin LibC-style bindings: struct `Pollfd {fd, events, revents}`, `alias NfdsT = LibC::ULong`, `fun poll(fds*, nfds, timeout : Int32) : Int32`. Constants POLLIN=0x0001, POLLOUT=0x0004, POLLERR=0x0008, POLLHUP=0x0010, POLLNVAL=0x0020. Scoped to avoid collision with stdlib |
+| `src/termisu/lib_c/kqueue.cr` | `lib LibC` supplement | `{% if flag?(:freebsd) \|\| flag?(:openbsd) %}` only. Adds `fun kqueue : Int32` and `fun kevent(...)` — stdlib omits these on *BSD. macOS uses stdlib `c/sys/event` (kqueue.cr:24) |
+| `src/termisu/time_compat.cr` | Crystal 1.19 polyfill | `compare_versions` macro (l.10): ≥1.19 → `alias MonotonicTime = Time::Instant`, `monotonic_now = Time.instant`; <1.19 → `alias MonotonicTime = Time::Span`, `monotonic_now = Time.monotonic`. Unified callers: `poller/poll.cr`, `event/source/*` |
+
+### 2.5 Input parsing
+
+| File | Role | Key types/methods |
+|---|---|---|
+| `src/termisu/input.cr` | Module loader | `require "./input/*"` |
+| `src/termisu/input/key.cr` | `enum Input::Key` 177 values | All letters as `UpperA..UpperZ` + `LowerA..LowerZ`, `Num0..Num9`, 21 symbol keys (`Backtick` to `Question`), control keys (Space/Tab/Enter/Backspace/Escape), arrows, navigation (Home/End/PageUp/PageDown/Insert/Delete), F1..F24, enhanced-only (CapsLock/ScrollLock/NumLock/PrintScreen/Pause/BackTab/Unknown). Predicates: `letter?` (l.208), `digit?` (l.214), `function_key?` (l.219), `navigation?` (l.224), `printable?` (l.229). Macro-generated `a?..z?` predicates match both cases (l.244-248). `Key.from_char(c)` / `Key#to_char` (l.183, 195). `KeySymbolMaps` (l.254) holds lazy class-var hashes for symbol↔key mapping |
+| `src/termisu/input/modifier.cr` | `@[Flags] enum Modifier : UInt8` | `None=0`, `Shift=1`, `Alt=2`, `Ctrl=4`, `Meta=8` (l.16-31). **No Super/Hyper**. `from_xterm_code(code)` XTerm encoding (l.36): `code = 1 + shift + alt*2 + ctrl*4 + meta*8`. `from_mouse_cb(cb)` mouse Cb encoding with different bit positions (l.52): MOUSE_SHIFT=4, MOUSE_ALT=8, MOUSE_CTRL=16 |
+| `src/termisu/input/parser.cr` | `class Input::Parser` ESC state machine | Entry: `poll_event(timeout_ms = -1) : Event::Any?` (l.118) — `@reader.wait_for_data`, `@reader.read_byte`, dispatch to `parse_byte`. Method-dispatch, not state-enum. See §5 below |
+
+### 2.6 Terminfo
+
+| File | Role | Key types/methods |
+|---|---|---|
+| `src/termisu/terminfo.cr` | `class Terminfo` | Ctor chain (l.42-66): `load_from_database` → `fill_missing_with_builtins` → `cache_frequent_capabilities`. Caches 12 hot caps as instance vars (`@cached_cup`, `@cached_setaf`, l.29-41). `get_cap(name)` = `@caps.fetch(name, "")` (l.97). `process_param_cap(cap, name, *params)` calls `Tparm.process` (l.238, 245). `cursor_position_seq(row, col)` → `process_param_cap(@cached_cup, "cup", row, col)` (l.158) |
+| `src/termisu/terminfo/database.cr` | `class Database` | Search order (l.56-73): `$TERMINFO`, `~/.terminfo`, `$TERMINFO_DIRS` (`:` sep, empty = `/usr/share/terminfo`), `/lib/terminfo`, `/usr/local/share/terminfo`, `/usr/share/terminfo`. `try_path` (l.76) tries two schemes: Unix `<base>/<first-char>/<term>` and Darwin hex `<base>/<hex>/<term>` |
+| `src/termisu/terminfo/parser.cr` | `class Parser` (binary format) | `MAGIC=0o432` (16-bit numbers), `EXTENDED_MAGIC=542` (32-bit numbers) (l.40-41). Header: 12 bytes, 6 × Int16 LE `[magic, names_len, bools_count, nums_count, strings_count, table_size]` (l.210). Booleans section word-aligned (1 pad if `names_len+bools_len` odd). `str_offset = 12 + names_len + bools_len_aligned + number_size * nums_count`; `table_offset = str_offset + 2 * strings_count` (l.221). Strings: offset table of Int16 LE, −1 = absent, else absolute = `table_offset + offset`. Sanity limits: names ≤ 4096, sections ≤ 512 each, table ≤ 65536. Errors: `ParseError` with type enum (InvalidMagic/TruncatedData/InvalidHeader/InvalidOffset/CorruptedString) |
+| `src/termisu/terminfo/capabilities.cr` | 414-entry string-cap order | `STRING_CAPS : Array(String)` in ncurses `term.h` order (l.25-68) — index == binary strings-section index. `@@string_cap_indices : Hash(String, Int32)?` lazy-built (l.134). `REQUIRED_FUNCS` (28 caps) and `REQUIRED_KEYS` (22 caps) narrow extraction to 50 actually-used caps (l.73-120) |
+| `src/termisu/terminfo/builtin.cr` | Hardcoded xterm/linux fallback | Two families: `name.includes?("linux")` picks Linux (l.126), else xterm. Each has `FUNCS[28]` + `KEYS[22]`. `fill_missing_with_builtins` uses `@caps[name] \|\|= builtin` — DB wins (l.91). Linux lacks alternate-screen/keypad; Linux F1-F5 = `\e[[A..\e[[E` (matched by parser's `LINUX_CONSOLE_KEYS`) |
+| `src/termisu/terminfo/tparm.cr` | Entry | `Tparm.process(format, *params)` → `Processor.new(format, [params...]).run` (l.58-67) |
+| `src/termisu/terminfo/tparm/processor.cr` | Stack VM | State: `@format`, `@params : Array(Int64)`, `@stack : Array(Int64)` (cap 8), `@output : IO::Memory` (cap 32), `@pos`. `@@static_storage : Hash(Char, Int64)` shared across calls. Byte scan; `%` → `process_escape` which dispatches via `Operations::BINARY` hash then `dispatch_*` methods (l.57-143) |
+| `src/termisu/terminfo/tparm/operations.cr` | Binary ops | `BINARY : Hash(Char, Proc(Int64, Int64, Int64))` for `+-*/m&\|^=<>AO` (logical AND/OR). Division/mod guard zero. Also: `OUTPUT_OPS`, `VARIABLE_OPS`, `CONSTANT_OPS`, `SPECIAL_OPS` sets (l.24-55) |
+| `src/termisu/terminfo/tparm/conditional.cr` | `%? cond %t then %e else %;` | `process_conditional` (l.9): `skip_to_then` scans evaluating until `%t`, pops result, either `process_branch`+`skip_branch` or inverse. Nesting counter increments on `%?`, decrements on `%;` — `%e` only effective at depth 1 (l.94-113) |
+| `src/termisu/terminfo/tparm/variables.cr` | Parameter + variable ops | `%p1..%p9` (1-indexed, l.7), `%Pa..%Pz` dynamic / `%PA..%PZ` static, `%'c'` (char const → ASCII, l.41), `%{nn}` (scan to `}`, l.49), `%i` (increment params[0]+[1] in place, l.61) |
+| `src/termisu/terminfo/tparm/output.cr` | Output verbs | `%d` (l.14), `%c` (l.7), `%s` (l.19), `%l` (push length, l.24), `%!` (logical not, l.29), `%~` (bitwise not, l.35). All `@[AlwaysInline]` |
+
+### 2.7 FFI / C ABI
+
+| File | Role | Key types/methods |
+|---|---|---|
+| `src/termisu/ffi.cr` | Loader | Loads 15 submodules in order (l.5-22). **Always compiled — no opt-out** |
+| `src/termisu/ffi/version.cr` | `ABI_VERSION = 1_u32` | Exposed via `termisu_abi_version()` |
+| `src/termisu/ffi/status.cr` | `enum Status : Int32` | Ok=0, Timeout=1, InvalidArgument=2, InvalidHandle=3, Rejected=4, Error=5 |
+| `src/termisu/ffi/event_type.cr` | `enum EventType : UInt8` | None=0, Key=1, Mouse=2, Resize=3, Tick=4, ModeChange=5 |
+| `src/termisu/ffi/color_mode.cr` | `enum ColorMode : UInt8` | Default=0, Ansi8=1, Ansi256=2, Rgb=3 |
+| `src/termisu/ffi/abi.cr` | C struct definitions | `Color`, `Event` tagged union, `Size`, `Style`. Relied upon by conversions/exports |
+| `src/termisu/ffi/layout.cr` | Layout signature | FNV-1a hash over `sizeof` + `offsetof` of every ABI field (l.2-51). `signature() : UInt64` (l.45-50) — C caller compares against compile-time constant to detect ABI mismatch |
+| `src/termisu/ffi/context.cr` | `class Context` | Wraps a `::Termisu` plus `@closed : Atomic(Bool)` (l.1-22). `close` uses CAS for idempotency (l.11-20) |
+| `src/termisu/ffi/registry.cr` | Handle table | `@@contexts : Hash(UInt64, Context)`, `@@lock : Mutex`, `@@next_handle : UInt64` (l.2-5). `insert` returns monotonic handle under mutex (l.6-13). `fetch(handle)` mutex-guarded lookup (l.15-17). `delete(handle)` (l.19-21) |
+| `src/termisu/ffi/runtime.cr` | Bootstrap for .so mode | `ensure_initialized` (l.9-36) double-checked with `Atomic(Bool)`. First call: `GC.init`, `Crystal.init_runtime`, `Crystal.main_user_code` (l.22-26). Executable mode marks bootstrapped at startup; shared-library mode must call at every entry point |
+| `src/termisu/ffi/error_state.cr` | Thread-local last error | Uses `Crystal::ThreadLocalValue(String)` (l.4). `current`/`set`/`clear`/`format(ex)` (l.6-22) |
+| `src/termisu/ffi/guards.cr` | Exception shield | `with_error_fallback(fallback) { ... }` catches all, stores `ErrorState.set(format(ex))`, returns fallback (l.14-21). Convenience wrappers: `safe_handle` (fallback 0), `safe_status` (fallback Status::Error), `safe_u8`. **Crystal exceptions never cross FFI boundary** |
+| `src/termisu/ffi/conversions.cr` | Crystal ↔ C | `codepoint_to_char(UInt32) : Char` (l.12-16) raises on invalid Unicode. `color_from_abi(struct) : Color` unpacks ColorMode byte (l.28-41). `attr_from_bits(UInt16) : Attribute` unpacks bitmask (l.43-57). `to_abi_event(Event::Any) : ABI::Event` dispatches per variant (l.59-74); helpers `to_abi_event_key` (76), `_mouse` (85), `_resize` (96), `_tick` (111), `_mode_change` (121). `blank_event` (132-139) zero-inits |
+| `src/termisu/ffi/core.cr` | Crystal-side implementations | `create(sync_updates) : UInt64` (l.2-5), `destroy(handle)` (l.7-14), `close(handle)` (l.16-21), `render` (l.56-61), `set_cell` (l.91-103), plus all other ops. Each uses `with_context(handle) { |ctx| ... }` (l.204-208) to safely look up registered context |
+| `src/termisu/ffi/exports.cr` | 21 `fun termisu_*` symbols | See §9 below for the full surface |
+
+### 2.8 Support modules
+
+| File | Role | Key types/methods |
+|---|---|---|
+| `src/termisu/error.cr` | Exception hierarchy | `Termisu::Error < Exception` (l.2-3). `Termisu::IOError < Error` with `getter errno : Errno` + factory `select_failed`, `read_failed` (l.9-26). `Termisu::ParseError < Error` with `enum Type` (InvalidMagic/TruncatedData/InvalidHeader/InvalidOffset/CorruptedString), `getter type, details` + factories (l.35-80) |
+| `src/termisu/log.cr` | Structured logging | 8 levels: trace/debug/info/notice/warn/error/fatal/none (l.97-106). Env: `TERMISU_LOG_LEVEL` (default debug, l.144), `TERMISU_LOG_FILE` (default `/tmp/termisu.log`, l.154), `TERMISU_LOG_SYNC` (default false, l.162). Async path uses `SafeFileIO` wrapper to swallow post-close writes (l.54-80). `close` yields 3× to drain async queue (l.189-194). 8 component sources: Terminal, Buffer, Reader, Render, Input, Color, Terminfo, Event (l.215-223) |
+| `src/termisu/version.cr` | Compile-time shard.yml parse | Macro reads `shard.yml`, splits on `-` for state, splits numbers on `.`. Exposes `VERSION`, `VERSION_MAJOR`, `VERSION_MINOR`, `VERSION_PATCH`, `VERSION_STATE` (l.8-33) |
+
+---
+
+## 3. Public Crystal API (what user code calls)
+
+### 3.1 Lifecycle
+
+```crystal
+termisu = Termisu.new                        # Raw + alt screen; hides cursor
+# ... do stuff
+termisu.close                                # ALWAYS in ensure; restores termios + screen
+```
+
+Implicit side effects of `Termisu.new` (`termisu.cr:38-72`):
+1. `Terminal.new` — opens /dev/tty, saves termios, loads terminfo for `$TERM`, builds Buffer sized to `ioctl TIOCGWINSZ`
+2. `Reader.new(@terminal.infd)` — 4 KB input buffer
+3. `Input::Parser.new(@reader)` — ESC state machine
+4. `Event::Loop.new` with Source::Input + Source::Resize (Timer opt-in)
+5. `@terminal.enable_raw_mode` — termios clobber
+6. `@event_loop.start` — spawns fibers
+7. `@terminal.enter_alternate_screen` — `\e[?1049h`
+
+### 3.2 Rendering
+
+```crystal
+termisu.set_cell(x, y, 'A', fg: Color.red, bg: Color.black, attr: Attribute::Bold)
+termisu.set_cell(x, y, "東", fg: Color.green)     # wide char (width 2), creates continuation cell
+termisu.clear                                    # fills back buffer with space cells
+termisu.render                                   # diff render (default)
+termisu.sync                                     # force full redraw (use after resize/mode switch)
+```
+
+Performance note: `render` is O(dirty rows × width) in the worst case, but each unchanged cell is skipped and consecutive same-style cells share one SGR emission. `sync` invalidates the front buffer, triggering full re-emit on next `render`.
+
+### 3.3 Cursor
+
+```crystal
+termisu.set_cursor(x, y)           # move
+termisu.hide_cursor                # \e[?25l
+termisu.show_cursor                # \e[?25h
+```
+
+### 3.4 Events
+
+```crystal
+# Blocking
+event = termisu.poll_event
+
+# With timeout (Int ms or Time::Span)
+event = termisu.poll_event(100)
+event = termisu.poll_event(100.milliseconds)
+
+# Non-blocking
+event = termisu.try_poll_event
+
+# Iterator (preferred for animation-free apps)
+termisu.each_event do |event|
+  case event
+  when Termisu::Event::Key
+    break if event.key.escape?
+  when Termisu::Event::Mouse
+    termisu.set_cell(event.x, event.y, '*')
+  when Termisu::Event::Resize
+    termisu.sync
+  when Termisu::Event::Tick
+    update_animation(event.delta)
+  when Termisu::Event::ModeChange
+    # Terminal mode changed (e.g., from suspend)
+  end
+  termisu.render
+end
+```
+
+### 3.5 Timers
+
+```crystal
+termisu.enable_timer(16.milliseconds)        # Sleep-based, portable, jittery
+termisu.enable_system_timer(16.milliseconds) # Kernel: timerfd on Linux, EVFILT_TIMER on BSD, poll deadline elsewhere
+termisu.timer_interval = 8.milliseconds      # Live change
+termisu.disable_timer
+termisu.timer_enabled?
+```
+
+`missed_ticks` meaning on each backend:
+- **Sleep timer:** channel-full drops only (since fiber actually slept the interval)
+- **SystemTimer:** `(kernel_expirations - 1) + channel_drops` — detects when process was too busy to drain the timer fd
+
+### 3.6 Terminal modes
+
+```crystal
+termisu.suspend { system("vim", "file.txt") }   # Cooked + exit alt screen; full restore on block exit
+
+password = termisu.with_password_mode do        # Canonical + no echo
+  print "Password: "
+  gets.try(&.chomp)
+end
+
+char = termisu.with_cbreak_mode do              # Char-by-char + echo + signals
+  STDIN.read_char
+end
+
+custom = Terminal::Mode::Echo | Terminal::Mode::Signals
+termisu.with_mode(custom) { ... }               # Arbitrary bitmask
+
+termisu.raw_mode?                               # => true/false
+termisu.current_mode                            # => Terminal::Mode?
+termisu.alternate_screen?                       # => true/false
+```
+
+Mode switches emit `Event::ModeChange` so you can react in the event loop.
+
+### 3.7 Mouse / keyboard enhancements
+
+```crystal
+termisu.enable_mouse                  # Emits \e[?1000h \e[?1002h \e[?1006h (X10 + button-event + SGR)
+termisu.disable_mouse
+termisu.enable_enhanced_keyboard      # Kitty protocol: distinguishes Tab from Ctrl+I, reports all modifiers
+termisu.disable_enhanced_keyboard
+```
+
+### 3.8 Colors
+
+```crystal
+Color.red                  # ANSI8 index 1
+Color.bright_red           # ANSI8 bright
+Color.ansi256(208)         # ANSI256 index
+Color.rgb(255, 128, 64)    # TrueColor
+Color.from_hex("#FF8040")
+Color.default              # "reset foreground" (SGR 39/49)
+
+color.to_rgb               # downcast/upcast conversions
+color.to_ansi256
+color.to_ansi8
+```
+
+### 3.9 Attributes
+
+```crystal
+Attribute::Bold
+Attribute::Dim
+Attribute::Italic          # aka Cursive
+Attribute::Underline
+Attribute::Blink
+Attribute::Reverse
+Attribute::Hidden
+Attribute::Strikethrough
+combined = Attribute::Bold | Attribute::Underline
+```
+
+### 3.10 Key matching
+
+```crystal
+# Special keys
+event.key.escape?
+event.key.enter?
+event.key.tab?
+event.key.backspace?
+event.key.up?  event.key.down?  event.key.left?  event.key.right?
+event.key.home?  event.key.end?  event.key.page_up?  event.key.page_down?
+event.key.f1?  # ...  event.key.f24?
+
+# Case-insensitive letter matching (macro-generated, matches both UpperX and LowerX)
+event.key.q?
+
+# Case-specific
+event.key.lower_q?
+event.key.upper_q?
+
+# Chars & predicates
+event.key.char           # Char? for printable
+event.key.printable?
+event.key.letter?
+event.key.digit?
+event.key.function_key?
+event.key.navigation?
+
+# Modifiers
+event.ctrl?  event.alt?  event.shift?  event.meta?
+event.ctrl_c?  event.ctrl_d?  event.ctrl_z?  event.ctrl_q?
+```
+
+### 3.11 Custom event sources
+
+Extend `Termisu::Event::Source`:
+
+```crystal
+class MySource < Termisu::Event::Source
+  @running = Atomic(Bool).new(false)
+  @fiber : Fiber?
+  @output : Channel(Termisu::Event::Any)?
+
+  def start(output : Channel(Termisu::Event::Any)) : Nil
+    return unless @running.compare_and_set(false, true)
+    @output = output
+    @fiber = spawn(name: "my-source") do
+      while @running.get
+        # Produce events
+        send_nonblocking(output, some_event)  # inherited helper
+        Fiber.yield
+      end
+    end
+  end
+
+  def stop : Nil
+    return unless @running.compare_and_set(true, false)
+  end
+
+  def running? : Bool
+    @running.get
+  end
+
+  def name : String
+    "MySource"
+  end
+end
+
+termisu.add_event_source(MySource.new)
+```
+
+---
+
+## 4. End-to-end traces
+
+### 4.1 Keypress `A` → user code receives `Event::Key`
+
+1. **Kernel TTY** places byte `0x61` into the tty input queue.
+2. **Source::Input fiber** (`"termisu-input"`) is idle at `sleep 1ms` or just returned from `Fiber.yield`; next iteration calls `@parser.poll_event(0)`.
+3. **Input::Parser#poll_event(0)** calls `@reader.wait_for_data(0)` then `@reader.read_byte` — `Reader` polls and reads `0x61` (with EINTR retry).
+4. **Parser#parse_byte(0x61)** sees printable ASCII, calls `Key.from_char('a')` → `Key::LowerA`, returns `Event::Key.new(LowerA, Modifier::None)`.
+5. **Source::Input** `output.send(event)` — blocking send on `@output : Channel(Event::Any)` (cap 32). Returns immediately since channel has capacity.
+6. **Source::Input** calls `Fiber.yield` (emitted > 0).
+7. **Facade fiber** was blocked on `loop.output.receive` (inside `termisu.poll_event`). Crystal's channel scheduler wakes it.
+8. **`termisu.poll_event`** returns `Event::Key`.
+9. User code pattern-matches `when Termisu::Event::Key`, reads `event.char`, `event.ctrl?`, etc.
+
+### 4.2 Escape `\e[A` → `Event::Key::Up`
+
+1. **Parser** receives `0x1B`, enters `parse_escape_sequence`.
+2. Calls `@reader.wait_for_data(ESCAPE_TIMEOUT_MS=50)`. Byte `[` arrives → peek returns `'['.ord`.
+3. `@reader.read_byte` consumes `[`. Enters `parse_csi_sequence`.
+4. Loop reads `A` (0x41, in 0x40–0x7E final-char range). `buffer=""`, `params=""`, `final='A'`.
+5. `decode_csi_key("", 'A')`: not `'u'`, not `'~'`. Checks `LINUX_CONSOLE_KEYS["[A"]?` — absent. `CSI_KEYS['A']?` → `Key::Up`.
+6. `parse_modifiers("")` → `Modifier::None`.
+7. Returns `Event::Key.new(Up, None)`.
+
+### 4.3 `set_cell(10, 5, 'A', fg: red)` → bytes on TTY
+
+1. **Termisu** facade delegates to `Terminal#set_cell` (l.458).
+2. **Terminal** forwards to `Buffer#set_cell(10, 5, 'A', fg: red, ...)` (`buffer.cr:66`).
+3. `Buffer#set_cell_internal` extracts grapheme `"A"`, width=1, creates `Cell.new(...)`, assigns to `@back[5 * width + 10]` (`buffer.cr:334`), marks row 5 dirty (`buffer.cr:345`), increments `@row_non_default_counts[5]`.
+4. Later, **`termisu.render`** → `Terminal#render` (`terminal.cr:481`) → `Buffer#render_to` (`buffer.cr:227`).
+5. Walks `@dirty_row_list`. For row 5, calls `render_row_diff` (l.394).
+6. Column 10: `@back[5,10] != @front[5,10]`. Finds a batch of consecutive cells with same style. Batch of 1.
+7. `render_batch` → `RenderState#apply_style(fg=red, bg=default, attr=none)` (`render_state.cr:42`). Current state changed. Emits `\e[31m` via `Terminal#foreground=` (`terminal.cr:129-167`).
+8. `renderer.move_cursor(10, 5)` → `Terminal#move_cursor` → `Cursor#move_cursor` (`cursor.cr:79-99`) → `Tparm.process("\e[%i%p1%d;%p2%dH", 5, 10)` → bytes `"\e[6;11H"`.
+9. `renderer.write("A".bytes)` → `Terminal#write` → `Backend#write` → `LibC.write(tty_fd, ...)`.
+10. Front buffer updated: `@front[5,10] = @back[5,10]`. Dirty row flag cleared.
+
+### 4.4 `termisu.suspend { system("vim") }`
+
+1. Facade `suspend` captures current Terminal state.
+2. **Buffer invalidates** (`@front` filled with NUL) — ensures full redraw on resume.
+3. `Backend#apply_mode(Mode::Cooked)` (`backend.cr:142-160`) translates flags: enable `ECHO|ICANON|ISIG|IEXTEN` on c_lflag, `OPOST` on c_oflag; call `@termios.apply!` → `LibC.tcsetattr(fd, TCSANOW, ...)`.
+4. `Backend#alternate_screen=false` writes `\e[?1049l` — user back on main screen.
+5. `Cursor.show_cursor` — otherwise vim's cursor is hidden.
+6. `system("vim")` runs in cooked terminal.
+7. **`ensure` block** executes regardless of outcome:
+   - `Backend#apply_mode(previous_mode)` — back to Raw (usually).
+   - `Backend#alternate_screen=true` writes `\e[?1049h`.
+   - `Buffer.sync` — full re-emit on next render so screen state matches.
+8. Facade emits `Event::ModeChange` so any watcher fiber is notified.
+
+### 4.5 C embedding: `termisu_create → set_cell → render → close`
+
+1. C: `handle_t h = termisu_create(1);`
+2. Exports (`exports.cr:12`) → `Guards.safe_handle` (fallback 0) wraps `Core.create(sync_updates: 1)`.
+3. `Guards.safe_handle` calls `Runtime.ensure_initialized` — first call bootstraps Crystal GC + runtime under `Atomic(Bool)` double-check (`runtime.cr:9-36`).
+4. `Core.create` → `Context.new(::Termisu.new(sync_updates: true))` → `Registry.insert(ctx)` returns monotonic handle under `Mutex`.
+5. Return `UInt64` handle to C.
+6. C: `termisu_set_cell(h, 10, 5, 0x41, &style);`
+7. `Guards.safe_status` (fallback Status::Error) → `Core.set_cell(handle, x, y, codepoint, style_ptr)`.
+8. `with_context(handle) { |ctx| ... }` → `Registry.fetch(h)` mutex-guarded.
+9. `Conversions.codepoint_to_char(0x41)` → `'A'`. `Conversions.style_from_ptr(ptr)` unpacks Color + Attribute.
+10. `ctx.termisu.set_cell(10, 5, 'A', fg: red)`.
+11. Return `Status::Ok`. Any Crystal exception → caught, `ErrorState.set(format(ex))`, return `Status::Error`/`Rejected`.
+12. C: `termisu_render(h);` — same flow, ends in `ctx.termisu.render`.
+13. C: `termisu_close(h);` — `Core.close` → `ctx.close` (CAS-idempotent) → `ctx.termisu.close`. `termisu_destroy(h)` additionally `Registry.delete(h)`.
+14. C on any failure: `termisu_last_error_length()` + `termisu_last_error_copy(buf, len)` retrieves the thread-local message.
+
+---
+
+## 5. Input parser details
+
+`Input::Parser#poll_event(timeout_ms = -1)` (`parser.cr:118`). Not a state enum — method dispatch:
+
+```
+parse_byte(byte):
+  0x1B     → parse_escape_sequence
+  0x00     → Key(Space, Ctrl)
+  0x08/7F  → Backspace
+  0x09     → Tab
+  0x0A/0D  → Enter
+  0x01-1A  → Ctrl+<letter> via Key.from_char
+  printable → Key.from_char
+
+parse_escape_sequence:
+  wait 50 ms:
+    nothing  → Key::Escape
+    '['      → parse_csi_sequence
+    'O'      → parse_ss3_sequence
+    else     → Alt+<key>
+
+parse_csi_sequence:
+  read until final byte 0x40-0x7E
+  prefix '<' → parse_sgr_mouse        (mode 1006)
+  prefix 'M' → parse_normal_mouse     (mode 1000, X10)
+  else       → decode_csi_key(params, final):
+    final 'u'                   → parse_kitty_key  (codepoint;mod[:event_type]u)
+    final '~' with params 27;m;k → parse_modify_other_keys
+    final '~' else              → TILDE_KEYS[code]  (codes 1-34)
+    final A/B/C/D/H/F/Z/P/Q/R/S → CSI_KEYS
+    Linux [[A..[[E              → LINUX_CONSOLE_KEYS
+
+parse_ss3_sequence:
+  read one byte → SS3_KEYS (F1-F4 = PQRS, arrows = ABCD, Home/End = HF)
+
+parse_sgr_mouse:
+  read Cb;Cx;Cy followed by 'M' (press) or 'm' (release)
+  button = Event::Mouse::Button.from_cb(cb)
+  motion = cb & 32
+  modifiers = Modifier.from_mouse_cb(cb)
+
+parse_normal_mouse:
+  read 3 raw bytes, each -= 32
+  Cx/Cy clamped to 1-223
+```
+
+Important non-obvious details:
+- **Alt vs. bare ESC** is disambiguated by a 50 ms timeout (`ESCAPE_TIMEOUT_MS`). This means bare-Escape keypresses have a 50 ms delay.
+- Parser does **not** reassemble UTF-8 multi-byte sequences. Bytes >0x7F hit `Key.from_char` as a single-byte char. Kitty protocol is the Unicode path (numeric codepoint).
+- **modifyOtherKeys** is the `\e[27;m;k~` form; Kitty is the `\e[c;m[:et]u` form. Both use `Modifier.from_xterm_code` for the modifier field.
+- Mouse Cb decoding: `from_cb` checks `cb & 64` for wheel, `cb & 3` for which regular button, press/release determined by the terminating char in SGR mode.
+
+---
+
+## 6. Platform matrix
+
+| Concern | Linux | macOS | FreeBSD/OpenBSD | Other |
+|---|---|---|---|---|
+| Poller | epoll + timerfd | kqueue + EVFILT_TIMER | kqueue + EVFILT_TIMER | poll(2) + software timers |
+| Kqueue bindings | n/a | stdlib `c/sys/event` | `lib_c/kqueue.cr` supplements stdlib | n/a |
+| Max events per wait | 16 | unlimited (changelist) | unlimited | 1 at a time (array scan) |
+| Timer fd per timer | yes (timerfd_create) | no (in-kernel) | no (in-kernel) | no (monotonic deadline in array) |
+| Termios NCCS | 32 | 20 | 20 | runtime check |
+| Time API (< Crystal 1.19) | Time::Span | Time::Span | Time::Span | Time::Span |
+| Time API (≥ Crystal 1.19) | Time::Instant | Time::Instant | Time::Instant | Time::Instant |
+
+Compile-time dispatch (`event/poller.cr:189-197`):
+```crystal
+def self.create : Poller
+  {% if flag?(:linux) %}
+    Poller::Linux.new
+  {% elsif flag?(:darwin) || flag?(:freebsd) || flag?(:openbsd) %}
+    Poller::Kqueue.new
+  {% else %}
+    Poller::Poll.new
+  {% end %}
+end
+```
+
+Each impl file guards its own body, so unused impls are **elided from the binary** — no runtime platform check.
+
+---
+
+## 7. Concurrency model
+
+Termisu uses **Crystal fibers only** (no OS threads for its own work). Coordination is via `Channel(Event::Any)`, `Atomic(Bool)`, `Atomic(Int32)`, and one `Mutex` (FFI registry).
+
+### 7.1 Fiber roster
+
+| Fiber | Spawned by | Blocks on | Lifetime |
+|---|---|---|---|
+| Main | Caller | `channel.receive` inside `termisu.poll_event` | App lifetime |
+| `termisu-input` | `Source::Input#start` | `Input::Parser#poll_event(0)` or `sleep 1ms` | Until `Source::Input#stop` |
+| Resize poll | `Source::Resize#start` | `sleep 100ms` or immediate continue when signal received | Until `stop` (generation increment stales it) |
+| Timer | `Source::Timer#start` | `sleep @interval` | Until `stop` |
+| SystemTimer | `Source::SystemTimer#start` | `poller.wait` (epoll_wait/kevent) | Until `stop` (poller.close unblocks it) |
+
+### 7.2 Atomics in use
+
+- `Atomic(Bool) @running` on every source — CAS for idempotent start/stop
+- `Atomic(Bool) @signal_received` in Resize — set from signal handler (must be non-blocking)
+- `Atomic(Int32) @generation` in Resize — stales in-flight fibers after stop+restart
+- `Atomic(UInt64) @run_token` in SystemTimer — disambiguates shutdown races where `poller.close` raises `IO::Error` in the blocked `wait`
+- `Atomic(Bool) @closed` in FFI Context — CAS for idempotent close
+- `Atomic(Bool)` + double-check in `Runtime.ensure_initialized`
+
+### 7.3 Channel semantics
+
+- **Single shared channel**, cap `DEFAULT_BUFFER_SIZE = 32` (`event/loop.cr:53`).
+- **Input source** uses blocking `send` — if backpressured, the input fiber blocks (events will be accurately queued but delivered late).
+- **Timer sources** use `send_nonblocking` (`event/source.cr:82-89`, implemented via `select/else`). Failed sends increment `pending_missed`, which is surfaced in the next successfully delivered Tick's `missed_ticks`.
+- **Channel close** is the shutdown signal. `loop.stop` closes `@output`; sources exit on `Channel::ClosedError`.
+
+### 7.4 Signal handling
+
+`Signal::WINCH.trap` in `Source::Resize` is the **only** signal handler Termisu installs. Handler does one thing: flip `@signal_received : Atomic(Bool)`. Actual work (ioctl, diff, send) happens in the resize poll fiber which is safe to block.
+
+---
+
+## 8. Rendering pipeline (detail)
+
+### 8.1 Cell layout
+
+```crystal
+struct Cell
+  getter grapheme : String       # single grapheme cluster, or "" for continuation
+  getter width : UInt8           # 0 (combining), 1 (narrow), 2 (wide)
+  getter continuation : Bool     # true for the second slot of a wide-char cell
+  getter fg : Color
+  getter bg : Color
+  getter attr : Attribute
+end
+```
+
+Wide chars occupy two adjacent cells: the leading cell has `width=2, grapheme="東"`, the trailing has `continuation=true, grapheme=""`. Writing a narrow char into either half clears both (overlap handling at `buffer.cr:118-142`).
+
+### 8.2 Diff algorithm
+
+```
+render_to(renderer):
+  for each row_y in @dirty_row_list:
+    render_row_diff(renderer, row_y):
+      x = 0
+      while x < width:
+        if @back[y,x] == @front[y,x]:      # unchanged
+          x += 1; continue
+        if @back[y,x].continuation:        # never render continuations directly
+          x += 1; continue
+        # Start of a change batch
+        batch_start_x = x
+        style = @back[y,x].{fg,bg,attr}
+        while x < width && @back[y,x] != @front[y,x] && @back[y,x].{fg,bg,attr} == style:
+          x += 1
+        render_batch(renderer, y, batch_start_x, x - batch_start_x, style)
+        # Update front buffer for this range
+```
+
+Per batch, `render_batch` does:
+1. `RenderState.apply_style(style)` — emit only SGR deltas.
+2. `renderer.move_cursor(batch_start_x, y)` — terminfo `cup` or `\e[y;xH`.
+3. `renderer.write(grapheme_bytes_of_batch)` — single write call.
+
+### 8.3 RenderState optimization
+
+`RenderState` remembers the last emitted `(fg, bg, attr)`. On `apply_style(new_style)`:
+- If `new_style == current`: emit nothing.
+- Else compute `diff`: if any attribute bit was *removed*, emit `\e[0m` (full reset) then re-enable all active bits and colors. Otherwise emit only the changed components.
+- Updates `current` to `new_style`.
+
+This keeps a full-screen redraw of same-styled content near-optimal: one `\e[0m\e[31m`, then just positioning + text for every cell.
+
+---
+
+## 9. C ABI complete reference
+
+Declared in `src/termisu/ffi/exports.cr` (lines shown). All functions are C calling convention.
+
+### 9.1 ABI metadata
+
+```c
+uint32_t termisu_abi_version(void);              // exports.cr:3-5 — always == 1 in this release
+uint64_t termisu_layout_signature(void);         // exports.cr:7-10 — FNV-1a of struct layouts; compare to header-generated constant
+```
+
+### 9.2 Lifecycle
+
+```c
+uint64_t termisu_create(uint8_t sync_updates);   // exports.cr:12-14 — returns handle or 0 on failure (check last_error)
+int32_t  termisu_destroy(uint64_t handle);       // exports.cr:16-18 — close + remove from registry
+int32_t  termisu_close(uint64_t handle);         // exports.cr:20-22 — close only, handle still valid for last_error_*
+```
+
+### 9.3 Rendering
+
+```c
+int32_t  termisu_clear(uint64_t h);              // exports.cr — status code
+int32_t  termisu_render(uint64_t h);             // diff render
+int32_t  termisu_sync(uint64_t h);               // full redraw
+int32_t  termisu_set_cell(uint64_t h,
+                          int32_t x, int32_t y,
+                          uint32_t codepoint,
+                          termisu_style_t *style); // style is {color fg; color bg; uint16_t attr_bits}
+int32_t  termisu_set_cursor(uint64_t h, int32_t x, int32_t y);
+int32_t  termisu_hide_cursor(uint64_t h);
+int32_t  termisu_show_cursor(uint64_t h);
+int32_t  termisu_size(uint64_t h, termisu_size_t *out);   // writes {int32 width; int32 height}
+```
+
+### 9.4 Events
+
+```c
+int32_t  termisu_poll_event(uint64_t h, int32_t timeout_ms, termisu_event_t *out);
+int32_t  termisu_enable_mouse(uint64_t h);
+int32_t  termisu_disable_mouse(uint64_t h);
+int32_t  termisu_enable_enhanced_keyboard(uint64_t h);
+int32_t  termisu_disable_enhanced_keyboard(uint64_t h);
+int32_t  termisu_enable_timer_ms(uint64_t h, uint32_t interval_ms);
+int32_t  termisu_enable_system_timer_ms(uint64_t h, uint32_t interval_ms);
+int32_t  termisu_disable_timer(uint64_t h);
+```
+
+### 9.5 Error reporting (thread-local)
+
+```c
+uint64_t termisu_last_error_length(void);                             // exports.cr:107
+uint64_t termisu_last_error_copy(uint8_t *buffer, uint64_t buflen);   // exports.cr:112 — returns bytes copied
+void     termisu_clear_error(void);                                   // exports.cr:117
+```
+
+### 9.6 Status codes (`ffi/status.cr`)
+
+| Name | Value | Meaning |
+|---|---|---|
+| Ok | 0 | Success |
+| Timeout | 1 | `poll_event` timed out |
+| InvalidArgument | 2 | Bad coords, null pointer, etc. |
+| InvalidHandle | 3 | Unknown handle |
+| Rejected | 4 | Valid call but refused (e.g., write out of bounds) |
+| Error | 5 | Internal error; see `termisu_last_error_*` |
+
+### 9.7 Struct ABI
+
+C side declares structs matching `ffi/abi.cr`. Crystal verifies layout at FFI-boundary via `termisu_layout_signature()`. C header should include an `assert(termisu_layout_signature() == GENERATED_CONSTANT)` at startup.
+
+---
+
+## 10. Development workflow
+
+### 10.1 Setup
+
+```bash
+shards install
+shards build ameba
+shards build hace
+```
+
+### 10.2 `bin/hace` tasks (`Hacefile.yml`)
+
+| Command | What |
+|---|---|
+| `bin/hace spec` | Run all Crystal specs |
+| `bin/hace format` | Run `crystal tool format` |
+| `bin/hace format:check` | Check formatting without rewriting |
+| `bin/hace ameba` | Run linter |
+| `bin/hace ameba:fix` | Auto-fix lint where possible |
+| `bin/hace all` | format + ameba + spec in parallel |
+| `bin/hace demo` | Run `examples/demo.cr` |
+| `bin/hace showcase` | Run `examples/showcase.cr` |
+| `bin/hace animation` | Timer-driven animation demo |
+| `bin/hace colors` | Color palette showcase |
+| `bin/hace kmd` | Keyboard + mouse demo |
+| `bin/hace modes` | Terminal mode switch demo |
+| `bin/hace bench` | Release-mode benchmarks |
+| `bin/hace bench-quick` | Dev-mode benchmarks (faster compile) |
+| `bin/hace perf` | Linux `perf` CPU profiling |
+| `bin/hace callgrind` | Call-graph profiling |
+| `bin/hace memcheck` | Memory leak detection |
+
+### 10.3 Running a single spec
+
+```bash
+crystal spec spec/termisu/buffer_spec.cr
+crystal spec spec/termisu/buffer_spec.cr:42       # Specific line
+crystal spec --error-trace                         # Full backtrace on failure
+```
+
+### 10.4 Logging
+
+```bash
+TERMISU_LOG_LEVEL=debug      # trace|debug|info|notice|warn|error|fatal|none
+TERMISU_LOG_FILE=/tmp/termisu.log
+TERMISU_LOG_SYNC=true        # sync (real-time debug) vs async (perf)
+```
+
+Watch while running:
+```bash
+tail -f /tmp/termisu.log
+```
+
+Stdout is reserved for rendering — never write user output there.
+
+### 10.5 Commit workflow (`.claude/rules/commit-workflow.md`)
+
+Pre-commit (via `lefthook.yml`): `format:check` + `ameba`. Pre-push: `spec`. Commit subjects use conventional prefix (`feat(scope): subject`, imperative, lowercase after prefix, no trailing period, ≤ 50 chars).
+
+---
+
+## 11. Testing patterns
+
+```
+spec/
+├── spec_helper.cr
+├── support/
+│   ├── mock_renderers.cr   # Record writes for Buffer tests
+│   ├── pipe_helpers.cr     # OS-pipe helpers for Reader/parser tests
+│   └── mock_sources.cr     # Fake event sources
+├── shared/                  # Shared examples
+└── termisu/                 # Mirrors src/termisu structure
+    ├── buffer_spec.cr
+    ├── input/
+    ├── event/
+    ├── terminal/
+    ├── terminfo/
+    └── ffi/
+```
+
+Canonical patterns:
+- **Renderer tests**: inject a `CaptureRenderer` (writes to `IO::Memory`), inspect emitted bytes.
+- **Reader/parser tests**: write to a pipe, feed the read end into the parser, assert events.
+- **Source tests**: mock the shared channel, start source, assert sends/timings.
+- **Mode tests**: use `CaptureTerminal`, ensure `close` restores termios even on exception.
+
+---
+
+## 12. Common pitfalls & design notes
+
+1. **Always `ensure termisu.close`.** Without it, termios is left in raw mode and the terminal becomes unusable on crash.
+2. **Never mix `gets`/`STDIN.read_char` with raw mode.** In raw mode use `termisu.poll_event`; use normal IO only inside `termisu.suspend { }` or `with_cbreak_mode { }`.
+3. **Sync after every resize.** `Event::Resize` → call `termisu.sync` because the cell grid changed dimensions and the front buffer may be a lie.
+4. **Bare-Escape keypress has 50 ms latency.** This is fundamental to Alt/ESC disambiguation. No way around it without enhanced keyboard protocol.
+5. **Wide-char continuation cells are not writable directly.** The `set_cell_internal` path rejects or re-assigns them.
+6. **Sleep timer drift.** Fibers scheduled cooperatively; if another fiber runs long, the timer fires late. Use `enable_system_timer` for precise animation.
+7. **`missed_ticks` means different things** per timer backend — sleep only reports channel drops, system timer reports both channel + kernel drops.
+8. **Backpressure blocks input.** If you stop calling `poll_event`, the Source::Input fiber blocks on `send` and input accumulates in the 4 KB reader buffer; eventually the TTY backs up and types are lost.
+9. **SIGWINCH alone is unreliable** across modes/ttys. The hybrid 100 ms poll catches missed signals.
+10. **Crystal 1.19 Time::Instant renamed `Time::Span` usage.** `time_compat.cr` polyfills — don't hardcode either type; use `alias MonotonicTime`.
+11. **FFI registry is the only Mutex.** All other coordination is atomics + channels. Hot paths don't acquire it.
+12. **FFI layer is always compiled** — no way to opt out at compile time. If this ever becomes an issue, `ffi.cr` would need a `{% if flag?(:ffi) %}` guard.
+13. **Builtin terminfo has only xterm + linux.** If `$TERM` doesn't match and no terminfo file is found, you get xterm sequences by default.
+14. **Parser doesn't reassemble UTF-8.** Multi-byte characters come through as `Key.from_char(single_byte)`. Kitty protocol is the numeric-codepoint path.
+
+---
+
+## 13. Extension points
+
+1. **New event source** — Extend `Event::Source`, call `termisu.add_event_source(src)`. Contract: `start(Channel)`, `stop`, `running?`, `name`, idempotent via `Atomic(Bool)` CAS.
+2. **New color mode** — Unlikely; `Color` enum is fixed. Would need changes to `Color` struct, `Conversions`, `Terminal#foreground=`.
+3. **New attribute** — Add to `Attribute` enum (respect `@[Flags]`), add SGR emitter in `Terminal`.
+4. **New key** — Add to `Input::Key` enum, update `KeySymbolMaps` if it has a printable form, update parser tables (`CSI_KEYS`, `TILDE_KEYS`, etc.).
+5. **New terminfo capability** — Add to `STRING_CAPS` (must match ncurses order), add to `REQUIRED_FUNCS`/`REQUIRED_KEYS`, expose getter on `Terminfo`.
+6. **Custom renderer (for tests)** — Subclass abstract `Renderer` (`renderer.cr`), implement writes/moves/style setters; pass to `Buffer#render_to(my_renderer)`.
+7. **New FFI export** — Add `fun termisu_foo(...)` in `exports.cr`, wrap body with `Guards.safe_status`/`safe_handle`, implement in `core.cr`, add any needed conversions to `conversions.cr`. Update `layout.cr` if new struct fields introduced.
+
+---
+
+## 14. File structure overview
+
+```
+termisu/
+├── src/                               # 71 Crystal files
+│   ├── termisu.cr                     # Loader
+│   └── termisu/
+│       ├── termisu.cr                 # Facade
+│       ├── version.cr                 # VERSION from shard.yml
+│       ├── terminal.cr
+│       ├── buffer.cr
+│       ├── cell.cr
+│       ├── renderer.cr
+│       ├── render_state.cr
+│       ├── unicode_width.cr
+│       ├── color.cr + color/*.cr
+│       ├── attribute.cr
+│       ├── reader.cr
+│       ├── tty.cr
+│       ├── termios.cr
+│       ├── time_compat.cr
+│       ├── error.cr
+│       ├── log.cr
+│       ├── terminal/{backend,cursor,mode}.cr
+│       ├── input.cr + input/{key,modifier,parser}.cr
+│       ├── event.cr + event/*.cr + event/source/*.cr + event/poller*.cr
+│       ├── terminfo.cr + terminfo/*.cr + terminfo/tparm*.cr
+│       ├── system/poll.cr
+│       ├── lib_c/kqueue.cr
+│       └── ffi.cr + ffi/*.cr          # C ABI (15 files)
+│
+├── spec/termisu/                      # 54 spec files, mirrors src/
+├── spec/support/                      # Mock renderers, pipe helpers, mock sources
+├── examples/                          # demo, showcase, animation, colors, kmd, simple + c/basic.c
+├── bench/                             # bench_runner.cr + suites/ (buffer, parser, color)
+├── docs/ docs-web/                    # Architecture docs
+├── e2e/                               # TypeScript end-to-end harness
+├── javascript/                        # JS platform glue
+├── bin/hace                           # Task runner executable
+├── shard.yml                          # Dependencies + version
+├── Hacefile.yml                       # Dev task definitions
+├── .ameba.yml                         # Linter config
+├── lefthook.yml                       # Pre-commit/push hooks
+├── PROJECT_INDEX.md                   # Human-readable overview
+├── CLAUDE.md                          # This file's companion for Claude Code
+├── .claude/                           # Skills, rules, agents for Claude Code
+└── llms.txt                           # This file
+```
+
+---
+
+## 15. Quick checklists
+
+### Building a simple TUI
+1. `termisu = Termisu.new` (inside `begin`)
+2. Loop on `termisu.poll_event`, pattern-match event types
+3. Draw with `set_cell`, call `render` each iteration
+4. `break` on escape key
+5. `termisu.close` in `ensure`
+
+### Adding animation
+1. `termisu.enable_system_timer(16.milliseconds)` (prefer system over sleep for smooth 60 FPS)
+2. Handle `Event::Tick` in the event loop, use `event.delta` for physics
+3. Check `event.missed_ticks` and compensate if non-zero
+
+### Shell-out to external program
+1. `termisu.suspend { system("vim", file) }`
+2. Rely on the ensure block inside `suspend` for restore — don't manually change modes
+
+### C embedding
+1. `#include` the generated header
+2. Call `termisu_layout_signature()` once; `assert()` against build-time constant
+3. On every return that isn't `Status::Ok`, read `termisu_last_error_length` + `_copy`
+4. `termisu_destroy(h)` before process exit
+
+---
+
+## 16. Invariants to preserve when modifying
+
+- **`set_cell` is synchronous** (no fiber yield). Callers rely on this to batch updates before rendering.
+- **`render` emits nothing** if no cells changed since last render.
+- **`close` is idempotent.** Calling twice must not corrupt termios.
+- **Event sources use `compare_and_set`** for start/stop. Never set the running flag directly.
+- **Signal handlers never block.** Only flip atomics; do real work in a fiber.
+- **FFI guards must wrap every export.** A raw Crystal exception across the FFI boundary is undefined behavior.
+- **Wide chars always come in pairs** — leading + continuation. Buffer invariants enforce this.
+- **RenderState resets** when the buffer is invalidated or the terminal clears. Failing to reset causes wrong colors after the next draw.
+- **Compile-time platform dispatch** is elision; don't add runtime `if flag?(:linux)` checks.
+
+---
+
+End of llms.txt. If you're an LLM ingesting this file for code tasks on Termisu: the most common entry points you'll modify are `terminal.cr`, `buffer.cr`, `event/source/*.cr`, and `input/parser.cr`. Always cite `file:line` when referencing behavior. Before claiming "this doesn't exist" — verify by reading the file, not just grep.

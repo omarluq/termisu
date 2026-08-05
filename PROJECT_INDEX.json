@@ -1,0 +1,258 @@
+{
+  "name": "termisu",
+  "version": "0.3.0",
+  "language": "Crystal",
+  "language_version": ">= 1.18.2",
+  "description": "Terminal UI library with cell-based rendering and double buffering",
+  "created": "2025-01-25",
+  "structure": {
+    "src": {
+      "path": "src/termisu",
+      "files": 45,
+      "main": "src/termisu.cr",
+      "modules": {
+        "core": [
+          "termisu.cr",
+          "buffer.cr",
+          "terminal.cr",
+          "cell.cr",
+          "color.cr",
+          "attribute.cr",
+          "cursor.cr",
+          "render_state.cr"
+        ],
+        "event": [
+          "event.cr",
+          "event/loop.cr",
+          "event/key.cr",
+          "event/mouse.cr",
+          "event/resize.cr",
+          "event/tick.cr",
+          "event/mode_change.cr",
+          "event/source.cr",
+          "event/source/input.cr",
+          "event/source/resize.cr",
+          "event/source/timer.cr",
+          "event/source/system_timer.cr",
+          "event/poller.cr",
+          "event/poller/linux.cr",
+          "event/poller/kqueue.cr",
+          "event/poller/poll.cr"
+        ],
+        "input": [
+          "input.cr",
+          "input/key.cr",
+          "input/modifier.cr",
+          "input/parser.cr"
+        ],
+        "terminal": [
+          "terminal/backend.cr",
+          "terminal/mode.cr"
+        ],
+        "terminfo": [
+          "terminfo.cr",
+          "terminfo/database.cr",
+          "terminfo/parser.cr",
+          "terminfo/capabilities.cr",
+          "terminfo/builtin.cr",
+          "terminfo/tparm.cr"
+        ],
+        "other": [
+          "reader.cr",
+          "tty.cr",
+          "termios.cr",
+          "error.cr",
+          "log.cr",
+          "version.cr",
+          "renderer.cr"
+        ]
+      }
+    },
+    "spec": {
+      "path": "spec/termisu",
+      "files": 50,
+      "support": [
+        "spec_helper.cr",
+        "support/mock_renderers.cr",
+        "support/pipe_helpers.cr",
+        "support/mock_sources.cr",
+        "support/capture_terminal.cr",
+        "support/capture_renderer.cr"
+      ]
+    },
+    "examples": {
+      "path": "examples",
+      "files": 7,
+      "list": [
+        "simple.cr",
+        "demo.cr",
+        "showcase.cr",
+        "colors.cr",
+        "keyboard_and_mouse.cr",
+        "animation.cr",
+        "modes.cr"
+      ]
+    },
+    "bench": {
+      "path": "bench",
+      "files": 5
+    },
+    "docs": {
+      "path": "docs",
+      "key_files": [
+        "ARCHITECTURE.md",
+        "API.md",
+        "DEVELOPMENT.md",
+        "E2E_TESTING_PLAN.md"
+      ]
+    },
+    "e2e": {
+      "path": "e2e",
+      "language": "TypeScript",
+      "framework": "Jest"
+    }
+  },
+  "entry_points": {
+    "main": "src/termisu.cr",
+    "cli": "bin/hace",
+    "tests": "spec/spec_helper.cr"
+  },
+  "core_types": {
+    "Termisu": "Main facade class",
+    "Terminal": "High-level terminal interface",
+    "Buffer": "Double-buffered cell grid",
+    "Cell": "Single terminal cell (char + fg + bg + attr)",
+    "Color": "Color types (ANSI-8, 256, RGB)",
+    "Attribute": "Text attributes (bold, underline, etc.)",
+    "Cursor": "Cursor state management",
+    "RenderState": "Batched rendering optimization",
+    "Reader": "Buffered non-blocking input",
+    "Event::Loop": "Async event multiplexer",
+    "Event::Any": "Union type (Key | Mouse | Resize | Tick | ModeChange)",
+    "Event::Source": "Abstract event source class",
+    "Input::Parser": "Escape sequence parser",
+    "Input::Key": "Key enum (170+ keys)",
+    "Input::Modifier": "Modifier flags (Ctrl/Alt/Shift/Meta)",
+    "Terminal::Mode": "Terminal mode flags",
+    "Terminfo": "Terminfo capability access",
+    "Termios": "Raw mode configuration"
+  },
+  "build_system": {
+    "tool": "hace",
+    "config": "Hacefile.yml",
+    "commands": {
+      "spec": "Run tests with unbuffer",
+      "format": "Format code with crystal tool format",
+      "ameba": "Run Ameba linter",
+      "all": "Format, lint, and test in parallel",
+      "demo": "Run main demo example",
+      "showcase": "Run showcase example",
+      "animation": "Run animation example",
+      "kmd": "Run keyboard and mouse demo",
+      "colors": "Run colors example",
+      "bench": "Run benchmarks in release mode",
+      "bench-quick": "Run benchmarks in dev mode",
+      "perf": "Profile with Linux perf",
+      "callgrind": "Profile with Valgrind Callgrind",
+      "memcheck": "Check for memory leaks",
+      "e2e:test": "Run end-to-end tests",
+      "e2e:build": "Build E2E test binaries"
+    }
+  },
+  "dependencies": {
+    "runtime": [],
+    "development": [
+      {
+        "name": "ameba",
+        "purpose": "Linting"
+      },
+      {
+        "name": "hace",
+        "purpose": "Task runner"
+      }
+    ]
+  },
+  "configuration": {
+    "shard.yml": "Crystal package configuration",
+    "Hacefile.yml": "Development tasks",
+    ".ameba.yml": "Linting rules",
+    "lefthook.yml": "Git hooks"
+  },
+  "features": {
+    "complete": [
+      "Terminal I/O",
+      "Terminfo",
+      "Double Buffering",
+      "Colors (ANSI-8, 256, RGB)",
+      "Attributes",
+      "Keyboard Input (170+ keys)",
+      "Mouse Input (SGR protocol)",
+      "Event System",
+      "Async Event Loop",
+      "Resize Events",
+      "Timer/Tick Events",
+      "Terminal Modes",
+      "Synchronized Updates"
+    ],
+    "planned": [
+      "Unicode/Wide Characters",
+      "Image Protocols (Sixel, Kitty)"
+    ]
+  },
+  "logging": {
+    "env_vars": {
+      "TERMISU_LOG_LEVEL": "trace/debug/info/warn/error/fatal/none (default: debug)",
+      "TERMISU_LOG_FILE": "Path to log file (default: /tmp/termisu.log)",
+      "TERMISU_LOG_SYNC": "Dispatch mode - true for sync, false for async (default: false)"
+    },
+    "log_sources": [
+      "Log",
+      "Logs::Terminal",
+      "Logs::Buffer",
+      "Logs::Reader",
+      "Logs::Render",
+      "Logs::Input",
+      "Logs::Color",
+      "Logs::Terminfo"
+    ]
+  },
+  "api_categories": {
+    "rendering": ["set_cell", "clear", "render", "sync", "set_cursor", "hide_cursor", "show_cursor"],
+    "events": ["poll_event", "try_poll_event", "wait_event", "each_event"],
+    "timer": ["enable_timer", "enable_system_timer", "disable_timer", "timer_enabled?", "timer_interval"],
+    "modes": ["suspend", "with_cooked_mode", "with_cbreak_mode", "with_password_mode", "with_mode"],
+    "mouse": ["enable_mouse", "disable_mouse", "mouse_enabled?"],
+    "keyboard": ["enable_enhanced_keyboard", "disable_enhanced_keyboard", "enhanced_keyboard?"],
+    "terminal": ["size", "alternate_screen?", "raw_mode?", "current_mode", "sync_updates?"]
+  },
+  "testing": {
+    "framework": "crystal spec",
+    "structure": "mirrors src/",
+    "support_mocks": [
+      "mock_renderers.cr",
+      "pipe_helpers.cr",
+      "mock_sources.cr",
+      "capture_terminal.cr",
+      "capture_renderer.cr"
+    ]
+  },
+  "documentation": {
+    "api": "docs/API.md",
+    "architecture": "docs/ARCHITECTURE.md",
+    "development": "docs/DEVELOPMENT.md",
+    "e2e_plan": "docs/E2E_TESTING_PLAN.md",
+    "design_docs": [
+      "docs/design/async-event-system.md",
+      "docs/design/cooked-mode-plan.md",
+      "docs/design/dec-plan.md",
+      "docs/plans/system-timer-refactor.md"
+    ],
+    "articles": [
+      "docs/articles/kernel-timers-for-smooth-animations.md"
+    ]
+  },
+  "inspiration": [
+    "nsf/termbox (C)",
+    "nsf/termbox-go (Go)"
+  ]
+}

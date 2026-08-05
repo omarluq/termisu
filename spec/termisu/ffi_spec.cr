@@ -188,6 +188,26 @@ describe "Termisu C ABI" do
       termisu_enable_enhanced_keyboard(handle).should eq(Termisu::FFI::Status::Ok.value)
       termisu_disable_enhanced_keyboard(handle).should eq(Termisu::FFI::Status::Ok.value)
 
+      # The three input modes and their queries. Without the queries a C or JS
+      # caller can toggle a mode but never ask whether it is on, and shadowing the
+      # state locally drifts the moment with_mode suspends and restores it.
+      termisu_mouse_enabled(handle).should eq(0_u8)
+      termisu_enable_mouse(handle).should eq(Termisu::FFI::Status::Ok.value)
+      termisu_mouse_enabled(handle).should eq(1_u8)
+      termisu_disable_mouse(handle).should eq(Termisu::FFI::Status::Ok.value)
+      termisu_mouse_enabled(handle).should eq(0_u8)
+
+      termisu_enhanced_keyboard(handle).should eq(0_u8)
+      termisu_enable_enhanced_keyboard(handle).should eq(Termisu::FFI::Status::Ok.value)
+      termisu_enhanced_keyboard(handle).should eq(1_u8)
+      termisu_disable_enhanced_keyboard(handle).should eq(Termisu::FFI::Status::Ok.value)
+
+      termisu_bracketed_paste(handle).should eq(0_u8)
+      termisu_enable_bracketed_paste(handle).should eq(Termisu::FFI::Status::Ok.value)
+      termisu_bracketed_paste(handle).should eq(1_u8)
+      termisu_disable_bracketed_paste(handle).should eq(Termisu::FFI::Status::Ok.value)
+      termisu_bracketed_paste(handle).should eq(0_u8)
+
       event = uninitialized Termisu::FFI::ABI::Event
       poll_status = termisu_poll_event(handle, 0, pointerof(event))
       valid_poll = [Termisu::FFI::Status::Ok.value, Termisu::FFI::Status::Timeout.value]

@@ -32,6 +32,11 @@ const SYMBOLS = {
   termisu_disable_mouse: { args: ["u64"], returns: "i32" },
   termisu_enable_enhanced_keyboard: { args: ["u64"], returns: "i32" },
   termisu_disable_enhanced_keyboard: { args: ["u64"], returns: "i32" },
+  termisu_enable_bracketed_paste: { args: ["u64"], returns: "i32" },
+  termisu_disable_bracketed_paste: { args: ["u64"], returns: "i32" },
+  termisu_mouse_enabled: { args: ["u64"], returns: "u8" },
+  termisu_enhanced_keyboard: { args: ["u64"], returns: "u8" },
+  termisu_bracketed_paste: { args: ["u64"], returns: "u8" },
   termisu_poll_event: { args: ["u64", "i32", "ptr"], returns: "i32" },
 
   termisu_last_error_length: { args: [], returns: "u64" },
