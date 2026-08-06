@@ -29,6 +29,11 @@ type TestTermisu = {
   disableMouse(): void;
   enableEnhancedKeyboard(): void;
   disableEnhancedKeyboard(): void;
+  enableBracketedPaste(): void;
+  disableBracketedPaste(): void;
+  mouseEnabled(): boolean;
+  enhancedKeyboard(): boolean;
+  bracketedPaste(): boolean;
   pollEvent(timeoutMs?: number): unknown;
   close(): void;
   destroy(): void;
@@ -73,6 +78,11 @@ function buildMockTermisu(
     termisu_disable_mouse: () => Status.Ok,
     termisu_enable_enhanced_keyboard: () => Status.Ok,
     termisu_disable_enhanced_keyboard: () => Status.Ok,
+    termisu_enable_bracketed_paste: () => Status.Ok,
+    termisu_disable_bracketed_paste: () => Status.Ok,
+    termisu_mouse_enabled: () => 1,
+    termisu_enhanced_keyboard: () => 0,
+    termisu_bracketed_paste: () => 1,
     termisu_poll_event: () => Status.Ok,
     termisu_last_error_length: () => 0n,
     termisu_last_error_copy: () => 0n,
@@ -109,6 +119,8 @@ describe("Termisu wrapper behavior", () => {
     termisu.disableMouse();
     termisu.enableEnhancedKeyboard();
     termisu.disableEnhancedKeyboard();
+    termisu.enableBracketedPaste();
+    termisu.disableBracketedPaste();
     termisu.close();
 
     const names = calls.map((entry) => entry.name);
@@ -121,7 +133,24 @@ describe("Termisu wrapper behavior", () => {
     expect(names).toContain("termisu_disable_mouse");
     expect(names).toContain("termisu_enable_enhanced_keyboard");
     expect(names).toContain("termisu_disable_enhanced_keyboard");
+    expect(names).toContain("termisu_enable_bracketed_paste");
+    expect(names).toContain("termisu_disable_bracketed_paste");
     expect(names).toContain("termisu_close");
+  });
+
+  it("decodes the u8 input-mode queries as booleans", () => {
+    // with_mode suspends and restores these on the Crystal side, so a caller that
+    // shadows the state locally drifts; asking is the only reliable read.
+    const { termisu, calls } = buildMockTermisu();
+
+    expect(termisu.mouseEnabled()).toBe(true);
+    expect(termisu.enhancedKeyboard()).toBe(false);
+    expect(termisu.bracketedPaste()).toBe(true);
+
+    const names = calls.map((entry) => entry.name);
+    expect(names).toContain("termisu_mouse_enabled");
+    expect(names).toContain("termisu_enhanced_keyboard");
+    expect(names).toContain("termisu_bracketed_paste");
   });
 
   it("converts boolean sync update values and reads back bool state", () => {

@@ -228,6 +228,15 @@ int32_t termisu_enable_mouse(termisu_handle_t handle);
 int32_t termisu_disable_mouse(termisu_handle_t handle);
 int32_t termisu_enable_enhanced_keyboard(termisu_handle_t handle);
 int32_t termisu_disable_enhanced_keyboard(termisu_handle_t handle);
+int32_t termisu_enable_bracketed_paste(termisu_handle_t handle);
+int32_t termisu_disable_bracketed_paste(termisu_handle_t handle);
+
+/* Input mode queries. Non-zero when the mode is on. `with_mode` suspends and
+   restores these, so a caller that shadows the state itself will drift. */
+uint8_t termisu_mouse_enabled(termisu_handle_t handle);
+uint8_t termisu_enhanced_keyboard(termisu_handle_t handle);
+uint8_t termisu_bracketed_paste(termisu_handle_t handle);
+
 int32_t termisu_poll_event(termisu_handle_t handle, int32_t timeout_ms, termisu_event_t *out_event);
 
 /* Error handling */

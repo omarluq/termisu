@@ -186,6 +186,41 @@ module Termisu::FFI
     end
   end
 
+  def self.enable_bracketed_paste(handle : UInt64) : Status
+    with_context(handle) do |context|
+      context.termisu.enable_bracketed_paste
+      Status::Ok
+    end
+  end
+
+  def self.disable_bracketed_paste(handle : UInt64) : Status
+    with_context(handle) do |context|
+      context.termisu.disable_bracketed_paste
+      Status::Ok
+    end
+  end
+
+  # Query counterparts for the three input modes. Without these a C or JS caller
+  # can toggle a mode but never ask whether it is on, and has to shadow the state
+  # itself — which desynchronizes the moment `with_mode` suspends and restores.
+  def self.mouse_enabled?(handle : UInt64) : UInt8
+    with_context_u8(handle) do |context|
+      context.termisu.mouse_enabled? ? 1_u8 : 0_u8
+    end
+  end
+
+  def self.enhanced_keyboard?(handle : UInt64) : UInt8
+    with_context_u8(handle) do |context|
+      context.termisu.enhanced_keyboard? ? 1_u8 : 0_u8
+    end
+  end
+
+  def self.bracketed_paste?(handle : UInt64) : UInt8
+    with_context_u8(handle) do |context|
+      context.termisu.bracketed_paste? ? 1_u8 : 0_u8
+    end
+  end
+
   def self.poll_event(handle : UInt64, timeout_ms : Int32, out_event : ABI::Event*) : Status
     return invalid_argument_status("out_event is null") if out_event.null?
 
