@@ -364,13 +364,21 @@ class Termisu::Input::Parser
 
   private def ms_until(deadline : MonotonicTime?) : Int32
     return 0 unless deadline
-    remaining = (deadline - monotonic_now).total_milliseconds
+    ceil_ms((deadline - monotonic_now).total_milliseconds)
+  end
+
+  # Rounds *remaining* milliseconds up, kept separate from the clock read above so
+  # the rounding itself is testable.
+  #
+  # Hand-rolled rather than `Float#ceil`: that is the only call in the library that
+  # pulls in libm, which the C ABI test links without `-lm`. A fraction must round
+  # up — truncating a live deadline to a 0ms wait would spin — but a whole number
+  # is already the answer and must not be inflated past the caller's budget.
+  private def ceil_ms(remaining : Float64) : Int32
     return 0 if remaining <= 0
 
-    # Truncate and add one rather than `ceil`: rounding a live deadline down to a
-    # 0ms wait would spin, and `Float#ceil` is the only thing in the library that
-    # pulls in libm — which the C ABI test links without `-lm`.
-    remaining.to_i + 1
+    whole = remaining.to_i
+    remaining > whole ? whole + 1 : whole
   end
 
   private def parse_escape_sequence : Event::Any
