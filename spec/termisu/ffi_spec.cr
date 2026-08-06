@@ -201,6 +201,7 @@ describe "Termisu C ABI" do
       termisu_enable_enhanced_keyboard(handle).should eq(Termisu::FFI::Status::Ok.value)
       termisu_enhanced_keyboard(handle).should eq(1_u8)
       termisu_disable_enhanced_keyboard(handle).should eq(Termisu::FFI::Status::Ok.value)
+      termisu_enhanced_keyboard(handle).should eq(0_u8)
 
       termisu_bracketed_paste(handle).should eq(0_u8)
       termisu_enable_bracketed_paste(handle).should eq(Termisu::FFI::Status::Ok.value)

@@ -58,7 +58,31 @@ private def keys_of(events : Array(Termisu::Event::Any?)) : Array(Termisu::Input
   events.map { |event| event.is_a?(Termisu::Event::Key) ? event.key : nil }
 end
 
+# Exposes the private rounding so the boundary cases can be pinned directly: the
+# clock read in `ms_until` cannot be made to yield an exact fractional millisecond.
+private class ParserRoundingProbe < Termisu::Input::Parser
+  def ceil(remaining : Float64) : Int32
+    ceil_ms(remaining)
+  end
+end
+
 describe Termisu::Input::Parser do
+  # A wait is rounded up so a live deadline never truncates to a 0ms spin, but a
+  # whole number is already the answer — inflating it would overshoot the budget
+  # the caller asked for on every ordinary poll.
+  describe "wait rounding" do
+    it "rounds a fraction up and leaves an exact millisecond alone" do
+      probe = ParserRoundingProbe.new(Termisu::Reader.new(0))
+
+      probe.ceil(0.25).should eq(1)
+      probe.ceil(1.0).should eq(1)
+      probe.ceil(1.25).should eq(2)
+      probe.ceil(16.0).should eq(16)
+      probe.ceil(0.0).should eq(0)
+      probe.ceil(-1.0).should eq(0)
+    end
+  end
+
   describe "constants" do
     it "has reasonable escape timeout" do
       Termisu::Input::Parser::ESCAPE_TIMEOUT_MS.should eq(50)
