@@ -103,11 +103,7 @@ export class Termisu {
   }
 
   syncUpdates(): boolean {
-    this.assertAlive();
-    const value = asNumber(
-      this.native.symbols.termisu_sync_updates(this.handle) as number | bigint
-    );
-    return value !== 0;
+    return this.queryFlag("termisu_sync_updates");
   }
 
   clear(): void {
@@ -211,6 +207,26 @@ export class Termisu {
     this.callVoidStatus("termisu_disable_enhanced_keyboard");
   }
 
+  enableBracketedPaste(): void {
+    this.callVoidStatus("termisu_enable_bracketed_paste");
+  }
+
+  disableBracketedPaste(): void {
+    this.callVoidStatus("termisu_disable_bracketed_paste");
+  }
+
+  mouseEnabled(): boolean {
+    return this.queryFlag("termisu_mouse_enabled");
+  }
+
+  enhancedKeyboard(): boolean {
+    return this.queryFlag("termisu_enhanced_keyboard");
+  }
+
+  bracketedPaste(): boolean {
+    return this.queryFlag("termisu_bracketed_paste");
+  }
+
   pollEvent(timeoutMs: number = -1): AnyEvent | null {
     this.assertAlive();
 
@@ -259,10 +275,26 @@ export class Termisu {
       | "termisu_disable_mouse"
       | "termisu_enable_enhanced_keyboard"
       | "termisu_disable_enhanced_keyboard"
+      | "termisu_enable_bracketed_paste"
+      | "termisu_disable_bracketed_paste"
   ): void {
     this.assertAlive();
     const status = asNumber(this.native.symbols[symbolName](this.handle) as number | bigint);
     this.assertStatus(status, symbolName);
+  }
+
+  // Reads a u8 mode flag. These modes are suspended and restored by with_mode on
+  // the Crystal side, so asking is the only reliable way to know the current state.
+  private queryFlag(
+    symbolName:
+      | "termisu_sync_updates"
+      | "termisu_mouse_enabled"
+      | "termisu_enhanced_keyboard"
+      | "termisu_bracketed_paste"
+  ): boolean {
+    this.assertAlive();
+    const value = asNumber(this.native.symbols[symbolName](this.handle) as number | bigint);
+    return value !== 0;
   }
 
   private ensureStyleScratch(): Scratch {

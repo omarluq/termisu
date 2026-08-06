@@ -103,6 +103,26 @@ fun termisu_disable_enhanced_keyboard(handle : UInt64) : Int32
   Termisu::FFI::Guards.safe_status { Termisu::FFI.disable_enhanced_keyboard(handle) }
 end
 
+fun termisu_enable_bracketed_paste(handle : UInt64) : Int32
+  Termisu::FFI::Guards.safe_status { Termisu::FFI.enable_bracketed_paste(handle) }
+end
+
+fun termisu_disable_bracketed_paste(handle : UInt64) : Int32
+  Termisu::FFI::Guards.safe_status { Termisu::FFI.disable_bracketed_paste(handle) }
+end
+
+fun termisu_mouse_enabled(handle : UInt64) : UInt8
+  Termisu::FFI::Guards.safe_u8 { Termisu::FFI.mouse_enabled?(handle) }
+end
+
+fun termisu_enhanced_keyboard(handle : UInt64) : UInt8
+  Termisu::FFI::Guards.safe_u8 { Termisu::FFI.enhanced_keyboard?(handle) }
+end
+
+fun termisu_bracketed_paste(handle : UInt64) : UInt8
+  Termisu::FFI::Guards.safe_u8 { Termisu::FFI.bracketed_paste?(handle) }
+end
+
 fun termisu_poll_event(
   handle : UInt64,
   timeout_ms : Int32,
