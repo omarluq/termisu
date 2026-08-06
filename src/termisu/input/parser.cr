@@ -365,7 +365,12 @@ class Termisu::Input::Parser
   private def ms_until(deadline : MonotonicTime?) : Int32
     return 0 unless deadline
     remaining = (deadline - monotonic_now).total_milliseconds
-    remaining <= 0 ? 0 : remaining.ceil.to_i
+    return 0 if remaining <= 0
+
+    # Truncate and add one rather than `ceil`: rounding a live deadline down to a
+    # 0ms wait would spin, and `Float#ceil` is the only thing in the library that
+    # pulls in libm — which the C ABI test links without `-lm`.
+    remaining.to_i + 1
   end
 
   private def parse_escape_sequence : Event::Any
