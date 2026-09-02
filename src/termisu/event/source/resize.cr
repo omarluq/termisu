@@ -133,7 +133,7 @@ class Termisu::Event::Source::Resize < Termisu::Event::Source
       run_loop(generation)
     end
 
-    Log.debug { "Resize source started, initial size: #{initial_width}x#{initial_height}" }
+    lifecycle_log { Log.debug { "Resize source started, initial size: #{initial_width}x#{initial_height}" } }
   end
 
   # Stops monitoring for resize events.
@@ -153,7 +153,7 @@ class Termisu::Event::Source::Resize < Termisu::Event::Source
     # on its next poll cycle, up to one @poll_interval delay)
     Fiber.yield
 
-    Log.debug { "Resize source stopped" }
+    lifecycle_log { Log.debug { "Resize source stopped" } }
   end
 
   # Returns true if the resize source is currently running.

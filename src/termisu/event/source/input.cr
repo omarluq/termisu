@@ -78,7 +78,7 @@ class Termisu::Event::Source::Input < Termisu::Event::Source
       run_loop
     end
 
-    Log.debug { "Input source started" }
+    lifecycle_log { Log.debug { "Input source started" } }
   end
 
   # Stops polling for input events.
@@ -88,7 +88,7 @@ class Termisu::Event::Source::Input < Termisu::Event::Source
   # stop operations.
   def stop : Nil
     return unless @running.compare_and_set(true, false)
-    Log.debug { "Input source stopped" }
+    lifecycle_log { Log.debug { "Input source stopped" } }
   end
 
   # Returns true if the input source is currently running.

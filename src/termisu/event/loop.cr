@@ -58,6 +58,7 @@ class Termisu::Event::Loop
   @sources : Array(Source)
   @output : Channel(Any)
   @running : Atomic(Bool)
+  @lifecycle_lock : Mutex
 
   # Creates a new Event::Loop with the specified buffer size.
   #
@@ -67,6 +68,7 @@ class Termisu::Event::Loop
     @sources = [] of Source
     @output = Channel(Any).new(buffer_size)
     @running = Atomic(Bool).new(false)
+    @lifecycle_lock = Mutex.new(:reentrant)
     Log.debug { "Event::Loop created with buffer_size=#{buffer_size}" }
   end
 
@@ -77,12 +79,14 @@ class Termisu::Event::Loop
   #
   # Returns self for method chaining.
   def add_source(source : Source) : self
-    @sources << source
-    Log.debug { "Added source: #{source.name}" }
+    @lifecycle_lock.synchronize do
+      @sources << source
+      Log.debug { "Added source: #{source.name}" }
 
-    if @running.get
-      source.start(@output)
-      Log.debug { "Auto-started source: #{source.name}" }
+      if @running.get
+        source.start(@output)
+        Log.debug { "Auto-started source: #{source.name}" }
+      end
     end
 
     self
@@ -95,13 +99,15 @@ class Termisu::Event::Loop
   #
   # Returns self for method chaining.
   def remove_source(source : Source) : self
-    if @sources.includes?(source)
-      if source.running?
-        source.stop
-        Log.debug { "Stopped source before removal: #{source.name}" }
+    @lifecycle_lock.synchronize do
+      if @sources.includes?(source)
+        if source.running?
+          source.stop
+          Log.debug { "Stopped source before removal: #{source.name}" }
+        end
+        @sources.delete(source)
+        Log.debug { "Removed source: #{source.name}" }
       end
-      @sources.delete(source)
-      Log.debug { "Removed source: #{source.name}" }
     end
 
     self
@@ -114,16 +120,34 @@ class Termisu::Event::Loop
   #
   # Returns self for method chaining.
   def start : self
-    return self unless @running.compare_and_set(false, true)
+    @lifecycle_lock.synchronize do
+      _, started = @running.compare_and_set(false, true)
+      return self unless started
 
-    Log.info { "Starting Event::Loop with #{@sources.size} source(s)" }
+      lifecycle_log { Log.info { "Starting Event::Loop with #{@sources.size} source(s)" } }
 
-    @sources.each do |source|
-      source.start(@output)
-      Log.debug { "Started source: #{source.name}" }
+      attempted = [] of Source
+      begin
+        @sources.each do |source|
+          # Include the source before starting it: a failed start may still have
+          # acquired resources which its stop method must release.
+          attempted << source
+          source.start(@output)
+          lifecycle_log { Log.debug { "Started source: #{source.name}" } }
+        end
+      rescue error
+        @running.set(false)
+        attempted.reverse_each do |source|
+          # Preserve the startup failure while still rolling back every source.
+          source.stop rescue nil
+        end
+        # A close failure must not replace the original startup failure.
+        @output.close rescue nil
+        raise error
+      end
+
+      lifecycle_log { Log.debug { "All sources started: #{source_names}" } }
     end
-
-    Log.debug { "All sources started: #{source_names}" }
 
     self
   end
@@ -141,24 +165,42 @@ class Termisu::Event::Loop
   #
   # Returns self for method chaining.
   def stop : self
-    return self unless @running.compare_and_set(true, false)
+    @lifecycle_lock.synchronize do
+      _, stopped = @running.compare_and_set(true, false)
+      return self unless stopped
 
-    Log.info { "Stopping Event::Loop" }
+      lifecycle_log { Log.info { "Stopping Event::Loop" } }
 
-    @sources.each do |source|
-      source.stop
-      Log.debug { "Stopped source: #{source.name}" }
+      first_error = nil.as(Exception?)
+      @sources.each do |source|
+        error = begin
+          source.stop
+          lifecycle_log { Log.debug { "Stopped source: #{source.name}" } }
+          nil
+        rescue ex
+          ex
+        end
+        first_error ||= error
+      end
+
+      # Brief yield to allow fibers to exit gracefully
+      # This prevents Channel::ClosedError in well-behaved sources
+      sleep SHUTDOWN_TIMEOUT_MS.milliseconds / 10
+      Fiber.yield
+
+      @output.close unless @output.closed?
+      lifecycle_log { Log.debug { "Output channel closed" } }
+
+      raise first_error if first_error
     end
 
-    # Brief yield to allow fibers to exit gracefully
-    # This prevents Channel::ClosedError in well-behaved sources
-    sleep SHUTDOWN_TIMEOUT_MS.milliseconds / 10
-    Fiber.yield
-
-    @output.close unless @output.closed?
-    Log.debug { "Output channel closed" }
-
     self
+  end
+
+  private def lifecycle_log(&) : Nil
+    yield
+  rescue
+    # Logging must never change lifecycle state or prevent cleanup.
   end
 
   # Returns true if the event loop is currently running.
@@ -180,6 +222,6 @@ class Termisu::Event::Loop
   #
   # Useful for logging and debugging.
   def source_names : Array(String)
-    @sources.map(&.name)
+    @lifecycle_lock.synchronize { @sources.map(&.name) }
   end
 end

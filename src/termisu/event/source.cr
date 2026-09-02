@@ -79,6 +79,12 @@ abstract class Termisu::Event::Source
   # Examples: "input", "resize", "timer", "custom-network"
   abstract def name : String
 
+  protected def lifecycle_log(&) : Nil
+    yield
+  rescue
+    # Logging must never change lifecycle state or prevent cleanup.
+  end
+
   protected def send_nonblocking(output : Channel(Event::Any), event : Event::Any) : Bool
     select
     when output.send(event)
