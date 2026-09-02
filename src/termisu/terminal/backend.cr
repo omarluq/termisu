@@ -20,6 +20,7 @@ class Termisu::Terminal::Backend
   @tty : TTY
   @termios : Termios
   @raw_mode_enabled : Bool = false
+  @closed = Atomic(Bool).new(false)
 
   getter infd : Int32
   getter outfd : Int32
@@ -177,8 +178,13 @@ class Termisu::Terminal::Backend
 
   # Closes the terminal backend, disabling raw mode and closing TTY.
   def close
-    disable_raw_mode
-    @tty.close
+    return unless @closed.compare_and_set(false, true)[1]
+
+    begin
+      disable_raw_mode
+    ensure
+      @tty.close
+    end
   end
 end
 

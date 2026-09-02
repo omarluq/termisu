@@ -29,6 +29,7 @@ class Termisu::Terminal < Termisu::Renderer
   @enhanced_keyboard : Bool = false
   @bracketed_paste : Bool = false
   @sync_updates : Bool = true
+  @terminal_closed = Atomic(Bool).new(false)
   getter cursor : Cursor = Cursor.new
   getter title : String = ""
 
@@ -61,9 +62,16 @@ class Termisu::Terminal < Termisu::Renderer
     *,
     @sync_updates : Bool = true,
   )
+    @buffer = initial_buffer
+    Log.debug { "Terminal initialized: #{@buffer.width}x#{@buffer.height}, sync_updates: #{@sync_updates}" }
+  end
+
+  private def initial_buffer : Buffer
     width, height = size
-    @buffer = Buffer.new(width, height)
-    Log.debug { "Terminal initialized: #{width}x#{height}, sync_updates: #{@sync_updates}" }
+    Buffer.new(width, height)
+  rescue ex
+    @backend.close rescue nil
+    raise ex
   end
 
   # Enters alternate screen mode.
@@ -74,13 +82,21 @@ class Termisu::Terminal < Termisu::Renderer
   def enter_alternate_screen
     return if @alternate_screen
     Log.debug { "Entering alternate screen" }
-    write(@terminfo.enter_ca_seq)
-    write(@terminfo.clear_screen_seq)
-    write(@terminfo.enter_keypad_seq)
-    reset_render_state
-    apply_cursor_state
-    flush
+
+    # Record the transition before emitting anything so a partial write is
+    # always paired with a best-effort exit during rollback.
     @alternate_screen = true
+    begin
+      write(@terminfo.enter_ca_seq)
+      write(@terminfo.clear_screen_seq)
+      write(@terminfo.enter_keypad_seq)
+      reset_render_state
+      apply_cursor_state
+      flush
+    rescue ex
+      exit_alternate_screen rescue nil
+      raise ex
+    end
   end
 
   # Exits alternate screen mode.
@@ -91,13 +107,17 @@ class Termisu::Terminal < Termisu::Renderer
   def exit_alternate_screen
     return unless @alternate_screen
     Log.debug { "Exiting alternate screen" }
-    @cursor = Cursor.new visible: true
-    apply_cursor_state
-    write(@terminfo.exit_keypad_seq)
-    write(@terminfo.exit_ca_seq)
-    reset_render_state
-    flush
+
+    # Clear first so shutdown is exactly-once even when output fails. Continue
+    # through every restoration step and report the first error afterwards.
     @alternate_screen = false
+    @cursor = Cursor.new visible: true
+    error = capture_cleanup_error(nil) { apply_cursor_state }
+    error = capture_cleanup_error(error) { write(@terminfo.exit_keypad_seq) }
+    error = capture_cleanup_error(error) { write(@terminfo.exit_ca_seq) }
+    reset_render_state
+    error = capture_cleanup_error(error) { flush }
+    raise error if error
   end
 
   # Returns whether alternate screen mode is active.
@@ -650,13 +670,24 @@ class Termisu::Terminal < Termisu::Renderer
 
   # Closes the terminal and underlying backend.
   def close
+    return unless @terminal_closed.compare_and_set(false, true)[1]
+
     Log.debug { "Closing terminal" }
-    disable_mouse
-    disable_enhanced_keyboard
-    disable_bracketed_paste
-    exit_alternate_screen
-    disable_raw_mode
-    @backend.close
+    error = capture_cleanup_error(nil) { disable_mouse }
+    error = capture_cleanup_error(error) { disable_enhanced_keyboard }
+    error = capture_cleanup_error(error) { disable_bracketed_paste }
+    error = capture_cleanup_error(error) { exit_alternate_screen }
+    # Backend#close restores termios and closes descriptors even if restoration
+    # fails. Keep it last, but always reach it after escape-sequence failures.
+    error = capture_cleanup_error(error) { @backend.close }
+    raise error if error
+  end
+
+  private def capture_cleanup_error(error : Exception?, &) : Exception?
+    yield
+    error
+  rescue ex
+    error || ex
   end
 
   # --- Cell Buffer Operations ---
@@ -856,9 +887,9 @@ class Termisu::Terminal < Termisu::Renderer
   def disable_mouse
     return unless @mouse_enabled
     Log.debug { "Disabling mouse tracking" }
+    @mouse_enabled = false
     apply_mouse_state false
     flush
-    @mouse_enabled = false
   end
 
   # Returns whether mouse tracking is currently enabled.
@@ -901,9 +932,9 @@ class Termisu::Terminal < Termisu::Renderer
   def disable_enhanced_keyboard
     return unless @enhanced_keyboard
     Log.debug { "Disabling enhanced keyboard protocol" }
+    @enhanced_keyboard = false
     apply_enhanced_keyboard_state false
     flush
-    @enhanced_keyboard = false
   end
 
   # Returns whether enhanced keyboard protocol is enabled.
@@ -949,9 +980,9 @@ class Termisu::Terminal < Termisu::Renderer
   def disable_bracketed_paste
     return unless @bracketed_paste
     Log.debug { "Disabling bracketed paste" }
+    @bracketed_paste = false
     apply_bracketed_paste_state false
     flush
-    @bracketed_paste = false
   end
 
   # Returns whether bracketed paste mode is currently enabled.

@@ -23,6 +23,16 @@
 # termisu.close
 # ```
 class Termisu
+  @ownership : TerminalOwnership
+  @closed : Atomic(Bool)
+  @terminal : Terminal
+  @reader : Reader
+  @input_parser : Input::Parser
+  @input_source : Event::Source::Input
+  @resize_source : Event::Source::Resize
+  @event_loop : Event::Loop
+  @timer_source : Event::Source::Timer | Event::Source::SystemTimer | Nil
+
   # Initializes Termisu with all required components.
   #
   # Sets up terminal I/O, rendering, input reader, and async event system.
@@ -30,47 +40,88 @@ class Termisu
   #
   # The Event::Loop is started with Input and Resize sources by default.
   # Timer source is optional and can be enabled with `enable_timer`.
+  # Raises `TerminalInUseError` if another live Termisu instance already owns
+  # the process's controlling terminal.
   #
   # Parameters:
   # - `sync_updates` - Enable DEC mode 2026 synchronized updates (default: true).
   #   When enabled, render operations are wrapped in BSU/ESU sequences to
   #   prevent screen tearing. Unsupported terminals ignore these sequences.
   def initialize(*, sync_updates : Bool = true)
-    Logging.setup
+    @ownership = TerminalOwnership.acquire
+    @closed = Atomic(Bool).new(false)
 
+    resources = begin
+      initialize_resources(sync_updates)
+    rescue ex
+      @ownership.release
+      raise ex
+    end
+
+    @terminal = resources[:terminal]
+    @reader = resources[:reader]
+    @input_parser = resources[:input_parser]
+    @input_source = resources[:input_source]
+    @resize_source = resources[:resize_source]
+    @event_loop = resources[:event_loop]
+    @timer_source = nil.as((Event::Source::Timer | Event::Source::SystemTimer)?)
+  end
+
+  # Builds all terminal resources transactionally. Keeping partially-created
+  # values local lets a failed constructor unwind them before the ownership
+  # lease is released by initialize.
+  private def initialize_resources(sync_updates : Bool) : NamedTuple(
+    terminal: Terminal,
+    reader: Reader,
+    input_parser: Input::Parser,
+    input_source: Event::Source::Input,
+    resize_source: Event::Source::Resize,
+    event_loop: Event::Loop,
+  )
+    Logging.setup
     Log.info { "Initializing Termisu v#{VERSION}" }
 
-    @terminal = Terminal.new(sync_updates: sync_updates)
-    @reader = Reader.new(@terminal.infd)
-    @input_parser = Input::Parser.new(@reader)
+    # Resolve terminfo before opening the TTY so this failure path has no
+    # partially-created backend to clean up.
+    terminfo = Terminfo.new
+    terminal = Terminal.new(terminfo: terminfo, sync_updates: sync_updates)
+    reader = Reader.new(terminal.infd)
+    input_parser = Input::Parser.new(reader)
 
-    Log.debug { "Terminal size: #{@terminal.size}" }
+    Log.debug { "Terminal size: #{terminal.size}" }
 
-    @terminal.enable_raw_mode
+    terminal.enable_raw_mode
 
-    # Create async event sources
-    @input_source = Event::Source::Input.new(@reader, @input_parser)
+    input_source = Event::Source::Input.new(reader, input_parser)
     # Must be query_size (live ioctl), not size (cached) - the resize
     # source detects changes by re-querying the terminal dimensions.
-    @resize_source = Event::Source::Resize.new(-> { @terminal.query_size })
+    resize_source = Event::Source::Resize.new(-> { terminal.as(Terminal).query_size })
 
-    # Timer source is optional (nil by default)
-    # Can be either sleep-based Timer or kernel-level SystemTimer
-    @timer_source = nil.as((Event::Source::Timer | Event::Source::SystemTimer)?)
+    event_loop = Event::Loop.new
+    event_loop.add_source(input_source)
+    event_loop.add_source(resize_source)
+    event_loop.start
 
-    # Create and configure event loop
-    @event_loop = Event::Loop.new
-    @event_loop.add_source(@input_source)
-    @event_loop.add_source(@resize_source)
+    Log.debug { "Event loop started with sources: #{event_loop.source_names}" }
 
-    # Start event loop before entering alternate screen
-    @event_loop.start
-
-    Log.debug { "Event loop started with sources: #{@event_loop.source_names}" }
-
-    @terminal.enter_alternate_screen
-
+    terminal.enter_alternate_screen
     Log.debug { "Raw mode enabled, alternate screen entered" }
+
+    {
+      terminal:      terminal,
+      reader:        reader,
+      input_parser:  input_parser,
+      input_source:  input_source,
+      resize_source: resize_source,
+      event_loop:    event_loop,
+    }
+  rescue ex
+    event_loop.try(&.stop) rescue nil
+    reader.try(&.close) rescue nil
+    terminal.try(&.close) rescue nil
+    Logging.flush rescue nil
+    Logging.close rescue nil
+    raise ex
   end
 
   # Closes Termisu and cleans up all resources.
@@ -84,17 +135,30 @@ class Termisu
   # The event loop is stopped first to ensure fibers that might be using
   # the reader are terminated before the reader is closed.
   def close
+    return unless @closed.compare_and_set(false, true)[1]
+
     Log.info { "Closing Termisu" }
 
-    # Stop event loop first - this stops all sources and their fibers
-    @event_loop.stop
-    Log.debug { "Event loop stopped" }
+    # Keep ownership until every process-global and terminal resource has been
+    # shut down. Preserve the first failure while still running every cleanup
+    # step and releasing the ownership lease.
+    error = capture_cleanup_error(nil) do
+      @event_loop.stop
+      Log.debug { "Event loop stopped" }
+    end
+    error = capture_cleanup_error(error) { @reader.close }
+    error = capture_cleanup_error(error) { @terminal.close }
+    error = capture_cleanup_error(error) { Logging.flush }
+    error = capture_cleanup_error(error) { Logging.close }
+    error = capture_cleanup_error(error) { @ownership.release }
+    raise error if error
+  end
 
-    @reader.close
-    @terminal.close
-
-    Logging.flush
-    Logging.close
+  private def capture_cleanup_error(error : Exception?, &) : Exception?
+    yield
+    error
+  rescue ex
+    error || ex
   end
 
   # --- Terminal Operations ---

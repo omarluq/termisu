@@ -36,6 +36,27 @@ private class PausableInputSource < Termisu::Event::Source::Input
   end
 end
 
+private class FailingStopEventLoop < Termisu::Event::Loop
+  getter stop_count : Int32 = 0
+
+  def stop : self
+    @stop_count += 1
+    raise IO::Error.new("event loop stop failed")
+  end
+end
+
+private class FailingCloseTerminal < CaptureTerminal
+  getter close_count : Int32 = 0
+
+  def close : Nil
+    return super if closed?
+
+    @close_count += 1
+    super
+    raise IO::Error.new("terminal close failed")
+  end
+end
+
 # Build the public facade around controlled collaborators so mode coordination
 # can be tested independently of its normal initialization lifecycle.
 class Termisu
@@ -47,6 +68,8 @@ class Termisu
     @resize_source : Event::Source::Resize,
     @event_loop : Event::Loop,
   )
+    @ownership = TerminalOwnership.acquire
+    @closed = Atomic(Bool).new(false)
     @timer_source = nil
   end
 end
@@ -64,12 +87,100 @@ describe Termisu do
     # than swallowed at runtime.
     if controlling_tty?
       pending "raises IO::Error without a controlling TTY (this process has one)"
+
+      it "allows only one live owner and does not release a newer owner's lease" do
+        first = Termisu.new(sync_updates: false)
+
+        expect_raises(Termisu::TerminalInUseError, "already controlled") do
+          Termisu.new(sync_updates: false)
+        end
+        # A failed acquisition must not release the first instance's lease.
+        expect_raises(Termisu::TerminalInUseError) do
+          Termisu.new(sync_updates: false)
+        end
+
+        first.close
+        second = Termisu.new(sync_updates: false)
+        Termisu::Logging.configured?.should be_true
+        successor_backend = Termisu::Logging.backend
+        successor_log_file = Termisu::Logging.log_file
+
+        # Concurrent stale closes must neither release the second instance's
+        # lease nor tear down its process-global logging backend.
+        stale_closers = [] of Thread
+        8.times { stale_closers << Thread.new { first.close } }
+        stale_closers.each(&.join)
+        Termisu::Logging.configured?.should be_true
+        Termisu::Logging.backend.should be(successor_backend)
+        Termisu::Logging.log_file.should be(successor_log_file)
+        successor_log_file.try(&.closed?.should be_false)
+        Termisu::Log.info { "Successor logging remains usable after stale closes" }
+        expect_raises(Termisu::TerminalInUseError) do
+          Termisu.new(sync_updates: false)
+        end
+
+        second.close
+        third = Termisu.new(sync_updates: false)
+        third.close
+      ensure
+        first.try(&.close)
+        second.try(&.close)
+        third.try(&.close)
+      end
     else
       it "raises IO::Error without a controlling TTY" do
         expect_raises(IO::Error) do
           Termisu.new
         end
       end
+    end
+
+    it "releases ownership when construction fails" do
+      previous_term = ENV["TERM"]?
+      ENV.delete("TERM")
+
+      2.times do
+        expect_raises(Termisu::Error, "TERM environment variable not set") do
+          Termisu.new
+        end
+      end
+    ensure
+      if previous_term
+        ENV["TERM"] = previous_term
+      else
+        ENV.delete("TERM")
+      end
+    end
+  end
+
+  describe "#close" do
+    it "preserves the first failure while completing cleanup and releasing ownership" do
+      read_fd, write_fd = create_pipe
+      reader = Termisu::Reader.new(read_fd)
+      parser = Termisu::Input::Parser.new(reader)
+      input_source = PausableInputSource.new(reader, parser)
+      resize_source = Termisu::Event::Source::Resize.new(-> { {80, 24} })
+      event_loop = FailingStopEventLoop.new
+      terminal = FailingCloseTerminal.new(sync_updates: false)
+      termisu = Termisu.new(terminal, reader, parser, input_source, resize_source, event_loop)
+
+      expect_raises(IO::Error, "event loop stop failed") do
+        termisu.close
+      end
+
+      event_loop.stop_count.should eq(1)
+      terminal.close_count.should eq(1)
+      terminal.closed?.should be_true
+
+      lease = Termisu::TerminalOwnership.acquire
+      lease.release
+    ensure
+      termisu.try &.close
+      terminal.try &.close
+      reader.try &.close
+      lease.try &.release
+      LibC.close(read_fd) if read_fd
+      LibC.close(write_fd) if write_fd
     end
   end
 
@@ -105,7 +216,7 @@ describe Termisu do
         input_source.start_count.should eq(starts_before + (should_pause ? 1 : 0))
       end
     ensure
-      terminal.try &.close
+      termisu.try &.close
       LibC.close(read_fd) if read_fd
       LibC.close(write_fd) if write_fd
     end
@@ -138,7 +249,7 @@ describe Termisu do
       input_source.start_count.should eq(2)
       input_source.stop_count.should eq(1)
     ensure
-      terminal.try &.close
+      termisu.try &.close
       LibC.close(read_fd) if read_fd
       LibC.close(write_fd) if write_fd
     end
