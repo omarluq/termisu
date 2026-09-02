@@ -224,7 +224,7 @@ module Termisu::Testing
     private def styled?(cell : Cell) : Bool
       return false if cell.grapheme == " "
       cell.bg != Color.default ||
-        !cell.attr.none? ||
+        cell.attr != Attribute::None ||
         (cell.fg != Color.default && cell.fg != Color.white)
     end
 

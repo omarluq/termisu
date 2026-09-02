@@ -45,6 +45,16 @@ describe Termisu::Attribute do
   end
 
   describe "flag combinations" do
+    it "distinguishes zero, single, and combined flag values from None" do
+      none = Termisu::Attribute::None
+      single = Termisu::Attribute::Bold
+      combined = Termisu::Attribute::Bold | Termisu::Attribute::Underline
+
+      (none == Termisu::Attribute::None).should be_true
+      (single == Termisu::Attribute::None).should be_false
+      (combined == Termisu::Attribute::None).should be_false
+    end
+
     it "can combine Bold and Underline" do
       attr = Termisu::Attribute::Bold | Termisu::Attribute::Underline
       attr.bold?.should be_true

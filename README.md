@@ -422,7 +422,7 @@ event.ctrl_q?
 event.ctrl_z?
 
 # Check for any modifier
-event.modifiers.none?            # No modifiers held
+event.modifiers == Termisu::Input::Modifier::None # No modifiers held
 event.modifiers.ctrl?            # Direct modifier check
 event.modifiers & Input::Modifier::Ctrl  # Bitwise check
 
@@ -470,6 +470,10 @@ event.key.to_char                # => Char? for printable keys
 ```
 
 ### Modifiers
+
+Compare modifiers directly with `Input::Modifier::None` to check whether none are set.
+The flags-generated `none?` predicate checks inclusion of the zero-valued `None` member,
+so it is not an emptiness check.
 
 ```crystal
 Input::Modifier::None
