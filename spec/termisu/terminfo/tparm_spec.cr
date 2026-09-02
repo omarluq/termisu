@@ -66,6 +66,59 @@ describe Termisu::Terminfo::Tparm do
       it "handles negative numbers with %d" do
         Termisu::Terminfo::Tparm.process("%p1%d", -5).should eq("-5")
       end
+
+      it "pads decimal fields with spaces or zeroes" do
+        Termisu::Terminfo::Tparm.process("%p1%2d", 7).should eq(" 7")
+        Termisu::Terminfo::Tparm.process("%p1%02d", 7).should eq("07")
+        Termisu::Terminfo::Tparm.process("%p1%02d", -7).should eq("-7")
+      end
+
+      it "supports integer precision and hexadecimal conversions" do
+        Termisu::Terminfo::Tparm.process("%p1%2.2d", 7).should eq("07")
+        Termisu::Terminfo::Tparm.process("%p1%2.2X", 15).should eq("0F")
+        Termisu::Terminfo::Tparm.process("%p1%2.2x", 255).should eq("ff")
+      end
+
+      it "supports integer precision without a field width" do
+        Termisu::Terminfo::Tparm.process("%p1%.2d", 7).should eq("07")
+        Termisu::Terminfo::Tparm.process("%p1%.2x", 15).should eq("0f")
+      end
+
+      it "outputs hexadecimal and octal without a field width" do
+        Termisu::Terminfo::Tparm.process("%p1%x", 42).should eq("2a")
+        Termisu::Terminfo::Tparm.process("%p1%X", 42).should eq("2A")
+        Termisu::Terminfo::Tparm.process("%p1%o", 42).should eq("52")
+      end
+
+      it "applies alternate form only to octal and hexadecimal conversions" do
+        Termisu::Terminfo::Tparm.process("%p1%:#d", 42).should eq("42")
+        Termisu::Terminfo::Tparm.process("%p1%:#08d", 42).should eq("00000042")
+        Termisu::Terminfo::Tparm.process("%p1%:#o", 42).should eq("052")
+        Termisu::Terminfo::Tparm.process("%p1%:#x", 42).should eq("0x2a")
+        Termisu::Terminfo::Tparm.process("%p1%:#X", 42).should eq("0X2A")
+      end
+
+      it "applies octal alternate form after precision" do
+        Termisu::Terminfo::Tparm.process("%p1%:#.2o", 1).should eq("01")
+        Termisu::Terminfo::Tparm.process("%p1%:#.0o", 0).should eq("0")
+      end
+
+      it "supports direct non-ambiguous format flags" do
+        Termisu::Terminfo::Tparm.process("%p1%#x", 42).should eq("0x2a")
+        Termisu::Terminfo::Tparm.process("%p1% d", 42).should eq(" 42")
+      end
+
+      it "formats negative hexadecimal and octal values as unsigned integers" do
+        Termisu::Terminfo::Tparm.process("%p1%x", -1).should eq("ffffffff")
+        Termisu::Terminfo::Tparm.process("%p1%2.2X", -1).should eq("FFFFFFFF")
+        Termisu::Terminfo::Tparm.process("%p1%o", -1).should eq("37777777777")
+      end
+
+      it "uses wrapped unsigned values for hexadecimal zero handling" do
+        value = 4_294_967_296_i64
+        Termisu::Terminfo::Tparm.process("%p1%:#x", value).should eq("0")
+        Termisu::Terminfo::Tparm.process("%p1%.0x", value).should eq("")
+      end
     end
 
     describe "constants" do
@@ -375,6 +428,20 @@ describe Termisu::Terminfo::Tparm do
         Termisu::Terminfo::Tparm.process(format1, 1).should eq("A")
         Termisu::Terminfo::Tparm.process(format2, 0, 1).should eq("B")
       end
+
+      it "evaluates nested conditionals in a selected then branch" do
+        format = "%?%p1%tA%?%p2%tB%eC%;D%eE%;"
+
+        Termisu::Terminfo::Tparm.process(format, 1, 1).should eq("ABD")
+        Termisu::Terminfo::Tparm.process(format, 1, 0).should eq("ACD")
+      end
+
+      it "evaluates nested conditionals in a selected else branch" do
+        format = "%?%p1%tA%?%p2%tB%eC%;D%eE%?%p2%tF%eG%;H%;"
+
+        Termisu::Terminfo::Tparm.process(format, 0, 1).should eq("EFH")
+        Termisu::Terminfo::Tparm.process(format, 0, 0).should eq("EGH")
+      end
     end
 
     describe "chained operations" do
@@ -402,12 +469,20 @@ describe Termisu::Terminfo::Tparm do
         Termisu::Terminfo::Tparm.process(format, 0).should eq("")
       end
 
-      it "processes initc-like capability with RGB parameters" do
-        # initc: \e]4;%p1%d;rgb:%p2%{255}%*%{1000}%/%2.2X/%p3%{255}%*%{1000}%/%2.2X/%p4%{255}%*%{1000}%/%2.2X\e\\
-        # Simplified version: color index and three color components
-        format = "\e]4;%p1%d;%p2%d,%p3%d,%p4%d\e\\"
-        result = Termisu::Terminfo::Tparm.process(format, 16, 255, 128, 0)
-        result.should eq("\e]4;16;255,128,0\e\\")
+      it "processes the ncurses xterm initc capability" do
+        format = "\e]4;%p1%d;rgb:%p2%{255}%*%{1000}%/%2.2X/" +
+                 "%p3%{255}%*%{1000}%/%2.2X/%p4%{255}%*%{1000}%/%2.2X\e\\"
+        result = Termisu::Terminfo::Tparm.process(format, 16, 1000, 500, 0)
+
+        result.should eq("\e]4;16;rgb:FF/7F/00\e\\")
+      end
+
+      it "processes nested xterm-256color setaf branches" do
+        format = "\e[%?%p1%{8}%<%t3%p1%d%e%p1%{16}%<%t9%p1%{8}%-%d%e38;5;%p1%d%;m"
+
+        Termisu::Terminfo::Tparm.process(format, 1).should eq("\e[31m")
+        Termisu::Terminfo::Tparm.process(format, 9).should eq("\e[91m")
+        Termisu::Terminfo::Tparm.process(format, 42).should eq("\e[38;5;42m")
       end
 
       it "processes ech (erase characters) capability" do
@@ -429,6 +504,40 @@ describe Termisu::Terminfo::Tparm do
         Termisu::Terminfo::Tparm.process(format, 0).should eq("\e[1d")
         Termisu::Terminfo::Tparm.process(format, 23).should eq("\e[24d")
       end
+    end
+  end
+
+  describe "ncurses differential" do
+    if TerminfoHelpers.terminfo_db_available?("xterm-256color") &&
+       TerminfoHelpers.xterm_tput_available?
+      it "matches tput for representative xterm-256color capabilities" do
+        data = Termisu::Terminfo::Database.new("xterm-256color").load
+        caps = Termisu::Terminfo::Parser.parse(data, ["cup", "setaf", "setab"])
+
+        [{"cup", [4, 9]}, {"setaf", [1]}, {"setaf", [9]}, {"setaf", [42]},
+         {"setab", [12]}, {"setab", [200]}].each do |capability, params|
+          actual = Termisu::Terminfo::Tparm.process(caps[capability], params.map(&.to_i64))
+          expected = TerminfoHelpers.xterm_tput(capability, params)
+          actual.to_slice.should eq(expected.to_slice)
+        end
+      end
+    else
+      pending "tparm differential (xterm-256color database or tput unavailable)"
+    end
+
+    if TerminfoHelpers.terminfo_db_available?("linux") &&
+       TerminfoHelpers.linux_initc_tput_available?
+      it "matches tput for Linux initc hexadecimal formatting" do
+        data = Termisu::Terminfo::Database.new("linux").load
+        initc = Termisu::Terminfo::Parser.parse(data, ["initc"])["initc"]
+        params = [1, 1000, 500, 0]
+
+        actual = Termisu::Terminfo::Tparm.process(initc, params.map(&.to_i64))
+        expected = TerminfoHelpers.linux_tput("initc", params)
+        actual.to_slice.should eq(expected.to_slice)
+      end
+    else
+      pending "tparm Linux initc differential (database or tput unavailable)"
     end
   end
 end

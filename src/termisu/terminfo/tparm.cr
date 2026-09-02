@@ -17,6 +17,7 @@
 # - `%d` - Pop and output as decimal
 # - `%s` - Pop and output as string
 # - `%c` - Pop and output as character (ASCII code)
+# - `%[width[.precision]][doxXs]` - Printf-style formatted output
 # - `%%` - Output literal %
 #
 # **Constants:**
