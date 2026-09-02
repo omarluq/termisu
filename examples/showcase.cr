@@ -286,50 +286,55 @@ begin
     termisu.set_cell(hint_x + idx, hint_y, char, fg: Termisu::Color.ansi256(245))
   end
 
-  # Initial render
-  termisu.render
-
   # --- Main Loop ---
   spinners = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
 
-  loop do
-    # Wait for input with 100ms timeout for animation
-    if termisu.wait_for_input(100)
-      if byte = termisu.read_byte
-        # Quit on 'q'
-        break if byte == 'q'.ord || byte == 'Q'.ord
+  # Acquire raw ownership before displaying the prompt so early keystrokes
+  # cannot be consumed by the event parser.
+  termisu.with_raw_input do
+    # Initial render
+    termisu.render
 
-        # Display pressed key
-        50.times { |col| termisu.set_cell(margin + col, key_y, ' ') } # Clear line
+    loop do
+      # Wait for input with 100ms timeout for animation
+      if termisu.wait_for_input(100)
+        if byte = termisu.read_byte
+          # Quit on 'q'
+          break if byte == 'q'.ord || byte == 'Q'.ord
 
-        key_char = byte.chr
-        display = key_char.printable? ? "'#{key_char}'" : "(non-printable)"
-        msg = "Key: #{display}  byte=#{byte}  hex=0x#{byte.to_s(16).upcase.rjust(2, '0')}"
-        msg.each_char_with_index do |char, col|
-          termisu.set_cell(margin + col, key_y, char, fg: Termisu::Color.magenta, attr: Termisu::Attribute::Bold)
+          # Display pressed key
+          50.times { |col| termisu.set_cell(margin + col, key_y, ' ') } # Clear line
+
+          key_char = byte.chr
+          display = key_char.printable? ? "'#{key_char}'" : "(non-printable)"
+          msg = "Key: #{display}  byte=#{byte}  hex=0x#{byte.to_s(16).upcase.rjust(2, '0')}"
+          msg.each_char_with_index do |char, col|
+            termisu.set_cell(margin + col, key_y, char,
+              fg: Termisu::Color.magenta, attr: Termisu::Attribute::Bold)
+          end
         end
       end
+
+      # Update animation
+      frame += 1
+      spinner = spinners[frame % spinners.size]
+
+      # Clear and redraw status line
+      60.times { |col| termisu.set_cell(margin + col, status_y, ' ') }
+
+      status = "#{spinner} Running... Frame #{frame}"
+      status.each_char_with_index do |char, col|
+        termisu.set_cell(margin + col, status_y, char, fg: Termisu::Color.green)
+      end
+
+      # Color cycling dots
+      3.times do |dot|
+        color_idx = ((frame * 3) + (dot * 72)) % 216 + 16
+        termisu.set_cell(width - 4 + dot, status_y, '●', fg: Termisu::Color.ansi256(color_idx))
+      end
+
+      termisu.render
     end
-
-    # Update animation
-    frame += 1
-    spinner = spinners[frame % spinners.size]
-
-    # Clear and redraw status line
-    60.times { |col| termisu.set_cell(margin + col, status_y, ' ') }
-
-    status = "#{spinner} Running... Frame #{frame}"
-    status.each_char_with_index do |char, col|
-      termisu.set_cell(margin + col, status_y, char, fg: Termisu::Color.green)
-    end
-
-    # Color cycling dots
-    3.times do |dot|
-      color_idx = ((frame * 3) + (dot * 72)) % 216 + 16
-      termisu.set_cell(width - 4 + dot, status_y, '●', fg: Termisu::Color.ansi256(color_idx))
-    end
-
-    termisu.render
   end
 
   # Animated goodbye (from demo.cr)

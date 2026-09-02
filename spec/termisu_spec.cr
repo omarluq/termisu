@@ -36,6 +36,49 @@ private class PausableInputSource < Termisu::Event::Source::Input
   end
 end
 
+# Forces close to run after the facade has decided to restart input but before
+# the source records that restart. The production ownership lock must make the
+# close fiber wait until start returns, so Event::Loop#stop wins last.
+private class CloseDuringRestartInputSource < PausableInputSource
+  @close_during_start : Termisu?
+  @close_done = Channel(Exception?).new(1)
+
+  def close_during_next_start(termisu : Termisu) : Nil
+    @close_during_start = termisu
+  end
+
+  def start(output : Channel(Termisu::Event::Any)) : Nil
+    if termisu = @close_during_start
+      @close_during_start = nil
+      close_started = Channel(Nil).new
+      spawn do
+        close_started.send(nil)
+        error = nil.as(Exception?)
+        begin
+          termisu.close
+        rescue ex
+          error = ex
+        ensure
+          @close_done.send(error)
+        end
+      end
+
+      # Let close either acquire the ownership lock (the regression) or block
+      # behind this in-progress restart (the fixed behavior).
+      close_started.receive
+      Fiber.yield
+    end
+
+    super(output)
+  end
+
+  def wait_for_close : Nil
+    if error = @close_done.receive
+      raise error
+    end
+  end
+end
+
 private class FailingStopEventLoop < Termisu::Event::Loop
   getter stop_count : Int32 = 0
 
@@ -117,6 +160,10 @@ class Termisu
     @ownership = TerminalOwnership.acquire
     @closed = Atomic(Bool).new(false)
     @timer_source = nil
+    @input_ownership_lock = Mutex.new
+    @raw_input_owner = nil
+    @raw_input_depth = 0
+    @input_pause_depth = 0
   end
 end
 
@@ -219,6 +266,30 @@ describe Termisu do
   end
 
   describe "#close" do
+    it "does not restart input when close begins during raw lease release" do
+      read_fd, write_fd = create_pipe
+      reader = Termisu::Reader.new(read_fd)
+      parser = Termisu::Input::Parser.new(reader)
+      input_source = CloseDuringRestartInputSource.new(reader, parser)
+      resize_source = Termisu::Event::Source::Resize.new(-> { {80, 24} })
+      event_loop = Termisu::Event::Loop.new
+      terminal = CaptureTerminal.new(sync_updates: false)
+      termisu = Termisu.new(terminal, reader, parser, input_source, resize_source, event_loop)
+      event_loop.add_source(input_source).start
+
+      input_source.close_during_next_start(termisu)
+      termisu.with_raw_input { }
+      input_source.wait_for_close
+
+      event_loop.running?.should be_false
+      event_loop.output.closed?.should be_true
+      input_source.running?.should be_false
+    ensure
+      termisu.try &.close
+      LibC.close(read_fd) if read_fd
+      LibC.close(write_fd) if write_fd
+    end
+
     it "preserves the first failure while completing cleanup and releasing ownership" do
       read_fd, write_fd = create_pipe
       reader = Termisu::Reader.new(read_fd)
@@ -331,12 +402,99 @@ describe Termisu do
 
         input_source.running?.should be_false
         input_source.start_count.should eq(1)
-        input_source.stop_count.should eq(1)
+        input_source.stop_count.should eq(2)
       end
 
       input_source.running?.should be_true
       input_source.start_count.should eq(2)
-      input_source.stop_count.should eq(1)
+      input_source.stop_count.should eq(2)
+    ensure
+      termisu.try &.close
+      LibC.close(read_fd) if read_fd
+      LibC.close(write_fd) if write_fd
+    end
+
+    it "preserves buffered raw input when an overlapping mode exits" do
+      read_fd, write_fd = create_pipe
+      reader = Termisu::Reader.new(read_fd)
+      parser = Termisu::Input::Parser.new(reader)
+      input_source = PausableInputSource.new(reader, parser)
+      resize_source = Termisu::Event::Source::Resize.new(-> { {80, 24} })
+      event_loop = Termisu::Event::Loop.new
+      terminal = CaptureTerminal.new(sync_updates: false)
+      terminal.mode = Termisu::Terminal::Mode.raw
+      termisu = Termisu.new(terminal, reader, parser, input_source, resize_source, event_loop)
+      input_source.start(event_loop.output)
+
+      mode_entered = Channel(Nil).new
+      release_mode = Channel(Nil).new
+      mode_exited = Channel(Nil).new
+      spawn do
+        termisu.with_cooked_mode(preserve_screen: true) do
+          mode_entered.send(nil)
+          release_mode.receive
+        end
+      ensure
+        mode_exited.send(nil)
+      end
+
+      mode_entered.receive
+      termisu.with_raw_input do
+        LibC.write(write_fd, "AB".to_unsafe, 2).should eq(2)
+        termisu.peek_byte.should eq('A'.ord.to_u8)
+
+        release_mode.send(nil)
+        mode_exited.receive
+
+        termisu.input_available?.should be_true
+        termisu.read_bytes(2).should eq("AB".to_slice)
+      end
+    ensure
+      termisu.try &.close
+      LibC.close(read_fd) if read_fd
+      LibC.close(write_fd) if write_fd
+    end
+
+    it "keeps input paused when a mode starts during a raw input lease" do
+      read_fd, write_fd = create_pipe
+      reader = Termisu::Reader.new(read_fd)
+      parser = Termisu::Input::Parser.new(reader)
+      input_source = PausableInputSource.new(reader, parser)
+      resize_source = Termisu::Event::Source::Resize.new(-> { {80, 24} })
+      event_loop = Termisu::Event::Loop.new
+      terminal = CaptureTerminal.new(sync_updates: false)
+      terminal.mode = Termisu::Terminal::Mode.raw
+      termisu = Termisu.new(terminal, reader, parser, input_source, resize_source, event_loop)
+      input_source.start(event_loop.output)
+
+      mode_entered = Channel(Nil).new
+      release_mode = Channel(Nil).new
+      mode_exited = Channel(Nil).new
+
+      termisu.with_raw_input do
+        spawn do
+          termisu.with_cooked_mode(preserve_screen: true) do
+            mode_entered.send(nil)
+            release_mode.receive
+          end
+        ensure
+          mode_exited.send(nil)
+        end
+
+        mode_entered.receive
+        input_source.running?.should be_false
+        input_source.stop_count.should eq(2)
+      end
+
+      input_source.running?.should be_false
+      input_source.start_count.should eq(1)
+
+      release_mode.send(nil)
+      mode_exited.receive
+
+      input_source.running?.should be_true
+      input_source.start_count.should eq(2)
+      input_source.stop_count.should eq(2)
     ensure
       termisu.try &.close
       LibC.close(read_fd) if read_fd

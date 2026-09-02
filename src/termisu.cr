@@ -32,6 +32,10 @@ class Termisu
   @resize_source : Event::Source::Resize
   @event_loop : Event::Loop
   @timer_source : Event::Source::Timer | Event::Source::SystemTimer | Nil
+  @input_ownership_lock : Mutex
+  @raw_input_owner : Fiber?
+  @raw_input_depth : Int32
+  @input_pause_depth : Int32
 
   # Initializes Termisu with all required components.
   #
@@ -50,6 +54,10 @@ class Termisu
   def initialize(*, sync_updates : Bool = true)
     @ownership = TerminalOwnership.acquire
     @closed = Atomic(Bool).new(false)
+    @input_ownership_lock = Mutex.new
+    @raw_input_owner = nil
+    @raw_input_depth = 0
+    @input_pause_depth = 0
 
     resources = begin
       initialize_resources(sync_updates)
@@ -157,7 +165,10 @@ class Termisu
   # The event loop is stopped first to ensure fibers that might be using
   # the reader are terminated before the reader is closed.
   def close
-    return unless @closed.compare_and_set(false, true)[1]
+    won_close = @input_ownership_lock.synchronize do
+      @closed.compare_and_set(false, true)[1]
+    end
+    return unless won_close
 
     lifecycle_log { Log.info { "Closing Termisu" } }
 
@@ -277,19 +288,119 @@ class Termisu
 
   # --- Input Operations ---
 
-  delegate read_byte, # Reads single byte, returns UInt8?
-    read_bytes,       # Reads count bytes, returns Bytes?
-    peek_byte,        # Peeks next byte without consuming, returns UInt8?
-    to: @reader
+  # Temporarily gives the calling fiber exclusive access to raw terminal input.
+  #
+  # Termisu normally owns input through its event parser. Raw reads must happen
+  # inside this block so the parser can be stopped and fully quiesced first.
+  # Event parsing resumes when the outermost lease ends, including when the
+  # block raises.
+  #
+  # ```
+  # termisu.with_raw_input do
+  #   if termisu.wait_for_input(1000)
+  #     byte = termisu.read_byte
+  #   end
+  # end
+  # ```
+  def with_raw_input(&)
+    fiber = acquire_raw_input
+    begin
+      yield
+    ensure
+      release_raw_input(fiber)
+    end
+  end
 
-  # Checks if input data is available.
+  private def acquire_raw_input : Fiber
+    fiber = Fiber.current
+
+    @input_ownership_lock.synchronize do
+      if owner = @raw_input_owner
+        unless owner.same?(fiber)
+          raise InputOwnershipError.new("raw input is already leased by another fiber")
+        end
+        @raw_input_depth += 1
+      else
+        @input_source.stop
+        unless @input_source.prepare_raw_handoff
+          start_input_processing_if_unpaused
+          raise InputOwnershipError.new(
+            "raw input cannot be leased while the event parser retains input; " \
+            "finish the pending event and retry",
+          )
+        end
+
+        @raw_input_owner = fiber
+        @raw_input_depth = 1
+      end
+    end
+
+    fiber
+  end
+
+  # Reads a single raw byte. Must be called inside `with_raw_input`.
+  def read_byte : UInt8?
+    ensure_raw_input_owner("read_byte")
+    @reader.read_byte
+  end
+
+  # Reads exactly *count* raw bytes. Must be called inside `with_raw_input`.
+  def read_bytes(count : Int32) : Bytes?
+    ensure_raw_input_owner("read_bytes")
+    @reader.read_bytes(count)
+  end
+
+  # Peeks at the next raw byte. Must be called inside `with_raw_input`.
+  def peek_byte : UInt8?
+    ensure_raw_input_owner("peek_byte")
+    @reader.peek_byte
+  end
+
+  # Checks if raw input data is available. Must be called inside
+  # `with_raw_input`.
   def input_available? : Bool
+    ensure_raw_input_owner("input_available?")
     @reader.available?
   end
 
-  # Waits for input data with a timeout in milliseconds.
+  # Waits for raw input data with a timeout in milliseconds. Must be called
+  # inside `with_raw_input`.
   def wait_for_input(timeout_ms : Int32) : Bool
+    ensure_raw_input_owner("wait_for_input")
     @reader.wait_for_data(timeout_ms)
+  end
+
+  private def ensure_raw_input_owner(operation : String) : Nil
+    owns_input = @input_ownership_lock.synchronize do
+      @raw_input_owner.try(&.same?(Fiber.current)) || false
+    end
+    return if owns_input
+
+    raise InputOwnershipError.new(
+      "#{operation} requires a raw input lease; call it inside Termisu#with_raw_input",
+    )
+  end
+
+  private def release_raw_input(fiber : Fiber) : Nil
+    @input_ownership_lock.synchronize do
+      return unless @raw_input_owner.try(&.same?(fiber))
+
+      @raw_input_depth -= 1
+      return unless @raw_input_depth == 0
+
+      @raw_input_owner = nil
+      start_input_processing_if_unpaused
+    end
+  end
+
+  # Starts the parser only when every input-pause owner has released it.
+  # Must be called while holding `@input_ownership_lock`.
+  private def start_input_processing_if_unpaused : Nil
+    return unless @input_pause_depth == 0
+    return unless @raw_input_owner.nil?
+    return if @closed.get
+
+    @input_source.start(@event_loop.output)
   end
 
   # --- Event-Based Input API ---
@@ -677,15 +788,15 @@ class Termisu
   def with_mode(mode : Terminal::Mode, preserve_screen : Bool = false, &)
     Log.debug { "Termisu.with_mode: #{mode}, preserve_screen: #{preserve_screen}" }
 
-    # Any non-raw mode needs input processing paused to avoid conflicts
-    # between our input reader and direct STDIN access
-    needs_pause = mode != Terminal::Mode::None
-    owns_input_pause = needs_pause && @input_source.running?
+    # Terminal::Mode.raw uses the zero-valued None member, so every other mode
+    # needs input processing paused to avoid conflicts between our input reader
+    # and direct STDIN access. Every non-raw scope participates in pause-depth
+    # accounting so overlapping raw leases cannot restart input prematurely.
+    owns_input_pause = mode != Terminal::Mode::None
     previous_mode = @terminal.current_mode
 
     # Pause input processing to avoid conflict with shell/external program.
-    # Only the scope that stopped a running source may restart it; nested
-    # non-raw scopes must leave their outer scope's pause in place.
+    # Nested and overlapping non-raw scopes each own one pause-depth entry.
     pause_input_processing if owns_input_pause
 
     @terminal.with_mode(mode, preserve_screen) do
@@ -795,22 +906,29 @@ class Termisu
 
   # Pauses input processing for mode transitions.
   #
-  # Stops the input source and clears any pending input to avoid
-  # conflicts when switching to user-interactive modes.
+  # Stops the input source and clears any pending event input to avoid conflicts
+  # when switching to user-interactive modes. Buffered input is preserved if a
+  # raw lease acquired ownership while mode scopes overlapped across fibers.
   private def pause_input_processing
     Log.debug { "Pausing input processing" }
-    @input_source.stop
-    @reader.clear_buffer
+    @input_ownership_lock.synchronize do
+      @input_source.stop
+      @input_pause_depth += 1
+      @reader.clear_buffer if @raw_input_owner.nil?
+    end
   end
 
   # Resumes input processing after mode transitions.
   #
-  # Clears any stale input and restarts the input source to
-  # continue receiving events.
+  # Clears stale event input and restarts the input source only after every mode
+  # pause and raw lease has ended. An active raw owner's buffer is left intact.
   private def resume_input_processing
     Log.debug { "Resuming input processing" }
-    @reader.clear_buffer
-    @input_source.start(@event_loop.output)
+    @input_ownership_lock.synchronize do
+      @reader.clear_buffer if @raw_input_owner.nil?
+      @input_pause_depth -= 1 if @input_pause_depth > 0
+      start_input_processing_if_unpaused
+    end
   end
 
   # Emits a mode change event to the event loop.

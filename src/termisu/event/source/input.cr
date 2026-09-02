@@ -52,8 +52,11 @@ class Termisu::Event::Source::Input < Termisu::Event::Source
   @reader : Termisu::Reader
   @parser : Termisu::Input::Parser
   @running : Atomic(Bool)
-  @output : Channel(Event::Any)?
+  @lifecycle_lock : Mutex
+  @stop_signal : Channel(Nil)?
+  @done : Channel(Nil)?
   @fiber : Fiber?
+  @pending_event : Event::Any?
 
   # Creates a new input source.
   #
@@ -61,6 +64,7 @@ class Termisu::Event::Source::Input < Termisu::Event::Source
   # - `parser` - Parser instance for escape sequence parsing
   def initialize(@reader : Termisu::Reader, @parser : Termisu::Input::Parser)
     @running = Atomic(Bool).new(false)
+    @lifecycle_lock = Mutex.new
   end
 
   # Starts polling for input events and sending them to the output channel.
@@ -68,27 +72,57 @@ class Termisu::Event::Source::Input < Termisu::Event::Source
   # Spawns a fiber that drains available input events without blocking
   # and sends them to the channel.
   #
-  # Prevents double-start with `compare_and_set`.
+  # Serializes lifecycle changes so a previous polling fiber is fully stopped
+  # before another can start.
   def start(output : Channel(Event::Any)) : Nil
-    return unless @running.compare_and_set(false, true)
+    @lifecycle_lock.synchronize do
+      return if @running.get
 
-    @output = output
+      stop_signal = Channel(Nil).new
+      done = Channel(Nil).new
+      @stop_signal = stop_signal
+      @done = done
+      @running.set(true)
 
-    @fiber = spawn(name: "termisu-input") do
-      run_loop
+      @fiber = spawn(name: "termisu-input") do
+        run_loop(output, stop_signal)
+      ensure
+        @running.set(false)
+        done.close
+      end
+
+      lifecycle_log { Log.debug { "Input source started" } }
     end
-
-    lifecycle_log { Log.debug { "Input source started" } }
   end
 
   # Stops polling for input events.
   #
-  # Sets the running flag to false, causing the fiber to exit
-  # on its next iteration. Uses compare_and_set for idempotent
-  # stop operations.
+  # Signals the polling fiber and waits for it to finish. When this method
+  # returns, the parser no longer touches the reader, so ownership can be
+  # handed to a raw-input caller without splitting an input sequence.
   def stop : Nil
-    return unless @running.compare_and_set(true, false)
-    lifecycle_log { Log.debug { "Input source stopped" } }
+    @lifecycle_lock.synchronize do
+      fiber = @fiber
+      return unless fiber
+      return if fiber.dead?
+
+      @running.set(false)
+      @stop_signal.try { |signal| signal.close unless signal.closed? }
+      @done.try(&.receive?)
+      lifecycle_log { Log.debug { "Input source stopped" } }
+    end
+  end
+
+  # Prepares the stopped source to hand its reader to a raw-input consumer.
+  #
+  # Callers must stop the source first. A parsed event blocked on backpressure
+  # and bytes retained by an in-progress parser probe both remain event-owned;
+  # handing the reader to a raw consumer in either state would reorder or split
+  # the input stream.
+  def prepare_raw_handoff : Bool
+    @lifecycle_lock.synchronize do
+      !@running.get && @pending_event.nil? && @parser.prepare_raw_handoff
+    end
   end
 
   # Returns true if the input source is currently running.
@@ -102,19 +136,23 @@ class Termisu::Event::Source::Input < Termisu::Event::Source
   end
 
   # Main input loop - runs in a spawned fiber.
-  private def run_loop : Nil
-    output = @output
-    return unless output
-
+  private def run_loop(output : Channel(Event::Any), stop_signal : Channel(Nil)) : Nil
     while @running.get
       emitted = false
       drained = 0
 
       while @running.get && drained < MAX_DRAIN_PER_CYCLE
-        event = @parser.poll_event(0)
+        event = @pending_event || @parser.poll_event(0)
         break unless event
 
-        output.send(event)
+        unless send_event(output, stop_signal, event)
+          # The parser already consumed this complete event. Keep it for the
+          # next run instead of losing it when a full output channel is paused.
+          @pending_event = event
+          return
+        end
+
+        @pending_event = nil
         emitted = true
         drained += 1
       end
@@ -130,5 +168,18 @@ class Termisu::Event::Source::Input < Termisu::Event::Source
   rescue Channel::ClosedError
     # Channel closed during shutdown - exit gracefully
     Log.debug { "Input channel closed, exiting" }
+  end
+
+  private def send_event(
+    output : Channel(Event::Any),
+    stop_signal : Channel(Nil),
+    event : Event::Any,
+  ) : Bool
+    select
+    when output.send(event)
+      true
+    when stop_signal.receive?
+      false
+    end
   end
 end

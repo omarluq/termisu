@@ -100,24 +100,27 @@ begin
     termisu.set_cell(idx, 14, char, fg: Termisu::Color::Yellow, attr: Termisu::Attribute::Bold)
   end
 
-  # Initial render - renders all cells
-  termisu.render
-
-  # Wait for input
-  if termisu.wait_for_input(5000)
-    if byte = termisu.read_byte
-      response = "You pressed: '#{byte.chr}' (byte: #{byte})"
-      response.each_char_with_index do |char, idx|
-        termisu.set_cell(idx, 15, char, fg: Termisu::Color::Green)
-      end
-      termisu.render # Only the changed cells are rendered (diff-based)
-    end
-  else
-    timeout_msg = "Timeout! No input received."
-    timeout_msg.each_char_with_index do |char, idx|
-      termisu.set_cell(idx, 15, char, fg: Termisu::Color::Red)
-    end
+  # Raw reads use an explicit lease so the event parser cannot consume the
+  # same bytes concurrently. Acquire it before displaying the prompt.
+  termisu.with_raw_input do
+    # Initial render - renders all cells
     termisu.render
+
+    if termisu.wait_for_input(5000)
+      if byte = termisu.read_byte
+        response = "You pressed: '#{byte.chr}' (byte: #{byte})"
+        response.each_char_with_index do |char, idx|
+          termisu.set_cell(idx, 15, char, fg: Termisu::Color::Green)
+        end
+        termisu.render # Only the changed cells are rendered (diff-based)
+      end
+    else
+      timeout_msg = "Timeout! No input received."
+      timeout_msg.each_char_with_index do |char, idx|
+        termisu.set_cell(idx, 15, char, fg: Termisu::Color::Red)
+      end
+      termisu.render
+    end
   end
 
   # Animated goodbye with cursor following the text

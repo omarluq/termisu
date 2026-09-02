@@ -17,19 +17,22 @@ begin
   # Position and show cursor
   termisu.set_cursor(14, 1)
 
-  # Render only changed cells (diff-based)
-  termisu.render
+  # Raw reads use an explicit lease so the event parser cannot consume the
+  # same bytes concurrently. Acquire it before displaying the prompt.
+  termisu.with_raw_input do
+    # Render only changed cells (diff-based)
+    termisu.render
 
-  # Wait for input
-  if termisu.wait_for_input(5000)
-    byte = termisu.read_byte
-    if byte
-      msg = "You pressed: '#{byte.chr}' (byte: #{byte})"
-      msg.each_char_with_index do |char, idx|
-        termisu.set_cell(idx, 3, char, Termisu::Color.white, attr: attr)
-        termisu.set_cursor(idx + 1, 3)
-        termisu.render
-        sleep 0.01.seconds
+    if termisu.wait_for_input(5000)
+      byte = termisu.read_byte
+      if byte
+        msg = "You pressed: '#{byte.chr}' (byte: #{byte})"
+        msg.each_char_with_index do |char, idx|
+          termisu.set_cell(idx, 3, char, Termisu::Color.white, attr: attr)
+          termisu.set_cursor(idx + 1, 3)
+          termisu.render
+          sleep 0.01.seconds
+        end
       end
     end
   end
