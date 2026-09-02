@@ -78,50 +78,72 @@ class Termisu
     resize_source: Event::Source::Resize,
     event_loop: Event::Loop,
   )
-    Logging.setup
-    Log.info { "Initializing Termisu v#{VERSION}" }
+    terminal = nil.as(Terminal?)
+    reader = nil.as(Reader?)
+    input_parser = nil.as(Input::Parser?)
+    input_source = nil.as(Event::Source::Input?)
+    resize_source = nil.as(Event::Source::Resize?)
+    event_loop = nil.as(Event::Loop?)
 
-    # Resolve terminfo before opening the TTY so this failure path has no
-    # partially-created backend to clean up.
+    begin
+      Logging.setup
+      lifecycle_log { Log.info { "Initializing Termisu v#{VERSION}" } }
+
+      terminal = build_terminal(sync_updates)
+      reader = Reader.new(terminal.infd)
+      input_parser = Input::Parser.new(reader)
+
+      lifecycle_log { Log.debug { "Terminal size: #{terminal.size}" } }
+
+      # Create async event sources before acquiring terminal modes.
+      input_source = Event::Source::Input.new(reader, input_parser)
+      # Must be query_size (live ioctl), not size (cached) - the resize
+      # source detects changes by re-querying the terminal dimensions.
+      resize_terminal = terminal
+      resize_source = Event::Source::Resize.new(-> { resize_terminal.query_size })
+
+      event_loop = build_event_loop
+      event_loop.add_source(input_source)
+      event_loop.add_source(resize_source)
+
+      terminal.enable_raw_mode
+      event_loop.start
+
+      lifecycle_log { Log.debug { "Event loop started with sources: #{event_loop.source_names}" } }
+
+      terminal.enter_alternate_screen
+      lifecycle_log { Log.debug { "Raw mode enabled, alternate screen entered" } }
+    rescue error
+      event_loop.try(&.stop) rescue nil
+      reader.try(&.close) rescue nil
+      terminal.try(&.close) rescue nil
+      Logging.flush rescue nil
+      Logging.close
+      raise error
+    end
+
+    if terminal && reader && input_parser && input_source && resize_source && event_loop
+      {
+        terminal:      terminal,
+        reader:        reader,
+        input_parser:  input_parser,
+        input_source:  input_source,
+        resize_source: resize_source,
+        event_loop:    event_loop,
+      }
+    else
+      raise Termisu::Error.new("Termisu initialization completed without all components")
+    end
+  end
+
+  protected def build_terminal(sync_updates : Bool) : Terminal
+    # Resolve terminfo before opening the TTY so failure cannot leak a backend.
     terminfo = Terminfo.new
-    terminal = Terminal.new(terminfo: terminfo, sync_updates: sync_updates)
-    reader = Reader.new(terminal.infd)
-    input_parser = Input::Parser.new(reader)
+    Terminal.new(terminfo: terminfo, sync_updates: sync_updates)
+  end
 
-    Log.debug { "Terminal size: #{terminal.size}" }
-
-    terminal.enable_raw_mode
-
-    input_source = Event::Source::Input.new(reader, input_parser)
-    # Must be query_size (live ioctl), not size (cached) - the resize
-    # source detects changes by re-querying the terminal dimensions.
-    resize_source = Event::Source::Resize.new(-> { terminal.as(Terminal).query_size })
-
-    event_loop = Event::Loop.new
-    event_loop.add_source(input_source)
-    event_loop.add_source(resize_source)
-    event_loop.start
-
-    Log.debug { "Event loop started with sources: #{event_loop.source_names}" }
-
-    terminal.enter_alternate_screen
-    Log.debug { "Raw mode enabled, alternate screen entered" }
-
-    {
-      terminal:      terminal,
-      reader:        reader,
-      input_parser:  input_parser,
-      input_source:  input_source,
-      resize_source: resize_source,
-      event_loop:    event_loop,
-    }
-  rescue ex
-    event_loop.try(&.stop) rescue nil
-    reader.try(&.close) rescue nil
-    terminal.try(&.close) rescue nil
-    Logging.flush rescue nil
-    Logging.close rescue nil
-    raise ex
+  protected def build_event_loop : Event::Loop
+    Event::Loop.new
   end
 
   # Closes Termisu and cleans up all resources.
@@ -137,14 +159,14 @@ class Termisu
   def close
     return unless @closed.compare_and_set(false, true)[1]
 
-    Log.info { "Closing Termisu" }
+    lifecycle_log { Log.info { "Closing Termisu" } }
 
     # Keep ownership until every process-global and terminal resource has been
     # shut down. Preserve the first failure while still running every cleanup
     # step and releasing the ownership lease.
     error = capture_cleanup_error(nil) do
       @event_loop.stop
-      Log.debug { "Event loop stopped" }
+      lifecycle_log { Log.debug { "Event loop stopped" } }
     end
     error = capture_cleanup_error(error) { @reader.close }
     error = capture_cleanup_error(error) { @terminal.close }
@@ -159,6 +181,12 @@ class Termisu
     error
   rescue ex
     error || ex
+  end
+
+  private def lifecycle_log(&) : Nil
+    yield
+  rescue
+    # Logging must never change lifecycle state or prevent cleanup.
   end
 
   # --- Terminal Operations ---

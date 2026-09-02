@@ -180,11 +180,22 @@ class Termisu::Terminal::Backend
   def close
     return unless @closed.compare_and_set(false, true)[1]
 
+    restore_error = nil.as(Exception?)
     begin
       disable_raw_mode
-    ensure
-      @tty.close
+    rescue ex
+      restore_error = ex
     end
+
+    begin
+      @tty.close
+    rescue error
+      # Restoring termios is the first failure to report, but descriptor
+      # closure is always attempted and is reported when restoration worked.
+      restore_error ||= error
+    end
+
+    raise restore_error if restore_error
   end
 end
 

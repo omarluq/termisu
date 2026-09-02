@@ -91,7 +91,7 @@ class Termisu::Event::Source::Timer < Termisu::Event::Source
       run_loop(run_token)
     end
 
-    Log.debug { "Timer started with interval=#{@interval}" }
+    lifecycle_log { Log.debug { "Timer started with interval=#{@interval}" } }
   end
 
   # Stops generating tick events.
@@ -107,7 +107,7 @@ class Termisu::Event::Source::Timer < Termisu::Event::Source
     # but the stale token makes it exit instead of double-ticking.
     advance_run_token
 
-    Log.debug { "Timer stopped" }
+    lifecycle_log { Log.debug { "Timer stopped" } }
   end
 
   # Returns true if the timer is currently running.

@@ -96,7 +96,7 @@ class Termisu::Event::Source::SystemTimer < Termisu::Event::Source
       run_loop(run_token)
     end
 
-    Log.debug { "SystemTimer started with interval=#{@interval} using #{poller.class.name}" }
+    lifecycle_log { Log.debug { "SystemTimer started with interval=#{@interval} using #{poller.class.name}" } }
   end
 
   # Stops generating tick events and releases resources.
@@ -110,7 +110,7 @@ class Termisu::Event::Source::SystemTimer < Termisu::Event::Source
     @poller = nil
     @timer_handle = nil
 
-    Log.debug { "SystemTimer stopped" }
+    lifecycle_log { Log.debug { "SystemTimer stopped" } }
   end
 
   # Returns true if the timer is currently running.

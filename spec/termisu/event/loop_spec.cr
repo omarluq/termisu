@@ -1,6 +1,73 @@
 require "../../spec_helper"
 require "../../../src/termisu/time_compat"
 
+private class FaultInjectingSource < Termisu::Event::Source
+  getter calls = [] of String
+  @running = Atomic(Bool).new(false)
+
+  def initialize(
+    @source_name : String,
+    @start_error : String? = nil,
+    @stop_error : String? = nil,
+    @all_calls : Array(String)? = nil,
+  )
+  end
+
+  def start(output : Channel(Termisu::Event::Any)) : Nil
+    @calls << "start"
+    @all_calls.try { |calls| calls << "#{name}:start" }
+    @running.set(true)
+    @start_error.try { |error| raise error }
+  end
+
+  def stop : Nil
+    @calls << "stop"
+    @all_calls.try { |calls| calls << "#{name}:stop" }
+    @running.set(false)
+    @stop_error.try { |error| raise error }
+  end
+
+  def running? : Bool
+    @running.get
+  end
+
+  def name : String
+    @source_name
+  end
+end
+
+private class YieldingStartSource < Termisu::Event::Source
+  @running = Atomic(Bool).new(false)
+  @start_entered = Channel(Nil).new(1)
+  @continue_start = Channel(Nil).new(1)
+
+  def start(output : Channel(Termisu::Event::Any)) : Nil
+    @running.set(true)
+    @start_entered.send(nil)
+    @continue_start.receive
+  end
+
+  def stop : Nil
+    @running.set(false)
+  end
+
+  def running? : Bool
+    @running.get
+  end
+
+  def name : String
+    "yielding-start"
+  end
+
+  def wait_until_starting : Nil
+    @start_entered.receive
+  end
+
+  def continue_start : Nil
+    @continue_start.send(nil)
+  end
+end
+
 describe Termisu::Event::Loop do
   describe "#initialize" do
     it "creates with default buffer size" do
@@ -150,6 +217,132 @@ describe Termisu::Event::Loop do
 
       loop.stop
     end
+
+    it "rolls back every attempted source in reverse order when startup fails" do
+      all_calls = [] of String
+      first = FaultInjectingSource.new("first", all_calls: all_calls)
+      failing = FaultInjectingSource.new(
+        "failing",
+        start_error: "startup failed",
+        stop_error: "rollback failed",
+        all_calls: all_calls,
+      )
+      unattempted = FaultInjectingSource.new("unattempted", all_calls: all_calls)
+      loop = Termisu::Event::Loop.new
+      loop.add_source(first).add_source(failing).add_source(unattempted)
+
+      error = expect_raises(Exception, "startup failed") { loop.start }
+
+      error.message.should eq("startup failed")
+      loop.running?.should be_false
+      first.calls.should eq(["start", "stop"])
+      failing.calls.should eq(["start", "stop"])
+      unattempted.calls.should be_empty
+      all_calls.should eq(["first:start", "failing:start", "failing:stop", "first:stop"])
+      first.running?.should be_false
+      failing.running?.should be_false
+      loop.output.closed?.should be_true
+
+      select
+      when event = loop.output.receive?
+        event.should be_nil
+      when timeout(100.milliseconds)
+        fail "Timeout waiting for failed loop output to close"
+      end
+    end
+
+    it "serializes stop with the complete source startup transition" do
+      yielding = YieldingStartSource.new
+      following = FaultInjectingSource.new("following")
+      loop = Termisu::Event::Loop.new
+      loop.add_source(yielding).add_source(following)
+      start_done = Channel(Nil).new(1)
+      stop_started = Channel(Nil).new(1)
+      stop_done = Channel(Nil).new(1)
+
+      spawn do
+        loop.start
+        start_done.send(nil)
+      end
+      yielding.wait_until_starting
+
+      spawn do
+        stop_started.send(nil)
+        loop.stop
+        stop_done.send(nil)
+      end
+      stop_started.receive
+
+      stopped_during_start = select
+      when stop_done.receive
+        true
+      when timeout(30.milliseconds)
+        false
+      end
+
+      yielding.continue_start
+      start_done.receive
+      stop_done.receive unless stopped_during_start
+
+      stopped_during_start.should be_false
+      loop.running?.should be_false
+      yielding.running?.should be_false
+      following.running?.should be_false
+      following.calls.should eq(["start", "stop"])
+      loop.output.closed?.should be_true
+    end
+
+    it "does not let direct logging failures change source lifecycle" do
+      source = FaultInjectingSource.new("logged")
+      loop = Termisu::Event::Loop.new
+      loop.add_source(source)
+
+      with_raising_lifecycle_logs do
+        loop.start
+        loop.running?.should be_true
+        source.running?.should be_true
+
+        loop.stop
+      end
+
+      loop.running?.should be_false
+      source.running?.should be_false
+      loop.output.closed?.should be_true
+      source.calls.should eq(["start", "stop"])
+
+      # Cleanup completed despite the logger, so retries remain no-ops.
+      loop.stop
+      source.calls.should eq(["start", "stop"])
+    end
+
+    it "preserves existing logging when fault injection block raises" do
+      backend = ::Log::MemoryBackend.new
+      logger = ::Log.for("termisu.spec.lifecycle")
+      builder = ::Log.builder
+      was_configured = Termisu::Logging.configured?
+
+      begin
+        Termisu::Logging.configured = true
+        builder.bind("*", ::Log::Severity::Info, backend)
+
+        begin
+          expect_raises(Exception, "injected block failure") do
+            with_raising_lifecycle_logs { raise "injected block failure" }
+          end
+
+          logger.debug { "filtered debug message" }
+          logger.info { "logging remains configured" }
+
+          Termisu::Logging.configured?.should be_true
+          backend.entries.map(&.severity).should eq([::Log::Severity::Info])
+          backend.entries.map(&.message).should eq(["logging remains configured"])
+        ensure
+          builder.unbind("*", ::Log::Severity::Info, backend)
+        end
+      ensure
+        Termisu::Logging.configured = was_configured
+      end
+    end
   end
 
   describe "#stop" do
@@ -221,6 +414,26 @@ describe Termisu::Event::Loop do
 
       # Should complete within shutdown timeout + buffer
       elapsed.should be < 200.milliseconds
+    end
+
+    it "stops every source and closes output while preserving the first failure" do
+      first = FaultInjectingSource.new("first", stop_error: "first stop failed")
+      second = FaultInjectingSource.new("second", stop_error: "second stop failed")
+      loop = Termisu::Event::Loop.new
+      loop.add_source(first).add_source(second)
+      loop.start
+
+      expect_raises(Exception, "first stop failed") { loop.stop }
+
+      first.calls.should eq(["start", "stop"])
+      second.calls.should eq(["start", "stop"])
+      loop.running?.should be_false
+      loop.output.closed?.should be_true
+
+      # A failed close still completes the lifecycle and remains idempotent.
+      loop.stop
+      first.calls.should eq(["start", "stop"])
+      second.calls.should eq(["start", "stop"])
     end
   end
 

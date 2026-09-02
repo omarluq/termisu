@@ -57,6 +57,52 @@ private class FailingCloseTerminal < CaptureTerminal
   end
 end
 
+private class LifecycleTerminal < CaptureTerminal
+  class_property? fail_close : Bool = false
+
+  def close
+    super
+    @backend.close
+    raise "terminal cleanup failed" if self.class.fail_close?
+  end
+end
+
+private class LifecycleEventLoop < Termisu::Event::Loop
+  class_property? fail_start : Bool = false
+  class_property? fail_stop : Bool = false
+  getter stop_calls : Int32 = 0
+
+  def start : self
+    super
+    raise "source startup failed" if self.class.fail_start?
+    self
+  end
+
+  def stop : self
+    @stop_calls += 1
+    super
+    raise "event stop failed" if self.class.fail_stop?
+    self
+  end
+end
+
+private class LifecycleTermisu < Termisu
+  class_property last_terminal : LifecycleTerminal?
+  class_property last_event_loop : LifecycleEventLoop?
+
+  protected def build_terminal(sync_updates : Bool) : Termisu::Terminal
+    terminal = LifecycleTerminal.new(sync_updates: sync_updates)
+    self.class.last_terminal = terminal
+    terminal
+  end
+
+  protected def build_event_loop : Termisu::Event::Loop
+    event_loop = LifecycleEventLoop.new
+    self.class.last_event_loop = event_loop
+    event_loop
+  end
+end
+
 # Build the public facade around controlled collaborators so mode coordination
 # can be tested independently of its normal initialization lifecycle.
 class Termisu
@@ -127,6 +173,25 @@ describe Termisu do
         second.try(&.close)
         third.try(&.close)
       end
+
+      it "rolls back sources and terminal state without replacing the startup failure" do
+        LifecycleEventLoop.fail_start = true
+        LifecycleTerminal.fail_close = true
+
+        expect_raises(Exception, "source startup failed") do
+          LifecycleTermisu.new(sync_updates: false)
+        end
+
+        terminal = LifecycleTermisu.last_terminal || fail "terminal was not built"
+        event_loop = LifecycleTermisu.last_event_loop || fail "event loop was not built"
+        terminal.closed?.should be_true
+        terminal.raw_mode?.should be_false
+        event_loop.running?.should be_false
+        event_loop.stop_calls.should eq(1)
+      ensure
+        LifecycleEventLoop.fail_start = false
+        LifecycleTerminal.fail_close = false
+      end
     else
       it "raises IO::Error without a controlling TTY" do
         expect_raises(IO::Error) do
@@ -181,6 +246,30 @@ describe Termisu do
       lease.try &.release
       LibC.close(read_fd) if read_fd
       LibC.close(write_fd) if write_fd
+    end
+
+    if controlling_tty?
+      it "ignores logging failures, preserves shutdown errors, and remains idempotent" do
+        termisu = LifecycleTermisu.new(sync_updates: false)
+        event_loop = LifecycleTermisu.last_event_loop || fail "event loop was not built"
+        terminal = LifecycleTermisu.last_terminal || fail "terminal was not built"
+        LifecycleEventLoop.fail_stop = true
+
+        with_raising_lifecycle_logs do
+          expect_raises(Exception, "event stop failed") { termisu.close }
+        end
+
+        terminal.closed?.should be_true
+        terminal.raw_mode?.should be_false
+        event_loop.stop_calls.should eq(1)
+
+        termisu.close
+        event_loop.stop_calls.should eq(1)
+      ensure
+        LifecycleEventLoop.fail_stop = false
+      end
+    else
+      pending "exercises close failure injection (no controlling TTY)"
     end
   end
 

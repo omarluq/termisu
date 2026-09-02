@@ -1,5 +1,11 @@
 require "../spec_helper"
 
+private class RestoreFailureBackend < Termisu::Terminal::Backend
+  def disable_raw_mode
+    raise "termios restore failed"
+  end
+end
+
 describe Termisu::Renderer do
   describe "abstract interface" do
     it "tracks method calls correctly" do
@@ -127,6 +133,15 @@ describe Termisu::Terminal::Backend do
 
       # Multiple closes should be safe
       backend.close
+      backend.close
+    end
+
+    it "closes descriptors when termios restoration fails and remains idempotent" do
+      backend = RestoreFailureBackend.new
+
+      expect_raises(Exception, "termios restore failed") { backend.close }
+      expect_raises(IO::Error) { backend.write("closed") }
+
       backend.close
     end
   end

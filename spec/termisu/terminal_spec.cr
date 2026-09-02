@@ -14,13 +14,72 @@ end
 
 private class FailingExitFlushTerminal < Termisu::Terminal
   property? fail_next_flush = false
+  getter writes = [] of String
+
+  def write(data : String)
+    @writes << data
+  end
 
   def flush
     if @fail_next_flush
       @fail_next_flush = false
       raise IO::Error.new("alternate screen exit failed")
     end
+  end
+end
+
+private class InitializationFailureBackend < Termisu::Terminal::Backend
+  getter close_calls : Int32 = 0
+
+  def size : {Int32, Int32}
+    raise "size failed"
+  end
+
+  def close
+    @close_calls += 1
     super
+    raise "cleanup failed"
+  end
+end
+
+private class RecordingCloseBackend < Termisu::Terminal::Backend
+  getter close_calls : Int32 = 0
+
+  def close
+    @close_calls += 1
+    super
+  end
+end
+
+private class LoggingLifecycleTerminal < Termisu::Terminal
+  def write(data : String)
+  end
+
+  def flush
+  end
+end
+
+private class FaultInjectingTerminal < Termisu::Terminal
+  getter cleanup_calls = [] of String
+
+  def disable_mouse
+    @cleanup_calls << "mouse"
+    raise "mouse cleanup failed"
+  end
+
+  def disable_enhanced_keyboard
+    @cleanup_calls << "keyboard"
+    raise "keyboard cleanup failed"
+  end
+
+  def disable_bracketed_paste
+    @cleanup_calls << "paste"
+    raise "paste cleanup failed"
+  end
+
+  def exit_alternate_screen
+    @cleanup_calls << "screen"
+    raise "screen cleanup failed"
   end
 end
 
@@ -32,6 +91,18 @@ describe Termisu::Terminal do
       terminal.outfd.should be >= 0
     ensure
       terminal.try &.close
+    end
+
+    it "closes its backend without replacing the initialization failure" do
+      backend = InitializationFailureBackend.new
+
+      expect_raises(Exception, "size failed") do
+        Termisu::Terminal.new(backend: backend, terminfo: Termisu::Terminfo.new)
+      end
+
+      backend.close_calls.should eq(1)
+      # Backend close completed despite its injected post-close failure.
+      expect_raises(IO::Error) { backend.write("closed") }
     end
   end
 
@@ -155,6 +226,40 @@ describe Termisu::Terminal do
 
       # Cleanup and descriptor closure are not retried by repeated close.
       terminal.close
+    ensure
+      terminal.try &.close
+    end
+
+    it "attempts every stage and preserves the first failure" do
+      backend = RecordingCloseBackend.new
+      terminal = FaultInjectingTerminal.new(backend: backend, terminfo: Termisu::Terminfo.new)
+
+      expect_raises(Exception, "mouse cleanup failed") { terminal.close }
+
+      terminal.cleanup_calls.should eq(["mouse", "keyboard", "paste", "screen"])
+      backend.close_calls.should eq(1)
+      expect_raises(IO::Error) { backend.write("closed") }
+
+      # Cleanup was completed, so repeated close is a no-op even after failure.
+      terminal.close
+      backend.close_calls.should eq(1)
+    end
+
+    it "restores modes and closes the backend when direct logging fails" do
+      backend = RecordingCloseBackend.new
+      terminal = LoggingLifecycleTerminal.new(backend: backend, terminfo: Termisu::Terminfo.new)
+      terminal.enable_raw_mode
+      terminal.enter_alternate_screen
+
+      with_raising_lifecycle_logs { terminal.close }
+
+      terminal.raw_mode?.should be_false
+      terminal.alternate_screen?.should be_false
+      backend.close_calls.should eq(1)
+      expect_raises(IO::Error) { backend.write("closed") }
+
+      terminal.close
+      backend.close_calls.should eq(1)
     ensure
       terminal.try &.close
     end
@@ -347,6 +452,29 @@ describe Termisu::Terminal do
       terminal.with_mode(Termisu::Terminal::Mode.cooked, preserve_screen: false) do
         terminal.current_mode.should eq(Termisu::Terminal::Mode.cooked)
       end
+    ensure
+      terminal.try &.close
+    end
+
+    it "switches modes and restores terminal state when direct logging fails" do
+      terminal = CaptureTerminal.new(sync_updates: false)
+      terminal.enable_raw_mode
+      terminal.enter_alternate_screen
+      terminal.enable_mouse
+      terminal.enable_bracketed_paste
+
+      with_raising_lifecycle_logs do
+        terminal.with_mode(Termisu::Terminal::Mode.cooked) do
+          terminal.alternate_screen?.should be_false
+          terminal.mouse_enabled?.should be_false
+          terminal.bracketed_paste?.should be_false
+        end
+      end
+
+      terminal.raw_mode?.should be_true
+      terminal.alternate_screen?.should be_true
+      terminal.mouse_enabled?.should be_true
+      terminal.bracketed_paste?.should be_true
     ensure
       terminal.try &.close
     end

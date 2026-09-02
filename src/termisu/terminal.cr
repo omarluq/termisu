@@ -57,21 +57,35 @@ class Termisu::Terminal < Termisu::Renderer
   # - `terminfo` - Terminfo instance for capability strings (default: Terminfo.new)
   # - `sync_updates` - Enable DEC mode 2026 synchronized updates (default: true)
   def initialize(
-    @backend : Terminal::Backend = Terminal::Backend.new,
-    @terminfo : Terminfo = Terminfo.new,
+    backend : Terminal::Backend? = nil,
+    terminfo : Terminfo? = nil,
     *,
     @sync_updates : Bool = true,
   )
-    @buffer = initial_buffer
-    Log.debug { "Terminal initialized: #{@buffer.width}x#{@buffer.height}, sync_updates: #{@sync_updates}" }
+    @backend = backend || Terminal::Backend.new
+    @terminfo = terminfo || build_terminfo
+    @buffer = build_buffer
+    lifecycle_log do
+      Log.debug { "Terminal initialized: #{@buffer.width}x#{@buffer.height}, sync_updates: #{@sync_updates}" }
+    end
   end
 
-  private def initial_buffer : Buffer
+  private def build_terminfo : Terminfo
+    Terminfo.new
+  rescue error
+    close_backend_after_initialization_failure(error)
+  end
+
+  private def build_buffer : Buffer
     width, height = size
     Buffer.new(width, height)
-  rescue ex
+  rescue error
+    close_backend_after_initialization_failure(error)
+  end
+
+  private def close_backend_after_initialization_failure(error : Exception) : NoReturn
     @backend.close rescue nil
-    raise ex
+    raise error
   end
 
   # Enters alternate screen mode.
@@ -81,7 +95,7 @@ class Termisu::Terminal < Termisu::Renderer
   # render state since we're entering a fresh screen.
   def enter_alternate_screen
     return if @alternate_screen
-    Log.debug { "Entering alternate screen" }
+    lifecycle_log { Log.debug { "Entering alternate screen" } }
 
     # Record the transition before emitting anything so a partial write is
     # always paired with a best-effort exit during rollback.
@@ -106,7 +120,7 @@ class Termisu::Terminal < Termisu::Renderer
   # main screen which may have different state.
   def exit_alternate_screen
     return unless @alternate_screen
-    Log.debug { "Exiting alternate screen" }
+    lifecycle_log { Log.debug { "Exiting alternate screen" } }
 
     # Clear first so shutdown is exactly-once even when output fails. Continue
     # through every restoration step and report the first error afterwards.
@@ -479,13 +493,13 @@ class Termisu::Terminal < Termisu::Renderer
 
   # Enables raw mode on the terminal.
   def enable_raw_mode
-    Log.debug { "Enabling raw mode" }
+    lifecycle_log { Log.debug { "Enabling raw mode" } }
     @backend.enable_raw_mode
   end
 
   # Disables raw mode on the terminal.
   def disable_raw_mode
-    Log.debug { "Disabling raw mode" }
+    lifecycle_log { Log.debug { "Disabling raw mode" } }
     @backend.disable_raw_mode
   end
 
@@ -548,7 +562,7 @@ class Termisu::Terminal < Termisu::Renderer
   # # Previous mode and screen state restored
   # ```
   def with_mode(mode : Terminal::Mode, preserve_screen : Bool = false, &)
-    Log.debug { "Entering with_mode: #{mode}, preserve_screen: #{preserve_screen}" }
+    lifecycle_log { Log.debug { "Entering with_mode: #{mode}, preserve_screen: #{preserve_screen}" } }
     user_interactive = mode.canonical? || mode.echo?
 
     # Track state to restore
@@ -587,7 +601,7 @@ class Termisu::Terminal < Termisu::Renderer
     # Switch mode via backend (handles termios and tracking)
     with_backend_mode(mode) { yield }
   ensure
-    Log.debug { "Exiting with_mode, restoring state" }
+    lifecycle_log { Log.debug { "Exiting with_mode, restoring state" } }
     if was_in_alternate && !@alternate_screen
       enter_alternate_screen
     end
@@ -672,7 +686,7 @@ class Termisu::Terminal < Termisu::Renderer
   def close
     return unless @terminal_closed.compare_and_set(false, true)[1]
 
-    Log.debug { "Closing terminal" }
+    lifecycle_log { Log.debug { "Closing terminal" } }
     error = capture_cleanup_error(nil) { disable_mouse }
     error = capture_cleanup_error(error) { disable_enhanced_keyboard }
     error = capture_cleanup_error(error) { disable_bracketed_paste }
@@ -688,6 +702,12 @@ class Termisu::Terminal < Termisu::Renderer
     error
   rescue ex
     error || ex
+  end
+
+  private def lifecycle_log(&) : Nil
+    yield
+  rescue
+    # Logging must never change lifecycle state or prevent cleanup.
   end
 
   # --- Cell Buffer Operations ---
@@ -886,7 +906,7 @@ class Termisu::Terminal < Termisu::Renderer
   # Disables both SGR and normal mouse protocols.
   def disable_mouse
     return unless @mouse_enabled
-    Log.debug { "Disabling mouse tracking" }
+    lifecycle_log { Log.debug { "Disabling mouse tracking" } }
     @mouse_enabled = false
     apply_mouse_state false
     flush
@@ -931,7 +951,7 @@ class Termisu::Terminal < Termisu::Renderer
   # are indistinguishable.
   def disable_enhanced_keyboard
     return unless @enhanced_keyboard
-    Log.debug { "Disabling enhanced keyboard protocol" }
+    lifecycle_log { Log.debug { "Disabling enhanced keyboard protocol" } }
     @enhanced_keyboard = false
     apply_enhanced_keyboard_state false
     flush
@@ -979,7 +999,7 @@ class Termisu::Terminal < Termisu::Renderer
   # Pasted text goes back to arriving as plain input with no boundary markers.
   def disable_bracketed_paste
     return unless @bracketed_paste
-    Log.debug { "Disabling bracketed paste" }
+    lifecycle_log { Log.debug { "Disabling bracketed paste" } }
     @bracketed_paste = false
     apply_bracketed_paste_state false
     flush
