@@ -31,5 +31,30 @@ describe Termisu::TTY do
       tty.close # Should not raise
       tty.close # Should not raise
     end
+
+    {% unless flag?(:openbsd) || flag?(:freebsd) %}
+      it "does not close a descriptor that reuses its input descriptor number" do
+        tty = Termisu::TTY.new
+        input_fd = tty.infd
+        tty.close
+
+        reused_fds = [] of Int32
+        begin
+          loop do
+            fd = LibC.open("/dev/null", LibC::O_RDONLY, 0)
+            raise IO::Error.from_errno("Failed to open /dev/null") if fd == -1
+            reused_fds << fd
+            break if fd == input_fd
+            raise "Could not reuse TTY input descriptor #{input_fd}" if fd > input_fd
+          end
+
+          tty.close
+          LibC.fcntl(input_fd, LibC::F_GETFD, 0).should_not eq(-1)
+        ensure
+          tty.try &.close
+          reused_fds.each { |fd| LibC.close(fd) }
+        end
+      end
+    {% end %}
   end
 end

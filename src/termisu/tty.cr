@@ -10,9 +10,10 @@ class Termisu::TTY
   private PATH = "/dev/tty"
 
   @out : File
-  @in : File | Int32
   @outfd : Int32
   @infd : Int32
+  @owns_input_fd : Bool
+  @closed : Bool = false
 
   {% begin %}
     {% bsd = flag?(:openbsd) || flag?(:freebsd) %}
@@ -27,15 +28,26 @@ class Termisu::TTY
   # Raises `IO::Error` if the TTY cannot be opened.
   def initialize
     @out = File.open(PATH, FILE_MODE)
-    @in = USE_RDWR ? @out : open_readonly_fd
     @outfd = @out.fd
-    @infd = USE_RDWR ? @outfd : @in.as(Int32)
+    @infd = USE_RDWR ? @outfd : open_readonly_fd
+    @owns_input_fd = !USE_RDWR
   end
 
   # Closes the TTY file descriptors.
   def close
-    close_output_fd
-    close_input_fd unless USE_RDWR
+    return if @closed
+
+    @closed = true
+    input_fd = @owns_input_fd ? @infd : -1
+    @owns_input_fd = false
+    @outfd = -1
+    @infd = -1
+
+    begin
+      close_output_fd
+    ensure
+      close_input_fd(input_fd)
+    end
   end
 
   def write(data : String)
@@ -63,7 +75,7 @@ class Termisu::TTY
     @out.try(&.close)
   end
 
-  private def close_input_fd
-    LibC.close(@in.as(Int32)) if @in.is_a?(Int32)
+  private def close_input_fd(fd : Int32)
+    LibC.close(fd) if fd >= 0
   end
 end
