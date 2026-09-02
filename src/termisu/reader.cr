@@ -48,12 +48,20 @@ class Termisu::Reader
   # This is a non-blocking operation when the terminal is in raw mode.
   def read_byte : UInt8?
     fill_buffer if @buffer_pos >= @buffer_len
-    return if @buffer_pos >= @buffer_len
+    consume_buffered_byte
+  end
 
-    byte = @buffer[@buffer_pos]
-    @buffer_pos += 1
+  # Reads a single byte, waiting at most `timeout_ms` for the file descriptor.
+  #
+  # Bytes already in the internal buffer are consumed even when the timeout is
+  # zero. This lets callers apply an absolute deadline without abandoning bytes
+  # that arrived in the same read as an earlier byte.
+  def read_byte(timeout_ms : Int32) : UInt8?
+    return consume_buffered_byte if @buffer_pos < @buffer_len
+    return unless wait_for_data(timeout_ms)
 
-    byte
+    fill_buffer
+    consume_buffered_byte
   end
 
   # Reads exactly `count` bytes from the input.
@@ -79,9 +87,17 @@ class Termisu::Reader
   # Returns `nil` if no data is available.
   def peek_byte : UInt8?
     fill_buffer if @buffer_pos >= @buffer_len
-    return if @buffer_pos >= @buffer_len
+    peek_buffered_byte
+  end
 
-    @buffer[@buffer_pos]
+  # Peeks at the next byte, waiting at most `timeout_ms` for the file descriptor.
+  # Buffered bytes remain visible after the timeout has expired.
+  def peek_byte(timeout_ms : Int32) : UInt8?
+    return peek_buffered_byte if @buffer_pos < @buffer_len
+    return unless wait_for_data(timeout_ms)
+
+    fill_buffer
+    peek_buffered_byte
   end
 
   # Checks if data is available for reading.
@@ -229,6 +245,20 @@ class Termisu::Reader
       # ENOMEM: Unable to allocate memory
       raise Termisu::IOError.select_failed(errno)
     end
+  end
+
+  private def consume_buffered_byte : UInt8?
+    return if @buffer_pos >= @buffer_len
+
+    byte = @buffer[@buffer_pos]
+    @buffer_pos += 1
+    byte
+  end
+
+  private def peek_buffered_byte : UInt8?
+    return if @buffer_pos >= @buffer_len
+
+    @buffer[@buffer_pos]
   end
 
   # Clears any buffered data.
