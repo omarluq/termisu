@@ -161,6 +161,10 @@ class Termisu::Input::Parser
   # what it has, hands the ESC back, and the next call resumes the probe.
   @paste_deadline : MonotonicTime? = nil
   @poll_deadline : MonotonicTime? = nil
+  # Absolute end-to-end deadline used by every byte of the current parse. A
+  # blocking poll may wait indefinitely for its first byte, but once parsing has
+  # started, an incomplete sequence is bounded by the escape ambiguity window.
+  @parse_deadline : MonotonicTime? = nil
 
   def initialize(@reader : Reader)
   end
@@ -187,13 +191,12 @@ class Termisu::Input::Parser
     bytes[0] = first_byte
 
     (1...len).each do |i|
-      # wait_for_data reuses the split-read tolerance so a char fragmented
-      # across two reads survives; peek + confirm before consuming so a
-      # non-continuation byte is left in the buffer rather than swallowed.
-      return nil unless @reader.wait_for_data(ESCAPE_TIMEOUT_MS)
-      b = @reader.peek_byte
+      # Peek + confirm before consuming so a non-continuation byte is left in
+      # the buffer rather than swallowed. Every continuation shares the poll's
+      # absolute deadline rather than receiving a fresh timeout.
+      b = peek_parse_byte
       return nil unless b && (b & 0xC0) == 0x80 # continuation 10xxxxxx
-      @reader.read_byte
+      read_parse_byte
       bytes[i] = b
     end
 
@@ -210,21 +213,24 @@ class Termisu::Input::Parser
   #
   # Returns an Event or nil if timeout/no data.
   def poll_event(timeout_ms : Int32 = -1) : Event::Any?
-    @poll_deadline = timeout_ms < 0 ? nil : monotonic_now + timeout_ms.milliseconds
+    now = monotonic_now
+    @poll_deadline = timeout_ms < 0 ? nil : now + timeout_ms.milliseconds
+    @parse_deadline = @poll_deadline
 
     # Bytes already taken off the fd while probing for an end marker come first,
     # and without consulting the fd: they have arrived, so no timeout applies.
     if byte = @pending.shift?
+      @parse_deadline ||= now + ESCAPE_TIMEOUT_MS.milliseconds
       return parse_byte(byte)
     end
 
-    unless @reader.wait_for_data(timeout_ms < 0 ? Int32::MAX : timeout_ms)
-      return
-    end
-
-    byte = @reader.read_byte
+    wait = timeout_ms < 0 ? Int32::MAX : timeout_ms
+    byte = @reader.read_byte(wait)
     return unless byte
 
+    # A blocking poll is unbounded only while waiting for its first byte. Once a
+    # possible multi-byte event starts, truncated input must not block forever.
+    @parse_deadline ||= monotonic_now + ESCAPE_TIMEOUT_MS.milliseconds
     parse_byte(byte)
   end
 
@@ -342,10 +348,9 @@ class Termisu::Input::Parser
     while tail.size < PASTE_END_TAIL.size
       byte = @pending.shift?
       unless byte
-        wait = paste_wait_ms
-        break if wait <= 0
-        break unless @reader.wait_for_data(wait)
-        byte = @reader.read_byte
+        # Reader consumes buffered bytes even for a zero wait, so a zero-timeout
+        # poll can finish a marker that arrived in an earlier buffer fill.
+        byte = @reader.read_byte(paste_wait_ms)
         break unless byte
       end
       tail << byte
@@ -381,27 +386,38 @@ class Termisu::Input::Parser
     remaining > whole ? whole + 1 : whole
   end
 
-  private def parse_escape_sequence : Event::Any
-    # Check if more data follows (escape sequence) or just ESC key
-    unless @reader.wait_for_data(ESCAPE_TIMEOUT_MS)
-      return Event::Key.new(Key::Escape)
-    end
+  # Reads or peeks one continuation byte within the current parse's absolute
+  # deadline. Reader deliberately checks its internal buffer before the timeout,
+  # which keeps zero-timeout polling useful for complete, already-buffered input.
+  private def read_parse_byte(max_wait_ms : Int32? = nil) : UInt8?
+    @reader.read_byte(parse_wait_ms(max_wait_ms))
+  end
 
-    byte = @reader.peek_byte
-    unless byte
-      return Event::Key.new(Key::Escape)
-    end
+  private def peek_parse_byte(max_wait_ms : Int32? = nil) : UInt8?
+    @reader.peek_byte(parse_wait_ms(max_wait_ms))
+  end
+
+  private def parse_wait_ms(max_wait_ms : Int32?) : Int32
+    wait = ms_until(@parse_deadline)
+    max_wait_ms ? {wait, max_wait_ms}.min : wait
+  end
+
+  private def parse_escape_sequence : Event::Any
+    # Check if more data follows (escape sequence) or just ESC key. The Escape
+    # ambiguity window may shorten, but never extend, the caller's deadline.
+    byte = peek_parse_byte(ESCAPE_TIMEOUT_MS)
+    return Event::Key.new(Key::Escape) unless byte
 
     case byte
-    when '['.ord.to_u8  # CSI sequence: \e[...
-      @reader.read_byte # consume '['
+    when '['.ord.to_u8 # CSI sequence: \e[...
+      read_parse_byte  # consume '['
       parse_csi_sequence
-    when 'O'.ord.to_u8  # SS3 sequence: \eO... (F1-F4, some arrows)
-      @reader.read_byte # consume 'O'
+    when 'O'.ord.to_u8 # SS3 sequence: \eO... (F1-F4, some arrows)
+      read_parse_byte  # consume 'O'
       parse_ss3_sequence
     else
       # Alt+key: \e followed by printable char (UTF-8 capable)
-      @reader.read_byte # consume the (first) char byte
+      read_parse_byte # consume the (first) char byte
       c = read_utf8_char(byte)
       key = c ? (Key.from_char(c) || Key::Unknown) : Key::Unknown
       Event::Key.new(key, Modifier::Alt, char: c)
@@ -413,7 +429,7 @@ class Termisu::Input::Parser
   # CSI format: \e [ <params> <intermediate> <final>
   # Final chars are 0x40-0x7E (@A-Z[\]^_`a-z{|}~)
   private def parse_csi_sequence : Event::Any
-    first = @reader.read_byte
+    first = read_parse_byte
     return Event::Key.new(Key::Unknown) unless first
 
     # SGR mouse: \e[<...
@@ -428,7 +444,7 @@ class Termisu::Input::Parser
     # fast path below — otherwise '[' is consumed as a final byte and the
     # trailing key letter is lost.
     if first == '['.ord
-      final = @reader.read_byte
+      final = read_parse_byte
       return Event::Key.new(Key::Unknown) unless final
 
       key = LINUX_CONSOLE_KEYS["[[#{final.unsafe_chr}"]? || Key::Unknown
@@ -443,7 +459,7 @@ class Termisu::Input::Parser
     buffer = String::Builder.new
     buffer << first.chr
 
-    while byte = @reader.read_byte
+    while byte = read_parse_byte
       char = byte.chr
 
       if byte >= 0x40 && byte <= 0x7E
@@ -682,7 +698,7 @@ class Termisu::Input::Parser
   #
   # SS3 sequences are used for F1-F4 and some arrow keys.
   private def parse_ss3_sequence : Event::Any
-    byte = @reader.read_byte
+    byte = read_parse_byte
     unless byte
       return Event::Key.new(Key::Unknown)
     end
@@ -711,7 +727,7 @@ class Termisu::Input::Parser
     buf = uninitialized UInt8[MAX_SEQUENCE_LENGTH]
     len = 0
 
-    while byte = @reader.read_byte
+    while byte = read_parse_byte
       case byte
       when 'M'.ord then return {String.new(buf.to_slice[0, len]), false}
       when 'm'.ord then return {String.new(buf.to_slice[0, len]), true}
@@ -759,9 +775,9 @@ class Termisu::Input::Parser
   # Format: \e[MCbCxCy (6 bytes total, Cb/Cx/Cy are raw bytes + 32)
   private def parse_normal_mouse : Event::Any
     # Read 3 more bytes: Cb, Cx, Cy
-    cb_byte = @reader.read_byte
-    cx_byte = @reader.read_byte
-    cy_byte = @reader.read_byte
+    cb_byte = read_parse_byte
+    cx_byte = read_parse_byte
+    cy_byte = read_parse_byte
 
     unless cb_byte && cx_byte && cy_byte
       return Event::Key.new(Key::Unknown)

@@ -3,12 +3,20 @@ require "../../spec_helper"
 # Helper to write bytes to pipe and parse event.
 # Specific to parser tests - uses create_pipe from PipeHelpers.
 private def parse_sequence(bytes : Bytes) : Termisu::Event::Any?
+  parse_sequence_with_buffer(bytes, 128, 100)
+end
+
+# A tiny Reader buffer forces every continuation byte through the fd-read
+# boundary. This catches parser paths that accidentally assume the first fill
+# contains a whole terminal sequence.
+private def parse_sequence_with_buffer(bytes : Bytes, buffer_size : Int32,
+                                       timeout_ms : Int32) : Termisu::Event::Any?
   read_fd, write_fd = create_pipe
   begin
     LibC.write(write_fd, bytes, bytes.size)
-    reader = Termisu::Reader.new(read_fd)
+    reader = Termisu::Reader.new(read_fd, buffer_size)
     parser = Termisu::Input::Parser.new(reader)
-    parser.poll_event(100)
+    parser.poll_event(timeout_ms)
   ensure
     reader.try(&.close)
     LibC.close(read_fd)
@@ -63,6 +71,59 @@ end
 private class ParserRoundingProbe < Termisu::Input::Parser
   def ceil(remaining : Float64) : Int32
     ceil_ms(remaining)
+  end
+end
+
+# Deterministic reader used to prove that continuation waits share one deadline.
+# Byte N arrives N * gap_ms after parsing starts; waits advance a virtual clock
+# instead of sleeping, so the regression remains reliable on loaded builders.
+private class ParserDripReader < Termisu::Reader
+  getter now : MonotonicTime
+  getter consumed = 0
+
+  def initialize(@bytes : Bytes, @gap_ms : Int32)
+    super(-1)
+    @now = monotonic_now
+    @started_at = @now
+  end
+
+  def elapsed : Time::Span
+    @now - @started_at
+  end
+
+  def read_byte(timeout_ms : Int32) : UInt8?
+    wait_for_next_byte(timeout_ms, consume: true)
+  end
+
+  def peek_byte(timeout_ms : Int32) : UInt8?
+    wait_for_next_byte(timeout_ms, consume: false)
+  end
+
+  private def wait_for_next_byte(timeout_ms : Int32, consume : Bool) : UInt8?
+    return if @consumed >= @bytes.size
+
+    arrival = @started_at + (@consumed * @gap_ms).milliseconds
+    remaining = (arrival - @now).total_milliseconds
+    if remaining > timeout_ms
+      @now += timeout_ms.milliseconds
+      return
+    end
+
+    @now = arrival if arrival > @now
+    byte = @bytes[@consumed]
+    @consumed += 1 if consume
+    byte
+  end
+end
+
+private class ParserDripProbe < Termisu::Input::Parser
+  def initialize(reader : ParserDripReader)
+    @clock = reader
+    super(reader)
+  end
+
+  private def monotonic_now : MonotonicTime
+    @clock.now
   end
 end
 
@@ -843,6 +904,72 @@ describe Termisu::Input::Parser do
         if event.is_a?(Termisu::Event::Mouse)
           event.x.should be >= 1
           event.y.should be >= 1
+        end
+      end
+    end
+
+    context "parser deadlines" do
+      it "parses complete buffered sequences nonblockingly across every read boundary" do
+        utf8 = parse_sequence_with_buffer("€".to_slice, 1, 0)
+        utf8.should be_a(Termisu::Event::Key)
+        utf8.as(Termisu::Event::Key).char.should eq('€')
+
+        csi_u = parse_sequence_with_buffer("\e[97;1u".to_slice, 1, 0)
+        csi_u.should be_a(Termisu::Event::Key)
+        csi_u.as(Termisu::Event::Key).key.should eq(Termisu::Input::Key::LowerA)
+
+        ss3 = parse_sequence_with_buffer("\eOP".to_slice, 1, 0)
+        ss3.should be_a(Termisu::Event::Key)
+        ss3.as(Termisu::Event::Key).key.should eq(Termisu::Input::Key::F1)
+
+        sgr_mouse = parse_sequence_with_buffer("\e[<0;1;1M".to_slice, 1, 0)
+        sgr_mouse.should be_a(Termisu::Event::Mouse)
+
+        normal_mouse = parse_sequence_with_buffer(Bytes[0x1B, '['.ord, 'M'.ord, 32, 33, 33], 1, 0)
+        normal_mouse.should be_a(Termisu::Event::Mouse)
+      end
+
+      it "uses one deadline when continuation bytes drip in" do
+        reader = ParserDripReader.new("\e[1234A".to_slice, gap_ms: 4)
+        parser = ParserDripProbe.new(reader)
+
+        event = parser.poll_event(10)
+
+        event.should be_a(Termisu::Event::Key)
+        event.as(Termisu::Event::Key).key.should eq(Termisu::Input::Key::Unknown)
+        reader.consumed.should eq(3)
+        reader.elapsed.should eq(10.milliseconds)
+      end
+
+      it "bounds every truncated continuation path by one poll timeout" do
+        sequences = {
+          "UTF-8"        => Bytes[0xF0, 0x9F],
+          "Alt UTF-8"    => Bytes[0x1B, 0xC3],
+          "CSI"          => "\e[1;".to_slice,
+          "Kitty CSI-u"  => "\e[97;1".to_slice,
+          "SS3"          => "\eO".to_slice,
+          "SGR mouse"    => "\e[<0;1".to_slice,
+          "normal mouse" => Bytes[0x1B, '['.ord, 'M'.ord, 32],
+        }
+
+        sequences.each do |name, bytes|
+          read_fd, write_fd = create_pipe
+          begin
+            LibC.write(write_fd, bytes, bytes.size)
+            reader = Termisu::Reader.new(read_fd)
+            parser = Termisu::Input::Parser.new(reader)
+
+            elapsed = Time.measure do
+              event = parser.poll_event(10)
+              event.should be_a(Termisu::Event::Key), name
+              event.as(Termisu::Event::Key).key.should eq(Termisu::Input::Key::Unknown), name
+            end
+            elapsed.should be < 250.milliseconds, name
+          ensure
+            reader.try(&.close)
+            LibC.close(read_fd)
+            LibC.close(write_fd)
+          end
         end
       end
     end

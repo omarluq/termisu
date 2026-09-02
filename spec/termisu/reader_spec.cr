@@ -86,6 +86,44 @@ describe Termisu::Reader do
       end
     end
 
+    it "uses fd-ready and buffered bytes for zero-timeout operations" do
+      read_fd, write_fd = create_pipe
+      begin
+        LibC.write(write_fd, "hi".to_slice, 2)
+
+        reader = Termisu::Reader.new(read_fd)
+        reader.peek_byte(0).should eq('h'.ord.to_u8) # fd-ready fill
+        reader.peek_byte(0).should eq('h'.ord.to_u8) # buffered peek
+        reader.read_byte(0).should eq('h'.ord.to_u8)
+        reader.read_byte(0).should eq('i'.ord.to_u8) # buffered read
+        reader.read_byte(0).should be_nil
+        reader.peek_byte(0).should be_nil
+
+        reader.close
+      ensure
+        LibC.close(read_fd)
+        LibC.close(write_fd)
+      end
+    end
+
+    it "times out bounded byte operations on an empty pipe" do
+      read_fd, write_fd = create_pipe
+      begin
+        reader = Termisu::Reader.new(read_fd)
+
+        elapsed = Time.measure do
+          reader.read_byte(5).should be_nil
+          reader.peek_byte(5).should be_nil
+        end
+        elapsed.should be < 100.milliseconds
+
+        reader.close
+      ensure
+        LibC.close(read_fd)
+        LibC.close(write_fd)
+      end
+    end
+
     it "returns nil when read_bytes cannot fill the requested count" do
       read_fd, write_fd = create_pipe
       begin
