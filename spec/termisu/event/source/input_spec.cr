@@ -1,5 +1,15 @@
 require "../../../spec_helper"
 
+private def receive_input_key(channel : Channel(Termisu::Event::Any),
+                              wait : Time::Span = 200.milliseconds) : Termisu::Event::Key
+  select
+  when event = channel.receive
+    event.as(Termisu::Event::Key)
+  when timeout(wait)
+    fail "Timeout waiting for input key event"
+  end
+end
+
 describe Termisu::Event::Source::Input do
   describe "#initialize" do
     it "creates with reader and parser" do
@@ -284,6 +294,102 @@ describe Termisu::Event::Source::Input do
         source.stop
         channel.close
       ensure
+        reader.try(&.close)
+        LibC.close(read_fd)
+        LibC.close(write_fd)
+      end
+    end
+  end
+
+  describe "bracketed paste boundaries" do
+    paste_start = "\e[200~"
+    paste_end = "\e[201~"
+
+    it "delivers a complete bracketed paste through the zero-timeout poll loop" do
+      read_fd, write_fd = create_pipe
+      begin
+        reader = Termisu::Reader.new(read_fd)
+        parser = Termisu::Input::Parser.new(reader)
+        source = Termisu::Event::Source::Input.new(reader, parser)
+        channel = Channel(Termisu::Event::Any).new(10)
+        source.start(channel)
+
+        input = "#{paste_start}x#{paste_end}"
+        LibC.write(write_fd, input.to_unsafe, input.bytesize)
+
+        receive_input_key(channel).key.should eq(Termisu::Input::Key::PasteStart)
+        receive_input_key(channel).key.should eq(Termisu::Input::Key::LowerX)
+        receive_input_key(channel).key.should eq(Termisu::Input::Key::PasteEnd)
+
+        source.stop
+        channel.close
+      ensure
+        source.try(&.stop)
+        reader.try(&.close)
+        LibC.close(read_fd)
+        LibC.close(write_fd)
+      end
+    end
+
+    (1...paste_end.bytesize).each do |split|
+      it "preserves an end marker fragmented after byte #{split}" do
+        read_fd, write_fd = create_pipe
+        begin
+          reader = Termisu::Reader.new(read_fd)
+          parser = Termisu::Input::Parser.new(reader)
+          source = Termisu::Event::Source::Input.new(reader, parser)
+          channel = Channel(Termisu::Event::Any).new(10)
+          source.start(channel)
+
+          input = "#{paste_start}x"
+          LibC.write(write_fd, input.to_unsafe, input.bytesize)
+          receive_input_key(channel).key.should eq(Termisu::Input::Key::PasteStart)
+          receive_input_key(channel).key.should eq(Termisu::Input::Key::LowerX)
+
+          prefix = paste_end.byte_slice(0, split)
+          LibC.write(write_fd, prefix.to_unsafe, prefix.bytesize)
+          select
+          when event = channel.receive
+            fail "fragment emitted #{event} before the end marker was complete"
+          when timeout(20.milliseconds)
+          end
+
+          suffix = paste_end.byte_slice(split)
+          LibC.write(write_fd, suffix.to_unsafe, suffix.bytesize)
+          receive_input_key(channel).key.should eq(Termisu::Input::Key::PasteEnd)
+
+          source.stop
+          channel.close
+        ensure
+          source.try(&.stop)
+          reader.try(&.close)
+          LibC.close(read_fd)
+          LibC.close(write_fd)
+        end
+      end
+    end
+
+    it "does not let a pasted escape consume the closing marker" do
+      read_fd, write_fd = create_pipe
+      begin
+        reader = Termisu::Reader.new(read_fd)
+        parser = Termisu::Input::Parser.new(reader)
+        source = Termisu::Event::Source::Input.new(reader, parser)
+        channel = Channel(Termisu::Event::Any).new(10)
+        source.start(channel)
+
+        input = "#{paste_start}x\e#{paste_end}"
+        LibC.write(write_fd, input.to_unsafe, input.bytesize)
+
+        receive_input_key(channel).key.should eq(Termisu::Input::Key::PasteStart)
+        receive_input_key(channel).key.should eq(Termisu::Input::Key::LowerX)
+        receive_input_key(channel).key.should eq(Termisu::Input::Key::Escape)
+        receive_input_key(channel).key.should eq(Termisu::Input::Key::PasteEnd)
+
+        source.stop
+        channel.close
+      ensure
+        source.try(&.stop)
         reader.try(&.close)
         LibC.close(read_fd)
         LibC.close(write_fd)
