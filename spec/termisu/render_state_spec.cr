@@ -2,11 +2,12 @@ require "../spec_helper"
 
 describe Termisu::RenderState do
   describe ".new" do
-    it "initializes with nil/unknown state" do
+    it "initializes with unknown colors and known default attributes" do
       state = Termisu::RenderState.new
       state.fg.should be_nil
       state.bg.should be_nil
       state.attr.should eq(Termisu::Attribute::None)
+      state.attr_known?.should be_true
     end
   end
 
@@ -22,6 +23,7 @@ describe Termisu::RenderState do
       state.fg.should be_nil
       state.bg.should be_nil
       state.attr.should eq(Termisu::Attribute::None)
+      state.attr_known?.should be_false
     end
   end
 
@@ -35,6 +37,17 @@ describe Termisu::RenderState do
       changed.should be_true
       renderer.fg_calls.should eq([Termisu::Color.green])
       renderer.bg_calls.should eq([Termisu::Color.blue])
+    end
+
+    it "clears unknown physical attributes before applying a reset style" do
+      renderer = MockRenderer.new
+      state = Termisu::RenderState.new
+      state.reset
+
+      state.apply_style(renderer, Termisu::Color.white, Termisu::Color.default, Termisu::Attribute::None)
+
+      renderer.reset_count.should eq(1)
+      state.attr_known?.should be_true
     end
 
     it "skips emission when style unchanged" do

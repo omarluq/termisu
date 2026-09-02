@@ -1,5 +1,66 @@
 require "../spec_helper"
 
+private class RenderFaultRenderer < MockRenderer
+  enum Phase
+    Move
+    Sgr
+    Write
+    Flush
+  end
+
+  property fail_phase : Phase?
+  getter? failed : Bool = false
+
+  def initialize(@fail_phase : Phase?)
+  end
+
+  def move_cursor(x : Int32, y : Int32)
+    fail_once(Phase::Move)
+    super
+  end
+
+  def apply_sgr(
+    fg : Termisu::Color,
+    bg : Termisu::Color,
+    attr : Termisu::Attribute,
+    old_fg : Termisu::Color?,
+    old_bg : Termisu::Color?,
+    old_attr : Termisu::Attribute,
+  ) : Nil
+    fail_once(Phase::Sgr)
+    super
+  end
+
+  def write(data : String, columns_advanced = 0)
+    fail_once(Phase::Write)
+    super
+  end
+
+  def flush
+    fail_once(Phase::Flush)
+    super
+  end
+
+  private def fail_once(phase : Phase) : Nil
+    return if @fail_phase != phase || @failed
+
+    @failed = true
+    raise "injected #{phase} failure"
+  end
+end
+
+private class CachedRenderFaultRenderer < CaptureRenderer
+  property? fail_next_move : Bool = false
+
+  def move_cursor(x : Int32, y : Int32)
+    if @fail_next_move
+      @fail_next_move = false
+      raise "injected cached move failure"
+    end
+    super
+  end
+end
+
 describe Termisu::Buffer do
   describe ".new" do
     it "creates a buffer with specified dimensions" do
@@ -292,6 +353,65 @@ describe Termisu::Buffer do
       renderer.write_calls.should contain("A")
       renderer.write_calls.should contain("BC")
     end
+
+    RenderFaultRenderer::Phase.each do |phase|
+      it "fully retries the frame after a #{phase.to_s.downcase} failure" do
+        renderer = RenderFaultRenderer.new(phase)
+        buffer = Termisu::Buffer.new(4, 1)
+        buffer.set_cell(0, 0, 'A', fg: Termisu::Color.red)
+        buffer.set_cell(2, 0, 'B', fg: Termisu::Color.blue)
+
+        expect_raises(Exception, "injected #{phase} failure") do
+          buffer.render_to(renderer)
+        end
+
+        renderer.failed?.should be_true
+        renderer.clear
+        buffer.render_to(renderer)
+
+        renderer.write_calls.sum(&.size).should eq(4)
+        renderer.write_calls.join.should contain("A")
+        renderer.write_calls.join.should contain("B")
+        renderer.fg_calls.should contain(Termisu::Color.red)
+      end
+    end
+
+    it "clears stale cached attributes when retrying an unstyled frame" do
+      renderer = CachedRenderFaultRenderer.new
+      buffer = Termisu::Buffer.new(1, 1)
+      buffer.set_cell(0, 0, 'A', attr: Termisu::Attribute::Bold)
+      buffer.render_to(renderer)
+
+      buffer.set_cell(0, 0, 'B', attr: Termisu::Attribute::None)
+      renderer.fail_next_move = true
+      expect_raises(Exception, "injected cached move failure") do
+        buffer.render_to(renderer)
+      end
+
+      renderer.clear_writes
+      buffer.render_to(renderer)
+
+      renderer.writes.should contain("\e[0m")
+      renderer.writes.should contain("B")
+    end
+
+    it "retries a wide cell and its continuation atomically after a write failure" do
+      renderer = RenderFaultRenderer.new(RenderFaultRenderer::Phase::Write)
+      buffer = Termisu::Buffer.new(4, 1)
+      buffer.set_cell(0, 0, '中', fg: Termisu::Color.red)
+      buffer.set_cell(2, 0, 'A')
+
+      expect_raises(Exception, "injected Write failure") do
+        buffer.render_to(renderer)
+      end
+
+      renderer.clear
+      buffer.render_to(renderer)
+
+      renderer.write_calls.join.should contain("中")
+      renderer.write_calls.join.should contain("A")
+      renderer.move_calls.should contain({0, 0})
+    end
   end
 
   describe "#sync_to (full redraw)" do
@@ -328,6 +448,22 @@ describe Termisu::Buffer do
       # All 5 cells should be in a single batched write
       renderer.write_calls.size.should eq(1)
       renderer.write_calls[0].size.should eq(5)
+    end
+
+    it "leaves a failed full redraw retryable as a complete frame" do
+      renderer = RenderFaultRenderer.new(RenderFaultRenderer::Phase::Write)
+      buffer = Termisu::Buffer.new(3, 1)
+      buffer.set_cell(1, 0, 'X', fg: Termisu::Color.red)
+
+      expect_raises(Exception, "injected Write failure") do
+        buffer.sync_to(renderer)
+      end
+
+      renderer.clear
+      buffer.render_to(renderer)
+
+      renderer.write_calls.sum(&.size).should eq(3)
+      renderer.write_calls.join.should contain("X")
     end
   end
 

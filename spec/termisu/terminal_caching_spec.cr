@@ -1,5 +1,13 @@
 require "../spec_helper"
 
+private class CustomResetTerminfo < Termisu::Terminfo
+  RESET_SEQUENCE = "<reset-attributes>"
+
+  def reset_attrs_seq : String
+    RESET_SEQUENCE
+  end
+end
+
 describe "Terminal State Caching" do
   describe "foreground color caching" do
     it "writes escape sequence on first call" do
@@ -229,6 +237,40 @@ describe "Terminal State Caching" do
       terminal.writes.should contain("\e[44m")
       terminal.writes.should contain("\e[1m")
       terminal.writes.should contain("\e[?25h")
+    end
+  end
+
+  describe "direct style recovery after #reset_render_state" do
+    styles = [
+      {name: "foreground", sequence: "\e[31m", apply: ->(terminal : CaptureTerminal) { terminal.foreground = Termisu::Color.red; nil }},
+      {name: "background", sequence: "\e[44m", apply: ->(terminal : CaptureTerminal) { terminal.background = Termisu::Color.blue; nil }},
+      {name: "bold", sequence: "\e[1m", apply: ->(terminal : CaptureTerminal) { terminal.enable_bold; nil }},
+      {name: "underline", sequence: "\e[4m", apply: ->(terminal : CaptureTerminal) { terminal.enable_underline; nil }},
+      {name: "blink", sequence: "\e[5m", apply: ->(terminal : CaptureTerminal) { terminal.enable_blink; nil }},
+      {name: "reverse", sequence: "\e[7m", apply: ->(terminal : CaptureTerminal) { terminal.enable_reverse; nil }},
+      {name: "dim", sequence: "\e[2m", apply: ->(terminal : CaptureTerminal) { terminal.enable_dim; nil }},
+      {name: "cursive", sequence: "\e[3m", apply: ->(terminal : CaptureTerminal) { terminal.enable_cursive; nil }},
+      {name: "hidden", sequence: "\e[8m", apply: ->(terminal : CaptureTerminal) { terminal.enable_hidden; nil }},
+      {name: "strikethrough", sequence: "\e[9m", apply: ->(terminal : CaptureTerminal) { terminal.enable_strikethrough; nil }},
+    ]
+
+    styles.each do |style|
+      it "resets before applying #{style[:name]} and then caches it" do
+        terminal = CaptureTerminal.new(
+          sync_updates: false,
+          terminfo: CustomResetTerminfo.new
+        )
+        terminal.reset_render_state
+
+        style[:apply].call(terminal)
+        terminal.writes.should eq([CustomResetTerminfo::RESET_SEQUENCE, style[:sequence]])
+
+        terminal.clear_captured
+        style[:apply].call(terminal)
+        terminal.writes.should be_empty
+      ensure
+        terminal.try &.close
+      end
     end
   end
 

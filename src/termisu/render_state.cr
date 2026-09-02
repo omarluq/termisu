@@ -24,16 +24,20 @@ struct Termisu::RenderState
   # Current background color (nil = unknown/reset)
   property bg : Color?
 
-  # Current text attributes
+  # Current text attributes. `attr_known?` distinguishes a known default
+  # from an invalidated terminal whose active attributes are unknown.
   property attr : Attribute
+  getter? attr_known : Bool
 
   def initialize
     @fg, @bg, @attr = default_state
+    @attr_known = true
   end
 
   # Resets state to unknown (forces next render to emit all sequences).
   def reset
     @fg, @bg, @attr = default_state
+    @attr_known = false
   end
 
   # Applies style to renderer, only emitting changes.
@@ -50,12 +54,21 @@ struct Termisu::RenderState
     bg : Color,
     attr : Attribute,
   ) : Bool
-    return false if attr == @attr && fg == @fg && bg == @bg
+    return false if @attr_known && attr == @attr && fg == @fg && bg == @bg
 
-    renderer.apply_sgr(fg, bg, attr, @fg, @bg, @attr)
+    # Attribute::None is a valid known state, not an unknown-state sentinel.
+    # After invalidation, clear every potentially active physical attribute
+    # before applying the target style. The reset also invalidates colors.
+    if @attr_known
+      renderer.apply_sgr(fg, bg, attr, @fg, @bg, @attr)
+    else
+      renderer.reset_attributes
+      renderer.apply_sgr(fg, bg, attr, nil, nil, Attribute::None)
+    end
     @fg = fg
     @bg = bg
     @attr = attr
+    @attr_known = true
     true
   end
 

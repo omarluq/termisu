@@ -17,16 +17,24 @@ class Termisu::Terminal
   end
 
   private def apply_cursor_state
-    x, y = @cursor.x, @cursor.y
-    @cursor.x, @cursor.y = -1, -1
-    move_cursor(x, y)
+    desired = @cursor
+    begin
+      x, y = desired.x, desired.y
+      @cursor.x, @cursor.y = -1, -1
+      move_cursor(x, y)
 
-    if @cursor.visible?
-      @cursor.visible = false
-      show_cursor
-    else
-      @cursor.visible = true
-      hide_cursor
+      if desired.visible?
+        @cursor.visible = false
+        show_cursor
+      else
+        @cursor.visible = true
+        hide_cursor
+      end
+    rescue error
+      # Preserve the requested cursor state if any of the forced emissions
+      # fails. Rendering will force the complete state again on its next try.
+      @cursor = desired
+      raise error
     end
   end
 
@@ -129,8 +137,8 @@ class Termisu::Terminal
   private def with_ephemeral_cursor(visible : Bool = false, &)
     cursor_backup = @cursor
     @cursor = Cursor.new visible
-    apply_cursor_state
     begin
+      apply_cursor_state
       yield
     ensure
       @cursor = cursor_backup
