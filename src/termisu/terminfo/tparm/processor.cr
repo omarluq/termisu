@@ -85,9 +85,51 @@ class Termisu::Terminfo::Tparm::Processor
 
     char = @format.byte_at(@pos).unsafe_chr
 
+    return if dispatch_printf_format(char)
     return if dispatch_binary_op(char)
 
     dispatch_non_binary_op(char)
+  end
+
+  # Parses terminfo's printf-style output forms, such as %02d, %2d and
+  # %2.2X. A leading ':' permits flags that would otherwise be ambiguous with
+  # stack operators (for example, %:-4d).
+  private def dispatch_printf_format(char : Char) : Bool
+    return false unless char.in?(':', '#', ' ', '.') || char.ascii_number?
+
+    cursor = @pos
+    cursor += 1 if char == ':'
+    flags, cursor = scan_format_flags(cursor)
+    width, cursor = scan_format_number(cursor)
+
+    precision : Int32? = nil
+    if cursor < @format_size && @format.byte_at(cursor).unsafe_chr == '.'
+      precision, cursor = scan_format_number(cursor + 1)
+    end
+
+    return false if cursor >= @format_size
+    conversion = @format.byte_at(cursor).unsafe_chr
+    return false unless conversion.in?('d', 'o', 'x', 'X', 's')
+
+    @pos = cursor
+    output_formatted(pop, conversion, flags, width, precision)
+    true
+  end
+
+  private def scan_format_flags(cursor : Int32) : Tuple(String, Int32)
+    start = cursor
+    while cursor < @format_size && "#0-+ ".includes?(@format.byte_at(cursor).unsafe_chr)
+      cursor += 1
+    end
+    {@format[start...cursor], cursor}
+  end
+
+  private def scan_format_number(cursor : Int32) : Tuple(Int32, Int32)
+    start = cursor
+    while cursor < @format_size && @format.byte_at(cursor).unsafe_chr.ascii_number?
+      cursor += 1
+    end
+    {@format[start...cursor].to_i? || 0, cursor}
   end
 
   # Pops two operands (right first, then left), applies the block, and pushes
@@ -156,11 +198,12 @@ class Termisu::Terminfo::Tparm::Processor
   @[AlwaysInline]
   private def dispatch_output_op(char : Char) : Bool
     case char
-    when '%' then @output.write_byte('%'.ord.to_u8)
-    when 'd' then output_decimal
-    when 'c' then output_char
-    when 's' then output_string
-    else          return false
+    when '%'           then @output.write_byte('%'.ord.to_u8)
+    when 'd'           then output_decimal
+    when 'o', 'x', 'X' then output_formatted(pop, char, "", 0, nil)
+    when 'c'           then output_char
+    when 's'           then output_string
+    else                    return false
     end
     true
   end

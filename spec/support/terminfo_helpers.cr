@@ -37,4 +37,41 @@ module TerminfoHelpers
   rescue
     false
   end
+
+  # Whether the host ncurses tput command and its xterm-256color entry are
+  # available for differential tparm checks.
+  def xterm_tput_available? : Bool
+    status = Process.run("tput", ["-T", "xterm-256color", "cup", "0", "0"],
+      output: IO::Memory.new, error: IO::Memory.new)
+    status.success?
+  rescue
+    false
+  end
+
+  def xterm_tput(capability : String, params : Array(Int32)) : String
+    run_tput("xterm-256color", capability, params)
+  end
+
+  # Whether Linux's real initc entry, which uses plain %x and zero-padded %x,
+  # can be used for differential tparm checks.
+  def linux_initc_tput_available? : Bool
+    status = Process.run("tput", ["-T", "linux", "initc", "1", "1000", "500", "0"],
+      output: IO::Memory.new, error: IO::Memory.new)
+    status.success?
+  rescue
+    false
+  end
+
+  def linux_tput(capability : String, params : Array(Int32)) : String
+    run_tput("linux", capability, params)
+  end
+
+  private def run_tput(terminal : String, capability : String, params : Array(Int32)) : String
+    output = IO::Memory.new
+    args = ["-T", terminal, capability]
+    params.each { |param| args << param.to_s }
+    status = Process.run("tput", args, output: output, error: IO::Memory.new)
+    raise "tput failed for #{terminal} #{capability}" unless status.success?
+    output.to_s
+  end
 end
