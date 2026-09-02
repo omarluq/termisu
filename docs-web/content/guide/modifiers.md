@@ -6,6 +6,10 @@ weight = 120
 
 # Modifiers
 
+Compare modifiers directly with `Input::Modifier::None` to check whether none are set.
+The flags-generated `none?` predicate checks inclusion of the zero-valued `None` member,
+so it is not an emptiness check.
+
 ```crystal
 Input::Modifier::None
 Input::Modifier::Shift

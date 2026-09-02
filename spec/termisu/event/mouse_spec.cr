@@ -125,7 +125,7 @@ describe Termisu::Event::Mouse do
 
     it "creates a mouse event with default modifiers and no motion" do
       event = Termisu::Event::Mouse.new(1, 1, Termisu::Event::Mouse::Button::Left)
-      event.modifiers.none?.should be_true
+      event.modifiers.should eq(Termisu::Input::Modifier::None)
       event.motion?.should be_false
     end
 

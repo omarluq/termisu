@@ -28,7 +28,7 @@ describe Termisu::Terminal::Mode do
       it "returns None (no flags set)" do
         mode = Termisu::Terminal::Mode.raw
         mode.should eq(Termisu::Terminal::Mode::None)
-        mode.none?.should be_true
+        (mode == Termisu::Terminal::Mode::None).should be_true
       end
 
       it "has no flags enabled" do
@@ -154,13 +154,19 @@ describe Termisu::Terminal::Mode do
       mode.extended?.should be_true
     end
 
-    it "can check for None" do
-      mode = Termisu::Terminal::Mode::None
-      mode.none?.should be_true
-      mode.canonical?.should be_false
-      mode.echo?.should be_false
-      mode.signals?.should be_false
-      mode.extended?.should be_false
+    it "distinguishes zero, single, and combined flag values from None" do
+      none = Termisu::Terminal::Mode::None
+      single = Termisu::Terminal::Mode::Signals
+      combined = Termisu::Terminal::Mode::Canonical | Termisu::Terminal::Mode::Echo
+
+      (none == Termisu::Terminal::Mode::None).should be_true
+      (single == Termisu::Terminal::Mode::None).should be_false
+      (combined == Termisu::Terminal::Mode::None).should be_false
+
+      none.canonical?.should be_false
+      none.echo?.should be_false
+      none.signals?.should be_false
+      none.extended?.should be_false
     end
 
     it "supports bitwise operations" do

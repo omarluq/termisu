@@ -48,7 +48,7 @@ describe Termisu::Input::Modifier do
 
       it "decodes code 1 as None (base code)" do
         mods = Termisu::Input::Modifier.from_xterm_code(1)
-        mods.none?.should be_true
+        mods.should eq(Termisu::Input::Modifier::None)
       end
 
       it "decodes code 2 as Shift (1 + 1)" do
@@ -199,11 +199,14 @@ describe Termisu::Input::Modifier do
       (Termisu::Input::Modifier::Shift | Termisu::Input::Modifier::Meta).meta?.should be_true
     end
 
-    it "none? returns true only when no modifiers are set" do
-      Termisu::Input::Modifier::None.none?.should be_true
-      # Note: Crystal's @[Flags] enum none? checks if value == 0
-      # Individual flags like Shift have non-zero values, so none? returns true
-      # because it checks if NO flags are set, not if it's the None variant
+    it "distinguishes zero, single, and combined flag values from None" do
+      none = Termisu::Input::Modifier::None
+      single = Termisu::Input::Modifier::Shift
+      combined = Termisu::Input::Modifier::Shift | Termisu::Input::Modifier::Ctrl
+
+      (none == Termisu::Input::Modifier::None).should be_true
+      (single == Termisu::Input::Modifier::None).should be_false
+      (combined == Termisu::Input::Modifier::None).should be_false
     end
   end
 end

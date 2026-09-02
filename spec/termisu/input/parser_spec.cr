@@ -100,7 +100,7 @@ describe Termisu::Input::Parser do
         event.should be_a(Termisu::Event::Key)
         if event.is_a?(Termisu::Event::Key)
           event.key.should eq(Termisu::Input::Key::LowerA)
-          event.modifiers.none?.should be_true
+          event.modifiers.should eq(Termisu::Input::Modifier::None)
         end
       end
 

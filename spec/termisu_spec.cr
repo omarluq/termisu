@@ -14,6 +14,43 @@ rescue
   false
 end
 
+# Test-only input source that records facade pause/resume handoffs without
+# starting a reader fiber.
+private class PausableInputSource < Termisu::Event::Source::Input
+  getter start_count : Int32 = 0
+  getter stop_count : Int32 = 0
+  @test_running : Bool = false
+
+  def start(_output : Channel(Termisu::Event::Any)) : Nil
+    @start_count += 1
+    @test_running = true
+  end
+
+  def stop : Nil
+    @stop_count += 1
+    @test_running = false
+  end
+
+  def running? : Bool
+    @test_running
+  end
+end
+
+# Build the public facade around controlled collaborators so mode coordination
+# can be tested independently of its normal initialization lifecycle.
+class Termisu
+  def initialize(
+    @terminal : Terminal,
+    @reader : Reader,
+    @input_parser : Input::Parser,
+    @input_source : Event::Source::Input,
+    @resize_source : Event::Source::Resize,
+    @event_loop : Event::Loop,
+  )
+    @timer_source = nil
+  end
+end
+
 describe Termisu do
   it "has a version number" do
     Termisu::VERSION.should_not be_nil
@@ -33,6 +70,77 @@ describe Termisu do
           Termisu.new
         end
       end
+    end
+  end
+
+  describe "#with_mode" do
+    it "pauses input for single and combined non-raw modes, but not raw mode" do
+      read_fd, write_fd = create_pipe
+      reader = Termisu::Reader.new(read_fd)
+      parser = Termisu::Input::Parser.new(reader)
+      input_source = PausableInputSource.new(reader, parser)
+      resize_source = Termisu::Event::Source::Resize.new(-> { {80, 24} })
+      event_loop = Termisu::Event::Loop.new
+      terminal = CaptureTerminal.new(sync_updates: false)
+      terminal.mode = Termisu::Terminal::Mode.raw
+      termisu = Termisu.new(terminal, reader, parser, input_source, resize_source, event_loop)
+      input_source.start(event_loop.output)
+
+      modes = {
+        Termisu::Terminal::Mode::None                                    => false,
+        Termisu::Terminal::Mode::Signals                                 => true,
+        Termisu::Terminal::Mode::Echo | Termisu::Terminal::Mode::Signals => true,
+      }
+
+      modes.each do |mode, should_pause|
+        starts_before = input_source.start_count
+        stops_before = input_source.stop_count
+
+        termisu.with_mode(mode, preserve_screen: true) do
+          input_source.running?.should eq(!should_pause)
+          input_source.stop_count.should eq(stops_before + (should_pause ? 1 : 0))
+        end
+
+        input_source.running?.should be_true
+        input_source.start_count.should eq(starts_before + (should_pause ? 1 : 0))
+      end
+    ensure
+      terminal.try &.close
+      LibC.close(read_fd) if read_fd
+      LibC.close(write_fd) if write_fd
+    end
+
+    it "keeps input paused until the outer nested non-raw mode exits" do
+      read_fd, write_fd = create_pipe
+      reader = Termisu::Reader.new(read_fd)
+      parser = Termisu::Input::Parser.new(reader)
+      input_source = PausableInputSource.new(reader, parser)
+      resize_source = Termisu::Event::Source::Resize.new(-> { {80, 24} })
+      event_loop = Termisu::Event::Loop.new
+      terminal = CaptureTerminal.new(sync_updates: false)
+      terminal.mode = Termisu::Terminal::Mode.raw
+      termisu = Termisu.new(terminal, reader, parser, input_source, resize_source, event_loop)
+      input_source.start(event_loop.output)
+
+      termisu.with_mode(Termisu::Terminal::Mode.cooked, preserve_screen: true) do
+        input_source.running?.should be_false
+
+        termisu.with_mode(Termisu::Terminal::Mode.password, preserve_screen: true) do
+          input_source.running?.should be_false
+        end
+
+        input_source.running?.should be_false
+        input_source.start_count.should eq(1)
+        input_source.stop_count.should eq(1)
+      end
+
+      input_source.running?.should be_true
+      input_source.start_count.should eq(2)
+      input_source.stop_count.should eq(1)
+    ensure
+      terminal.try &.close
+      LibC.close(read_fd) if read_fd
+      LibC.close(write_fd) if write_fd
     end
   end
 

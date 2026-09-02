@@ -5,7 +5,7 @@ describe Termisu::Event::Key do
     it "creates a key event with default modifiers" do
       event = Termisu::Event::Key.new(Termisu::Input::Key::LowerA)
       event.key.should eq(Termisu::Input::Key::LowerA)
-      event.modifiers.none?.should be_true
+      event.modifiers.should eq(Termisu::Input::Modifier::None)
     end
 
     it "creates a key event with specified modifiers" do

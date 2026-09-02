@@ -122,6 +122,16 @@ describe Termisu::Testing::Screen do
     out.should contain(%(r0 c2 "C" fg=ansi8(2) bg=default attr=None))
   end
 
+  it "reports single and combined attributes without requiring a color" do
+    s = screen(10, 1)
+    s.feed("A\e[1mB\e[4mC")
+
+    out = s.to_styled_s
+    out.should contain(%(r0 c1 "B" fg=default bg=default attr=Bold))
+    out.should contain(%(r0 c2 "C" fg=default bg=default attr=Bold|Underline))
+    out.should_not contain(%(r0 c0 "A"))
+  end
+
   it "excludes masked regions from styled snapshots" do
     s = screen(20, 1)
     s.feed("\e[31mFrame 7")

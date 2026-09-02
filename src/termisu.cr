@@ -587,11 +587,14 @@ class Termisu
 
     # Any non-raw mode needs input processing paused to avoid conflicts
     # between our input reader and direct STDIN access
-    needs_pause = !mode.none?
+    needs_pause = mode != Terminal::Mode::None
+    owns_input_pause = needs_pause && @input_source.running?
     previous_mode = @terminal.current_mode
 
-    # Pause input processing to avoid conflict with shell/external program
-    pause_input_processing if needs_pause
+    # Pause input processing to avoid conflict with shell/external program.
+    # Only the scope that stopped a running source may restart it; nested
+    # non-raw scopes must leave their outer scope's pause in place.
+    pause_input_processing if owns_input_pause
 
     @terminal.with_mode(mode, preserve_screen) do
       emit_mode_change(mode, previous_mode)
@@ -601,7 +604,7 @@ class Termisu
     # Emit event for restoration (back to previous mode or raw default)
     restored_mode = @terminal.current_mode
     emit_mode_change(restored_mode, mode) if restored_mode
-    resume_input_processing if needs_pause
+    resume_input_processing if owns_input_pause
     Log.debug { "Termisu.with_mode: restored" }
   end
 

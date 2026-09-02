@@ -84,6 +84,12 @@ r9 c69-71 "Cyn" fg=ansi256(14) bg=default attr=None
 r9 c77-79 "Wht" fg=ansi256(15) bg=default attr=None
 r11 c18-21 "Text" fg=ansi8(3) bg=default attr=None
 r11 c23-33 "Attributes:" fg=ansi8(3) bg=default attr=None
+r12 c26-29 "Bold" fg=ansi8(7) bg=default attr=Bold
+r12 c32-40 "Underline" fg=ansi8(7) bg=default attr=Underline
+r12 c43-49 "Reverse" fg=ansi8(7) bg=default attr=Reverse
+r12 c52-54 "Dim" fg=ansi8(7) bg=default attr=Dim
+r12 c57-62 "Italic" fg=ansi8(7) bg=default attr=Cursive
+r12 c65-70 "Strike" fg=ansi8(7) bg=default attr=Strikethrough
 r14 c18-26 "Combined:" fg=ansi8(3) bg=default attr=None
 r14 c28-41 "Bold+Underline" fg=ansi8(2) bg=default attr=Bold|Underline
 r14 c45-54 "Dim+Italic" fg=ansi8(6) bg=default attr=Dim|Cursive

@@ -284,6 +284,29 @@ describe Termisu::Terminal do
     ensure
       terminal.try &.close
     end
+
+    it "invalidates after single and combined non-raw modes, but not raw mode" do
+      terminal = CaptureTerminal.new(sync_updates: false)
+      terminal.set_cell(0, 0, 'X')
+      terminal.render
+
+      modes = {
+        Termisu::Terminal::Mode::None                                    => false,
+        Termisu::Terminal::Mode::Signals                                 => true,
+        Termisu::Terminal::Mode::Echo | Termisu::Terminal::Mode::Signals => true,
+      }
+
+      modes.each do |mode, should_invalidate|
+        terminal.clear_captured
+        terminal.with_mode(mode, preserve_screen: true) { }
+        terminal.clear_captured
+        terminal.render
+
+        terminal.output.includes?("X").should eq(should_invalidate)
+      end
+    ensure
+      terminal.try &.close
+    end
   end
 
   describe "#with_cooked_mode" do
