@@ -18,6 +18,94 @@ private class RaisingCaptureTerminal < CaptureTerminal
   end
 end
 
+private class PrimaryAndCleanupFaultTerminal < CaptureTerminal
+  enum CleanupPhase
+    EsuWrite
+    Flush
+  end
+
+  property cleanup_phase : CleanupPhase?
+  getter? cleanup_failed : Bool = false
+
+  def size : {Int32, Int32}
+    {3, 1}
+  end
+
+  def move_cursor(x : Int32, y : Int32)
+    raise "primary render failure"
+  end
+
+  def write(data : String, columns_advanced = 0)
+    if data == Termisu::Terminal::ESU && @cleanup_phase == CleanupPhase::EsuWrite
+      @cleanup_failed = true
+      raise "cleanup ESU failure"
+    end
+    @writes << data
+  end
+
+  def flush
+    if @cleanup_phase == CleanupPhase::Flush
+      @cleanup_failed = true
+      raise "cleanup flush failure"
+    end
+    super
+  end
+end
+
+private class SyncFaultTerminal < CaptureTerminal
+  enum Phase
+    Begin
+    Move
+    Sgr
+    Write
+    End
+    Flush
+  end
+
+  property fail_phase : Phase?
+  getter? failed : Bool = false
+
+  def size : {Int32, Int32}
+    {3, 1}
+  end
+
+  def move_cursor(x : Int32, y : Int32)
+    fail_once(Phase::Move)
+    super
+  end
+
+  def write(data : String, columns_advanced = 0)
+    if data == Termisu::Terminal::BSU
+      fail_once(Phase::Begin)
+    elsif data == Termisu::Terminal::ESU
+      fail_once(Phase::End)
+    end
+    @writes << data
+  end
+
+  def write(data : Bytes, columns_advanced = 0)
+    text = String.new(data)
+    if text.starts_with?('\e') && text.ends_with?('m')
+      fail_once(Phase::Sgr)
+    else
+      fail_once(Phase::Write)
+    end
+    @writes << text
+  end
+
+  def flush
+    fail_once(Phase::Flush)
+    super
+  end
+
+  private def fail_once(phase : Phase) : Nil
+    return if @fail_phase != phase || @failed
+
+    @failed = true
+    raise "injected #{phase} failure"
+  end
+end
+
 describe "Synchronized Update Emission" do
   describe "#render" do
     it "emits BSU before content and ESU after when sync_updates enabled" do
@@ -127,6 +215,53 @@ describe "Synchronized Update Emission" do
       terminal.captured_flush_count.should eq(1)
     ensure
       terminal.try &.close
+    end
+  end
+
+  describe "transaction retries" do
+    SyncFaultTerminal::Phase.each do |phase|
+      it "fully retries an unstyled frame after a synchronized-update #{phase.to_s.downcase} failure" do
+        terminal = SyncFaultTerminal.new(sync_updates: true)
+        terminal.set_cell(0, 0, 'X', attr: Termisu::Attribute::Bold)
+        terminal.render
+
+        terminal.clear_captured
+        terminal.set_cell(0, 0, 'Y', attr: Termisu::Attribute::None)
+        terminal.fail_phase = phase
+        expect_raises(Exception, "injected #{phase} failure") do
+          terminal.render
+        end
+
+        terminal.failed?.should be_true
+        terminal.clear_captured
+        terminal.render
+
+        content_writes = terminal.writes.reject(&.starts_with?('\e'))
+        content_writes.join.should eq("Y  ")
+        terminal.output.should contain(Termisu::Terminal::BSU)
+        terminal.output.should contain(Termisu::Terminal::ESU)
+        terminal.output.should contain("\e[m")
+        terminal.captured_flush_count.should eq(1)
+      ensure
+        terminal.try &.close
+      end
+    end
+  end
+
+  describe "compound transaction failures" do
+    PrimaryAndCleanupFaultTerminal::CleanupPhase.each do |cleanup_phase|
+      it "preserves the rendering error when #{cleanup_phase.to_s.underscore} cleanup also fails" do
+        terminal = PrimaryAndCleanupFaultTerminal.new(sync_updates: true)
+        terminal.set_cell(0, 0, 'X')
+        terminal.cleanup_phase = cleanup_phase
+
+        expect_raises(Exception, "primary render failure") do
+          terminal.render
+        end
+        terminal.cleanup_failed?.should be_true
+      ensure
+        terminal.try &.close
+      end
     end
   end
 

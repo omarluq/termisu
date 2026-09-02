@@ -265,6 +265,14 @@ class Termisu::Buffer
     end
 
     renderer.flush if auto_flush
+  rescue error
+    # A renderer can fail after accepting only part of a cursor, style, or
+    # character write. Its resulting screen and cursor state are unknowable,
+    # so retain no diff or style assumptions and make the whole frame
+    # retryable. Front keys are also staged per batch below, but a final flush
+    # failure must invalidate batches whose writes had already returned.
+    invalidate
+    raise error
   end
 
   # Forces a full redraw of all cells to the renderer, ignoring the diff.
@@ -286,6 +294,9 @@ class Termisu::Buffer
     reset_dirty_rows
 
     renderer.flush if auto_flush
+  rescue error
+    invalidate
+    raise error
   end
 
   # Resizes the buffer to new dimensions.
@@ -537,10 +548,7 @@ class Termisu::Buffer
   private def skip_row_cell?(back_key : UInt128, idx : Int32, diff_only : Bool) : Bool
     return true if diff_only && back_key == @front_keys.unsafe_fetch(idx)
 
-    return false unless Cell.key_continuation?(back_key)
-
-    @front_keys.unsafe_put(idx, back_key)
-    true
+    Cell.key_continuation?(back_key)
   end
 
   private def render_row_batch(
@@ -564,7 +572,6 @@ class Termisu::Buffer
       break if diff_only && back_key == @front_keys.unsafe_fetch(idx)
 
       if Cell.key_continuation?(back_key)
-        @front_keys.unsafe_put(idx, back_key)
         col += 1
         next
       end
@@ -580,13 +587,25 @@ class Termisu::Buffer
         @batch_buffer << @graphemes.unsafe_fetch(idx)
       end
       columns_advanced += Cell.key_width(back_key)
-      @front_keys.unsafe_put(idx, back_key)
       col += 1
     end
 
     render_batch(renderer, batch_start, row, @batch_buffer.to_slice,
       Cell.key_fg(first_key), Cell.key_bg(first_key), Cell.key_attr(first_key), columns_advanced)
+    commit_front_batch(row_start, batch_start, col)
     col
+  end
+
+  # Commits a batch only after its cursor movement, style transition, and
+  # character write have all returned successfully. Continuation keys are
+  # committed with their leading glyph so wide-cell occupancy remains atomic.
+  private def commit_front_batch(row_start : Int32, batch_start : Int32, batch_end : Int32) : Nil
+    col = batch_start
+    while col < batch_end
+      idx = row_start + col
+      @front_keys.unsafe_put(idx, @back_keys.unsafe_fetch(idx))
+      col += 1
+    end
   end
 
   # Renders a batch of characters with the same styling.

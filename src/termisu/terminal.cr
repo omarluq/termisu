@@ -37,6 +37,7 @@ class Termisu::Terminal < Termisu::Renderer
   @cached_fg : Color?
   @cached_bg : Color?
   @cached_attr : Attribute = Attribute::None
+  @cached_attr_known : Bool = true
 
   # Cached terminal size to avoid a TIOCGWINSZ ioctl per write/move_cursor.
   # Refreshed by resize() and invalidated after mode switches.
@@ -131,6 +132,7 @@ class Termisu::Terminal < Termisu::Renderer
     @cached_fg = nil
     @cached_bg = nil
     @cached_attr = Attribute::None
+    @cached_attr_known = false
   end
 
   # Precomputed SGR color sequences, indexed by color index.
@@ -158,6 +160,7 @@ class Termisu::Terminal < Termisu::Renderer
   # Caches the color to avoid redundant escape sequences when called
   # repeatedly with the same color.
   def foreground=(color : Color)
+    ensure_style_state
     return if @cached_fg == color
     @cached_fg = color
 
@@ -180,6 +183,7 @@ class Termisu::Terminal < Termisu::Renderer
   # Caches the color to avoid redundant escape sequences when called
   # repeatedly with the same color.
   def background=(color : Color)
+    ensure_style_state
     return if @cached_bg == color
     @cached_bg = color
 
@@ -232,6 +236,11 @@ class Termisu::Terminal < Termisu::Renderer
     old_bg : Color?,
     old_attr : Attribute,
   ) : Nil
+    # `Attribute::None` cannot represent an unknown physical state. A failed
+    # frame marks this cache unknown, so establish a real default before any
+    # selective transition. This also invalidates both cached colors.
+    ensure_style_state
+
     # The combined emitter hardcodes ECMA-48 SGR parameters; when the loaded
     # attribute capabilities are non-standard, defer to the granular
     # terminfo-driven decomposition (mirrors the cup_is_standard? guard).
@@ -256,6 +265,7 @@ class Termisu::Terminal < Termisu::Renderer
     write(buf.to_slice)
 
     @cached_attr = attr
+    @cached_attr_known = true
     @cached_fg = fg
     @cached_bg = bg
   end
@@ -318,6 +328,11 @@ class Termisu::Terminal < Termisu::Renderer
     end
   end
 
+  # Establishes a known terminal style before consulting any style cache.
+  private def ensure_style_state : Nil
+    reset_attributes unless @cached_attr_known
+  end
+
   # Resets all attributes to default.
   #
   # Also clears cached color/attribute state since reset affects all styling.
@@ -326,12 +341,14 @@ class Termisu::Terminal < Termisu::Renderer
     @cached_fg = nil
     @cached_bg = nil
     @cached_attr = Attribute::None
+    @cached_attr_known = true
   end
 
   # Enables bold text.
   #
   # Caches attribute state to avoid redundant escape sequences.
   def enable_bold
+    ensure_style_state
     return if @cached_attr.bold?
     @cached_attr |= Attribute::Bold
     write(@terminfo.bold_seq)
@@ -341,6 +358,7 @@ class Termisu::Terminal < Termisu::Renderer
   #
   # Caches attribute state to avoid redundant escape sequences.
   def enable_underline
+    ensure_style_state
     return if @cached_attr.underline?
     @cached_attr |= Attribute::Underline
     write(@terminfo.underline_seq)
@@ -350,6 +368,7 @@ class Termisu::Terminal < Termisu::Renderer
   #
   # Caches attribute state to avoid redundant escape sequences.
   def enable_blink
+    ensure_style_state
     return if @cached_attr.blink?
     @cached_attr |= Attribute::Blink
     write(@terminfo.blink_seq)
@@ -359,6 +378,7 @@ class Termisu::Terminal < Termisu::Renderer
   #
   # Caches attribute state to avoid redundant escape sequences.
   def enable_reverse
+    ensure_style_state
     return if @cached_attr.reverse?
     @cached_attr |= Attribute::Reverse
     write(@terminfo.reverse_seq)
@@ -368,6 +388,7 @@ class Termisu::Terminal < Termisu::Renderer
   #
   # Caches attribute state to avoid redundant escape sequences.
   def enable_dim
+    ensure_style_state
     return if @cached_attr.dim?
     @cached_attr |= Attribute::Dim
     write(@terminfo.dim_seq)
@@ -377,6 +398,7 @@ class Termisu::Terminal < Termisu::Renderer
   #
   # Caches attribute state to avoid redundant escape sequences.
   def enable_cursive
+    ensure_style_state
     return if @cached_attr.cursive?
     @cached_attr |= Attribute::Cursive
     write(@terminfo.italic_seq)
@@ -386,6 +408,7 @@ class Termisu::Terminal < Termisu::Renderer
   #
   # Caches attribute state to avoid redundant escape sequences.
   def enable_hidden
+    ensure_style_state
     return if @cached_attr.hidden?
     @cached_attr |= Attribute::Hidden
     write(@terminfo.hidden_seq)
@@ -395,6 +418,7 @@ class Termisu::Terminal < Termisu::Renderer
   #
   # Caches attribute state to avoid redundant escape sequences.
   def enable_strikethrough
+    ensure_style_state
     return if @cached_attr.strikethrough?
     @cached_attr |= Attribute::Strikethrough
     write(@terminfo.strikethrough_seq)
@@ -673,13 +697,8 @@ class Termisu::Terminal < Termisu::Renderer
   # When sync_updates is enabled, wraps the render in DEC mode 2026 sequences
   # (BSU/ESU) to prevent screen tearing during rapid updates.
   def render
-    begin_sync_update
-    begin
-      with_ephemeral_cursor do
-        @buffer.render_to(self, auto_flush: !@sync_updates)
-      end
-    ensure
-      end_sync_update
+    render_transaction do
+      @buffer.render_to(self, auto_flush: !@sync_updates)
     end
   end
 
@@ -690,14 +709,39 @@ class Termisu::Terminal < Termisu::Renderer
   # When sync_updates is enabled, wraps the sync in DEC mode 2026 sequences
   # (BSU/ESU) to prevent screen tearing during the full redraw.
   def sync
-    begin_sync_update
-    begin
-      with_ephemeral_cursor do
-        @buffer.sync_to(self, auto_flush: !@sync_updates)
-      end
-    ensure
-      end_sync_update
+    render_transaction do
+      @buffer.sync_to(self, auto_flush: !@sync_updates)
     end
+  end
+
+  # Keeps Buffer and Terminal caches provisional until every operation around
+  # a frame, including synchronized-update framing and its flush, succeeds.
+  # Buffer handles failures from its direct renderer calls; this outer guard
+  # also covers BSU/ESU and restores cache truth for Terminal's renderer state.
+  private def render_transaction(&)
+    primary_error : Exception? = nil
+
+    begin
+      begin_sync_update
+      with_ephemeral_cursor { yield }
+    rescue error
+      primary_error = error
+    ensure
+      # BSU writes can fail after partial output, so attempt ESU even when
+      # beginning the synchronized update raises. If rendering already failed,
+      # preserve that primary error when cleanup fails too.
+      begin
+        end_sync_update
+      rescue exception
+        raise exception unless primary_error
+      end
+    end
+
+    raise primary_error if primary_error
+  rescue error
+    @buffer.invalidate
+    reset_render_state
+    raise error
   end
 
   # Emits BSU (Begin Synchronized Update) sequence if sync_updates is enabled.
