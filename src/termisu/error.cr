@@ -6,6 +6,11 @@ end
 class Termisu::TerminalInUseError < Termisu::Error
 end
 
+# Error raised when raw and event-based input APIs are mixed without an
+# explicit ownership handoff.
+class Termisu::InputOwnershipError < Termisu::Error
+end
+
 # Error raised for terminal I/O operations.
 #
 # Wraps system-level I/O errors with additional context about

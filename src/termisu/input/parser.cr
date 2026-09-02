@@ -169,6 +169,18 @@ class Termisu::Input::Parser
   def initialize(@reader : Reader)
   end
 
+  # Prepares to move ownership to an unparsed raw-input consumer.
+  #
+  # An open paste is parser state even when its push-back queue is momentarily
+  # empty, so raw access must wait until the matching PasteEnd restores a clean
+  # boundary. Once that boundary is clean, the raw consumer owns the next byte;
+  # discard the protocol echo guard so it cannot affect parsing after handback.
+  def prepare_raw_handoff : Bool
+    ready = @pending.empty? && !@in_paste && @paste_deadline.nil?
+    @dup_guard = nil if ready
+    ready
+  end
+
   # Reads a complete UTF-8 character (1-4 bytes) starting from the given lead byte.
   # Consumes the additional continuation bytes from the reader.
   # Returns nil if incomplete, invalid, or not UTF-8 text.

@@ -375,6 +375,7 @@ tasks:
       crystal build examples/colors.cr -o bin/colors --release
       crystal build examples/keyboard_and_mouse.cr -o bin/kmd --release
       crystal build examples/animation.cr -o bin/animation --release
+      crystal build tests/fixtures/input_ownership.cr -o bin/input-ownership-fixture --release
   e2e:
     description: Build examples and run the Crystal-native E2E suite (spec/e2e)
     phony: true

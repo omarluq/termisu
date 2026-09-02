@@ -4,6 +4,39 @@ require "./e2e_helper"
 # a controlling PTY and confirm we capture its rendered output. Lives under
 # spec/e2e (not the unit suite) because it needs a built example binary.
 describe Termisu::Testing::Pty do
+  it "hands facade input from raw reads back to event parsing without loss" do
+    requires_binary "bin/input-ownership-fixture"
+
+    Termisu::Testing.terminal(
+      "bin/input-ownership-fixture",
+      cols: 80,
+      rows: 11,
+      env: {"TERM" => "xterm-256color"},
+    ) do |term|
+      term.get_by_text("LEASE REQUIRED").should be_true
+      term.get_by_text("COOKED RAW OK").should be_true
+      term.get_by_text("RAW COOKED OK").should be_true
+      term.get_by_text("PROBE READY").should be_true
+
+      term.write("\e[200~")
+      term.get_by_text("PROBE ESC").should be_true
+      term.write("\e")
+      term.get_by_text("PROBE RETAINED").should be_true
+      term.write("[201~")
+      term.get_by_text("PROBE COMPLETE").should be_true
+      term.get_by_text("RAW READY").should be_true
+
+      term.write("\e[A")
+      term.get_by_text("RAW 1b5b41").should be_true
+      term.get_by_text("EVENT READY").should be_true
+
+      term.write("z")
+      term.get_by_text("EVENT z").should be_true
+      term.row(9).rstrip.should eq("EVENT READY")
+      term.row(10).rstrip.should eq("EVENT z")
+    end
+  end
+
   it "spawns a program on a controlling PTY and captures its output" do
     requires_binary "bin/simple"
 

@@ -409,8 +409,14 @@ describe Termisu::Event::Source::Input do
         # First start/stop cycle
         source.start(channel)
         source.running?.should be_true
+        first_fiber = source.@fiber || fail "input fiber not started"
         source.stop
         source.running?.should be_false
+        200.times do
+          break if first_fiber.dead?
+          sleep 1.millisecond
+        end
+        first_fiber.dead?.should be_true
 
         # Second start should work with new channel
         channel2 = Channel(Termisu::Event::Any).new(10)
@@ -432,6 +438,142 @@ describe Termisu::Event::Source::Input do
         source.stop
         channel.close
         channel2.close
+      ensure
+        reader.try(&.close)
+        LibC.close(read_fd)
+        LibC.close(write_fd)
+      end
+    end
+
+    it "clears protocol de-duplication state before raw input takes ownership" do
+      read_fd, write_fd = create_pipe
+      begin
+        reader = Termisu::Reader.new(read_fd)
+        parser = Termisu::Input::Parser.new(reader)
+        source = Termisu::Event::Source::Input.new(reader, parser)
+        channel = Channel(Termisu::Event::Any).new(1)
+
+        source.start(channel)
+        protocol_event = "\e[120;1;120u".to_slice
+        LibC.write(write_fd, protocol_event, protocol_event.size)
+
+        select
+        when event = channel.receive
+          event.as(Termisu::Event::Key).char.should eq('x')
+        when timeout(100.milliseconds)
+          fail "Kitty protocol event was not delivered"
+        end
+
+        source.stop
+        source.prepare_raw_handoff.should be_true
+
+        LibC.write(write_fd, "x".to_unsafe, 1)
+        reader.read_byte(100).should eq('x'.ord.to_u8)
+
+        resumed_channel = Channel(Termisu::Event::Any).new(1)
+        source.start(resumed_channel)
+        LibC.write(write_fd, "x".to_unsafe, 1)
+
+        select
+        when event = resumed_channel.receive
+          key_event = event.as(Termisu::Event::Key)
+          key_event.key.should eq(Termisu::Input::Key::LowerX)
+          key_event.char.should eq('x')
+        when timeout(100.milliseconds)
+          fail "genuine key after raw handoff was not delivered"
+        end
+
+        source.stop
+        channel.close
+        resumed_channel.close
+      ensure
+        reader.try(&.close)
+        LibC.close(read_fd)
+        LibC.close(write_fd)
+      end
+    end
+
+    it "keeps an event blocked by backpressure for the restarted fiber" do
+      read_fd, write_fd = create_pipe
+      begin
+        reader = Termisu::Reader.new(read_fd)
+        parser = Termisu::Input::Parser.new(reader)
+        source = Termisu::Event::Source::Input.new(reader, parser)
+        blocked_channel = Channel(Termisu::Event::Any).new
+
+        source.start(blocked_channel)
+        LibC.write(write_fd, "x".to_unsafe, 1)
+        sleep 20.milliseconds # let the parser reach the blocked channel send
+
+        fiber = source.@fiber || fail "input fiber not started"
+        source.stop
+        source.running?.should be_false
+        source.prepare_raw_handoff.should be_false
+        200.times do
+          break if fiber.dead?
+          sleep 1.millisecond
+        end
+        fiber.dead?.should be_true
+
+        resumed_channel = Channel(Termisu::Event::Any).new(1)
+        source.start(resumed_channel)
+
+        select
+        when event = resumed_channel.receive
+          event.as(Termisu::Event::Key).char.should eq('x')
+        when timeout(100.milliseconds)
+          fail "parsed input was lost while handing off ownership"
+        end
+
+        source.stop
+        source.prepare_raw_handoff.should be_true
+        blocked_channel.close
+        resumed_channel.close
+      ensure
+        reader.try(&.close)
+        LibC.close(read_fd)
+        LibC.close(write_fd)
+      end
+    end
+
+    it "rejects a raw handoff while a paste-end probe retains bytes" do
+      read_fd, write_fd = create_pipe
+      begin
+        reader = Termisu::Reader.new(read_fd)
+        parser = Termisu::Input::Parser.new(reader)
+        source = Termisu::Event::Source::Input.new(reader, parser)
+        channel = Channel(Termisu::Event::Any).new(2)
+
+        source.start(channel)
+        LibC.write(write_fd, "\e[200~\e".to_unsafe, 7)
+
+        select
+        when event = channel.receive
+          event.as(Termisu::Event::Key).key.should eq(Termisu::Input::Key::PasteStart)
+        when timeout(100.milliseconds)
+          fail "paste start was not parsed"
+        end
+        sleep 20.milliseconds # let the parser retain the marker's lone ESC
+
+        source.stop
+        source.prepare_raw_handoff.should be_false
+
+        LibC.write(write_fd, "[201~X".to_unsafe, 6)
+        retained = parser.poll_event(100)
+        retained.as(Termisu::Event::Key).key.should eq(Termisu::Input::Key::PasteEnd)
+        source.prepare_raw_handoff.should be_true
+
+        source.start(channel)
+        select
+        when event = channel.receive
+          event.as(Termisu::Event::Key).char.should eq('X')
+        when timeout(100.milliseconds)
+          fail "input after the retained probe was not parsed"
+        end
+
+        source.stop
+        source.prepare_raw_handoff.should be_true
+        channel.close
       ensure
         reader.try(&.close)
         LibC.close(read_fd)
