@@ -18,9 +18,8 @@ class Termisu
   # ## Dispatch Modes
   #
   # **Async mode** (default): Uses `Log::DispatchMode::Async` for better performance.
-  # Logs are queued to a fiber and written asynchronously. Uses SafeFileIO
-  # wrapper to handle writes after file close, and Fiber.yield on close to
-  # allow pending logs to be processed.
+  # Logs are queued to a fiber and written asynchronously. The backend is
+  # drained and closed before its log file is released.
   #
   # **Sync mode**: Uses `Log::DispatchMode::Direct` for real-time logging.
   # Logs appear immediately in the file, ideal for debugging crashes.
@@ -86,6 +85,9 @@ class Termisu
   module Logging
     # Open log file handle (nil when logging disabled)
     class_property log_file : File? = nil
+
+    # Installed backend (nil when logging disabled or closed)
+    class_property backend : ::Log::IOBackend? = nil
 
     # Whether logging has been configured (prevents duplicate setup)
     class_property? configured : Bool = false
@@ -167,6 +169,7 @@ class Termisu
         # Async mode needs SafeFileIO wrapper to handle writes after file close
         io : IO = is_sync ? file : SafeFileIO.new(file)
         backend = ::Log::IOBackend.new(io: io, formatter: FORMATTER, dispatcher: dispatch_mode)
+        self.backend = backend
 
         ::Log.setup("*", level, backend)
 
@@ -179,19 +182,26 @@ class Termisu
       self.configured = true
     end
 
-    # Closes the log file and cleans up resources.
+    # Closes the logging backend and its file.
     #
-    # In async mode, yields to let the dispatch fiber process pending
-    # logs before closing. Called automatically by Termisu.close.
+    # Detaching the backend first prevents new entries while `Backend#close`
+    # drains its async dispatcher. The file must remain open until that drain
+    # completes. Called automatically by Termisu.close.
     def self.close
+      if retained_backend = backend
+        ::Log.setup { |_| } rescue nil
+        retained_backend.close rescue nil
+        self.backend = nil
+      end
+
       if file = log_file
-        if async_mode?
-          3.times { Fiber.yield }
-          file.flush rescue nil
-        end
+        file.flush rescue nil
         file.close rescue nil
         self.log_file = nil
       end
+
+      self.async_mode = false
+      self.configured = false
     end
 
     # Flushes any buffered log entries to disk.

@@ -2,6 +2,10 @@
 class Termisu::Error < Exception
 end
 
+# Error raised when another live Termisu instance owns the process terminal.
+class Termisu::TerminalInUseError < Termisu::Error
+end
+
 # Error raised for terminal I/O operations.
 #
 # Wraps system-level I/O errors with additional context about

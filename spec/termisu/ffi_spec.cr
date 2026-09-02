@@ -31,6 +31,125 @@ private def ffi_cell_op(x : Int32, y : Int32, codepoint : Int32) : Termisu::FFI:
   op
 end
 
+private def assert_ffi_blocking_poll_cancelled(*, destroy : Bool) : Nil
+  handle = termisu_create(0_u8)
+  handle.should_not eq(0_u64)
+  context = Termisu::FFI::Registry.fetch(handle) || fail("created FFI context was not registered")
+  poll_status = Atomic(Int32).new(Int32::MIN)
+
+  poll_thread = Thread.new do
+    event = uninitialized Termisu::FFI::ABI::Event
+    poll_status.set(termisu_poll_event(handle, -1, pointerof(event)))
+  end
+
+  deadline = monotonic_now + 5.seconds
+  until context.operations_in_flight?
+    raise "exported blocking poll did not start" if monotonic_now >= deadline
+    sleep 1.millisecond
+  end
+
+  # Invoke the exported shutdown concurrently with the poll. A regression here
+  # blocks this call indefinitely instead of reaching the assertions below.
+  shutdown_status = destroy ? termisu_destroy(handle) : termisu_close(handle)
+
+  poll_thread.join
+  shutdown_status.should eq(Termisu::FFI::Status::Ok.value)
+  poll_status.get.should eq(Termisu::FFI::Status::Timeout.value)
+ensure
+  termisu_destroy(handle) if handle && handle != 0_u64
+end
+
+private def run_ffi_scheduler_close_scenario(scenario : String) : Nil
+  context = Termisu::FFI::Context.new(sync_updates: false)
+
+  case scenario
+  when "in_flight"
+    operation_started = Atomic(Bool).new(false)
+    release_operation = Atomic(Bool).new(false)
+    operation_finished = Atomic(Bool).new(false)
+
+    spawn do
+      context.with_operation do
+        operation_started.set(true)
+        until release_operation.get
+          Fiber.yield
+        end
+      end
+      operation_finished.set(true)
+    end
+    until operation_started.get
+      Fiber.yield
+    end
+
+    spawn { release_operation.set(true) }
+    context.close
+    raise "in-flight operation fiber did not finish" unless operation_finished.get
+  when "contended"
+    operation_started = Atomic(Bool).new(false)
+    release_operation = Atomic(Bool).new(false)
+    winner_finished = Atomic(Bool).new(false)
+    loser_finished = Atomic(Bool).new(false)
+
+    spawn do
+      context.with_operation do
+        operation_started.set(true)
+        until release_operation.get
+          Fiber.yield
+        end
+      end
+    end
+    until operation_started.get
+      Fiber.yield
+    end
+
+    spawn do
+      context.close
+      winner_finished.set(true)
+    end
+    while context.with_operation { true }
+      Fiber.yield
+    end
+
+    # Queue the losing close ahead of the releaser. It must yield its fiber so
+    # the operation and winning close can finish and publish @closed.
+    spawn do
+      context.close
+      loser_finished.set(true)
+    end
+    spawn { release_operation.set(true) }
+
+    until winner_finished.get && loser_finished.get
+      Fiber.yield
+    end
+  else
+    raise "unknown FFI scheduler close scenario: #{scenario}"
+  end
+ensure
+  context.try &.close
+end
+
+private def assert_ffi_scheduler_close_completes(scenario : String) : Nil
+  executable = Process.executable_path || fail("cannot locate the spec executable")
+  process = Process.new(executable, ["--example", "__ffi_scheduler_close_child__"],
+    env: {"TERMISU_FFI_SCHEDULER_CLOSE_SCENARIO" => scenario})
+  finished = Channel(Process::Status).new
+  spawn { finished.send(process.wait) }
+
+  status = select
+  when child_status = finished.receive
+    child_status
+  when timeout(3.seconds)
+    process.signal(Signal::KILL)
+    finished.receive
+    fail "FFI scheduler close scenario #{scenario.inspect} timed out"
+  end
+  status.success?.should be_true
+end
+
+if scenario = ENV["TERMISU_FFI_SCHEDULER_CLOSE_SCENARIO"]?
+  run_ffi_scheduler_close_scenario(scenario)
+end
+
 describe "Termisu C ABI" do
   it "exposes the expected ABI version" do
     termisu_abi_version.should eq(1_u32)
@@ -238,8 +357,108 @@ describe "Termisu C ABI" do
     handle.should_not eq(0_u64)
 
     termisu_close(handle).should eq(Termisu::FFI::Status::Ok.value)
+    size = uninitialized Termisu::FFI::ABI::Size
+    termisu_size(handle, pointerof(size)).should eq(Termisu::FFI::Status::InvalidHandle.value)
     termisu_destroy(handle).should eq(Termisu::FFI::Status::Ok.value)
     termisu_destroy(handle).should eq(Termisu::FFI::Status::InvalidHandle.value)
+  end
+
+  it "waits for in-flight FFI operations before releasing ownership" do
+    handle = termisu_create(0_u8)
+    handle.should_not eq(0_u64)
+    context = Termisu::FFI::Registry.fetch(handle) || fail("created FFI context was not registered")
+
+    operation_started = Atomic(Bool).new(false)
+    release_operation = Atomic(Bool).new(false)
+    operation_succeeded = Atomic(Bool).new(false)
+    successor_attempt = Atomic(UInt64).new(UInt64::MAX)
+
+    operation_thread = Thread.new do
+      result = context.with_operation do |_leased|
+        operation_started.set(true)
+        until release_operation.get
+          Thread.yield
+        end
+        true
+      end
+      operation_succeeded.set(result == true)
+    end
+    until operation_started.get
+      Thread.yield
+    end
+
+    observer_thread = Thread.new do
+      # Wait until destroy has closed the operation gate. Calls that fetched
+      # the context before this point remain in its in-flight count.
+      deadline = monotonic_now + 2.seconds
+      while context.with_operation { true }
+        raise "destroy did not begin closing the FFI context" if monotonic_now >= deadline
+        Thread.yield
+      end
+
+      # Destroy must retain terminal ownership while the operation drains.
+      successor_attempt.set(termisu_create(0_u8))
+    ensure
+      release_operation.set(true)
+    end
+
+    termisu_destroy(handle).should eq(Termisu::FFI::Status::Ok.value)
+    operation_thread.join
+    observer_thread.join
+    operation_succeeded.get.should be_true
+    successor_attempt.get.should eq(0_u64)
+
+    size = uninitialized Termisu::FFI::ABI::Size
+    termisu_size(handle, pointerof(size)).should eq(Termisu::FFI::Status::InvalidHandle.value)
+
+    successor = termisu_create(0_u8)
+    successor.should_not eq(0_u64)
+    termisu_destroy(successor).should eq(Termisu::FFI::Status::Ok.value)
+  ensure
+    release_operation.try &.set(true)
+    operation_thread.try &.join
+    observer_thread.try &.join
+    termisu_destroy(handle) if handle && handle != 0_u64
+    termisu_destroy(successor) if successor && successor != 0_u64
+  end
+
+  it "lets same-scheduler operation fibers drain during close" do
+    assert_ffi_scheduler_close_completes("in_flight")
+  end
+
+  it "lets same-scheduler close fibers complete when they contend" do
+    assert_ffi_scheduler_close_completes("contended")
+  end
+
+  it "cancels real blocking C ABI polls before close and destroy drain operations" do
+    assert_ffi_blocking_poll_cancelled(destroy: false)
+    assert_ffi_blocking_poll_cancelled(destroy: true)
+  end
+
+  it "enforces terminal ownership across FFI handles" do
+    first = termisu_create(0_u8)
+    first.should_not eq(0_u64)
+
+    termisu_create(0_u8).should eq(0_u64)
+    termisu_error_message.should contain("already controlled")
+
+    termisu_close(first).should eq(Termisu::FFI::Status::Ok.value)
+    second = termisu_create(0_u8)
+    second.should_not eq(0_u64)
+
+    # Destroying the already-closed old handle cannot release the new owner.
+    termisu_destroy(first).should eq(Termisu::FFI::Status::Ok.value)
+    termisu_create(0_u8).should eq(0_u64)
+    termisu_error_message.should contain("already controlled")
+
+    termisu_destroy(second).should eq(Termisu::FFI::Status::Ok.value)
+    third = termisu_create(0_u8)
+    third.should_not eq(0_u64)
+    termisu_destroy(third).should eq(Termisu::FFI::Status::Ok.value)
+  ensure
+    termisu_destroy(first) if first && first != 0_u64
+    termisu_destroy(second) if second && second != 0_u64
+    termisu_destroy(third) if third && third != 0_u64
   end
 
   it "truncates copied error messages safely" do

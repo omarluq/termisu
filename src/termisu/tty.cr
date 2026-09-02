@@ -13,7 +13,7 @@ class Termisu::TTY
   @outfd : Int32
   @infd : Int32
   @owns_input_fd : Bool
-  @closed : Bool = false
+  @closed = Atomic(Bool).new(false)
 
   {% begin %}
     {% bsd = flag?(:openbsd) || flag?(:freebsd) %}
@@ -35,9 +35,8 @@ class Termisu::TTY
 
   # Closes the TTY file descriptors.
   def close
-    return if @closed
+    return unless @closed.compare_and_set(false, true)[1]
 
-    @closed = true
     input_fd = @owns_input_fd ? @infd : -1
     @owns_input_fd = false
     @outfd = -1

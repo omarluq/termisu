@@ -2,22 +2,29 @@ module Termisu::FFI
   def self.create(sync_updates : Bool) : UInt64
     context = Context.new(sync_updates)
     Registry.insert(context)
+  rescue ex
+    context.try(&.close)
+    raise ex
   end
 
   def self.destroy(handle : UInt64) : Status
     context = Registry.fetch(handle)
     return invalid_handle_status unless context
 
-    context.close
-    Registry.delete(handle)
+    begin
+      context.close
+    ensure
+      Registry.delete(handle)
+    end
     Status::Ok
   end
 
   def self.close(handle : UInt64) : Status
-    with_context(handle) do |context|
-      context.close
-      Status::Ok
-    end
+    context = Registry.fetch(handle)
+    return invalid_handle_status unless context
+
+    context.close
+    Status::Ok
   end
 
   def self.size(handle : UInt64, out_size : ABI::Size*) : Status
@@ -225,11 +232,7 @@ module Termisu::FFI
     return invalid_argument_status("out_event is null") if out_event.null?
 
     with_context(handle) do |context|
-      event = if timeout_ms < 0
-                context.termisu.poll_event
-              else
-                context.termisu.poll_event(timeout_ms)
-              end
+      event = context.poll_event(timeout_ms)
 
       if event
         Conversions.write_abi_event(event, out_event)
@@ -272,7 +275,10 @@ module Termisu::FFI
   private def self.with_context(handle : UInt64, & : Context -> Status) : Status
     context = Registry.fetch(handle)
     return invalid_handle_status unless context
-    yield context
+
+    result = context.with_operation { |leased| yield leased }
+    return invalid_handle_status if result.nil?
+    result
   end
 
   private def self.with_context_u8(handle : UInt64, & : Context -> UInt8) : UInt8
@@ -281,7 +287,13 @@ module Termisu::FFI
       ErrorState.set("Invalid handle")
       return 0_u8
     end
-    yield context
+
+    result = context.with_operation { |leased| yield leased }
+    if result.nil?
+      ErrorState.set("Invalid handle")
+      return 0_u8
+    end
+    result
   end
 
   private def self.invalid_handle_status : Status

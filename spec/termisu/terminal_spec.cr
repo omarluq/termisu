@@ -1,5 +1,29 @@
 require "../spec_helper"
 
+private class FailingAlternateScreenTerminal < CaptureTerminal
+  property? fail_next_flush = false
+
+  def flush
+    if @fail_next_flush
+      @fail_next_flush = false
+      raise IO::Error.new("alternate screen flush failed")
+    end
+    super
+  end
+end
+
+private class FailingExitFlushTerminal < Termisu::Terminal
+  property? fail_next_flush = false
+
+  def flush
+    if @fail_next_flush
+      @fail_next_flush = false
+      raise IO::Error.new("alternate screen exit failed")
+    end
+    super
+  end
+end
+
 describe Termisu::Terminal do
   describe ".new" do
     it "opens /dev/tty and provides valid file descriptors" do
@@ -109,6 +133,48 @@ describe Termisu::Terminal do
       # Multiple closes should be safe
       terminal.close
       terminal.close
+    end
+
+    it "restores raw mode and closes descriptors after alternate-screen output fails" do
+      terminal = FailingExitFlushTerminal.new(sync_updates: false)
+      terminal.enable_raw_mode
+      terminal.enter_alternate_screen
+      infd = terminal.infd
+      outfd = terminal.outfd
+      terminal.fail_next_flush = true
+
+      expect_raises(IO::Error, "alternate screen exit failed") do
+        terminal.close
+      end
+
+      terminal.raw_mode?.should be_false
+      LibC.fcntl(infd, LibC::F_GETFL, 0).should eq(-1)
+      Errno.value.should eq(Errno::EBADF)
+      LibC.fcntl(outfd, LibC::F_GETFL, 0).should eq(-1)
+      Errno.value.should eq(Errno::EBADF)
+
+      # Cleanup and descriptor closure are not retried by repeated close.
+      terminal.close
+    ensure
+      terminal.try &.close
+    end
+  end
+
+  describe "alternate-screen rollback" do
+    it "exits a partially-entered alternate screen and preserves the original error" do
+      terminal = FailingAlternateScreenTerminal.new(sync_updates: false)
+      terminfo = Termisu::Terminfo.new
+      terminal.fail_next_flush = true
+
+      expect_raises(IO::Error, "alternate screen flush failed") do
+        terminal.enter_alternate_screen
+      end
+
+      terminal.alternate_screen?.should be_false
+      terminal.output.should contain(terminfo.enter_ca_seq)
+      terminal.output.should contain(terminfo.exit_ca_seq)
+    ensure
+      terminal.try &.close
     end
   end
 
