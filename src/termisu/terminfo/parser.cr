@@ -94,6 +94,8 @@ class Termisu::Terminfo::Parser
   # Resolves each requested capability name to its STRING_CAPS index and
   # decodes only those entries from the strings section, skipping the
   # hundreds of unrequested capabilities a terminfo file typically carries.
+  # Structural sections are always validated, but offset or string corruption
+  # belonging solely to an unrequested capability is deliberately not observed.
   #
   # ## Parameters
   #

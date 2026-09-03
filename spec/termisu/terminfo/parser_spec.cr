@@ -363,6 +363,26 @@ describe Termisu::Terminfo::Parser do
 
       fast.should eq(reference)
     end
+
+    it "still parses explicitly requested keyboard capabilities" do
+      data = create_sparse_terminfo_data({"kf1" => "\eOP", "kcuu1" => "\e[A"})
+
+      Termisu::Terminfo::Parser.parse(data, ["kf1", "kcuu1"]).should eq({
+        "kf1"   => "\eOP",
+        "kcuu1" => "\e[A",
+      })
+    end
+
+    it "ignores capability-specific corruption only while that capability is unrequested" do
+      data = create_sparse_terminfo_data({"clear" => "custom-clear"}, ["kf1"])
+
+      Termisu::Terminfo::Parser.parse(data, ["clear"]).should eq({"clear" => "custom-clear"})
+
+      error = expect_raises(Termisu::ParseError) do
+        Termisu::Terminfo::Parser.parse(data, ["kf1"])
+      end
+      error.type.should eq(Termisu::ParseError::Type::InvalidOffset)
+    end
   end
 
   describe "integration with Capabilities" do

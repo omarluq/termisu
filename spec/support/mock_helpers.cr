@@ -39,4 +39,85 @@ module MockHelpers
 
     io.to_slice
   end
+
+  # Creates a sparse terminfo database containing named string capabilities.
+  # Entries in *malformed_caps* receive an out-of-range string offset while the
+  # rest of the file remains structurally valid.
+  def create_sparse_terminfo_data(
+    capabilities : Hash(String, String),
+    malformed_caps : Array(String) = [] of String,
+  ) : Bytes
+    names = capabilities.keys + malformed_caps
+    highest_index = names.reduce(0) do |highest, name|
+      index = mock_string_cap_index(name)
+      index > highest ? index : highest
+    end
+    string_count = highest_index + 1
+    offsets = Array(Int16).new(string_count, -1_i16)
+    table = IO::Memory.new
+
+    capabilities.each do |name, value|
+      offsets[mock_string_cap_index(name)] = table.pos.to_i16
+      table.write(value.to_slice)
+      table.write_byte(0_u8)
+    end
+
+    malformed_caps.each do |name|
+      offsets[mock_string_cap_index(name)] = Int16::MAX
+    end
+
+    io = IO::Memory.new
+    io.write_bytes(0o432_i16, IO::ByteFormat::LittleEndian)
+    io.write_bytes(6_i16, IO::ByteFormat::LittleEndian) # names section length
+    io.write_bytes(0_i16, IO::ByteFormat::LittleEndian)
+    io.write_bytes(0_i16, IO::ByteFormat::LittleEndian)
+    io.write_bytes(string_count.to_i16, IO::ByteFormat::LittleEndian)
+    io.write_bytes(table.size.to_i16, IO::ByteFormat::LittleEndian)
+    io.write("test\0\0".to_slice)
+    offsets.each { |offset| io.write_bytes(offset, IO::ByteFormat::LittleEndian) }
+    io.write(table.to_slice)
+    io.to_slice
+  end
+
+  # Exposes *data* as the database for *term_name* for the duration of the block.
+  def with_mock_terminfo_database(term_name : String, data : Bytes, &)
+    temp = File.tempfile("termisu-terminfo")
+    root = temp.path
+    temp.close
+    File.delete(root)
+
+    entry_dir = File.join(root, term_name[0].to_s)
+    entry_path = File.join(entry_dir, term_name)
+    Dir.mkdir_p(entry_dir)
+    File.write(entry_path, data)
+
+    original_term = ENV["TERM"]?
+    original_terminfo = ENV["TERMINFO"]?
+    ENV["TERM"] = term_name
+    ENV["TERMINFO"] = root
+    Termisu::Terminfo.clear_caps_cache
+
+    yield
+  ensure
+    Termisu::Terminfo.clear_caps_cache
+    if original_term
+      ENV["TERM"] = original_term
+    else
+      ENV.delete("TERM")
+    end
+    if original_terminfo
+      ENV["TERMINFO"] = original_terminfo
+    else
+      ENV.delete("TERMINFO")
+    end
+
+    File.delete(entry_path) if entry_path && File.exists?(entry_path)
+    Dir.delete(entry_dir) if entry_dir && Dir.exists?(entry_dir)
+    Dir.delete(root) if root && Dir.exists?(root)
+  end
+
+  private def mock_string_cap_index(name : String) : Int32
+    Termisu::Terminfo::Capabilities.string_cap_index(name) ||
+      raise ArgumentError.new("Unknown terminfo capability: #{name}")
+  end
 end
