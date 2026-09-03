@@ -160,6 +160,9 @@ class Termisu::Input::Parser
   # render loop a full second on a truncated paste; instead each call waits only
   # what it has, hands the ESC back, and the next call resumes the probe.
   @paste_deadline : MonotonicTime? = nil
+  # Transient state for the current poll. A zero-timeout poll is explicitly
+  # nonblocking, so continuation reads can skip deadline clock work altogether.
+  @nonblocking : Bool = false
   @poll_deadline : MonotonicTime? = nil
   # Absolute end-to-end deadline used by every byte of the current parse. A
   # blocking poll may wait indefinitely for its first byte, but once parsing has
@@ -225,14 +228,14 @@ class Termisu::Input::Parser
   #
   # Returns an Event or nil if timeout/no data.
   def poll_event(timeout_ms : Int32 = -1) : Event::Any?
-    now = monotonic_now
-    @poll_deadline = timeout_ms < 0 ? nil : now + timeout_ms.milliseconds
-    @parse_deadline = @poll_deadline
+    started_at = prepare_poll(timeout_ms)
 
     # Bytes already taken off the fd while probing for an end marker come first,
     # and without consulting the fd: they have arrived, so no timeout applies.
     if byte = @pending.shift?
-      @parse_deadline ||= now + ESCAPE_TIMEOUT_MS.milliseconds
+      if started_at
+        @parse_deadline ||= started_at + ESCAPE_TIMEOUT_MS.milliseconds
+      end
       return parse_byte(byte)
     end
 
@@ -242,8 +245,25 @@ class Termisu::Input::Parser
 
     # A blocking poll is unbounded only while waiting for its first byte. Once a
     # possible multi-byte event starts, truncated input must not block forever.
-    @parse_deadline ||= monotonic_now + ESCAPE_TIMEOUT_MS.milliseconds
+    unless @nonblocking
+      @parse_deadline ||= monotonic_now + ESCAPE_TIMEOUT_MS.milliseconds
+    end
     parse_byte(byte)
+  end
+
+  # Resets state owned by one poll and establishes its absolute deadline. A
+  # nonblocking poll needs neither a clock sample nor a transient deadline;
+  # persistent paste-tail deadlines remain independent of this state.
+  private def prepare_poll(timeout_ms : Int32) : MonotonicTime?
+    @nonblocking = timeout_ms == 0
+    @poll_deadline = nil
+    @parse_deadline = nil
+    return if @nonblocking
+
+    now = monotonic_now
+    @poll_deadline = now + timeout_ms.milliseconds if timeout_ms >= 0
+    @parse_deadline = @poll_deadline
+    now
   end
 
   # Parses a single byte, potentially reading more for escape sequences.
@@ -374,6 +394,8 @@ class Termisu::Input::Parser
   # How long to block for the next marker byte: the shorter of what the caller
   # asked for and what is left of the marker window.
   private def paste_wait_ms : Int32
+    return 0 if @nonblocking
+
     window = ms_until(@paste_deadline)
     budget = @poll_deadline ? ms_until(@poll_deadline) : window
     {window, budget}.min
@@ -410,6 +432,8 @@ class Termisu::Input::Parser
   end
 
   private def parse_wait_ms(max_wait_ms : Int32?) : Int32
+    return 0 if @nonblocking
+
     wait = ms_until(@parse_deadline)
     max_wait_ms ? {wait, max_wait_ms}.min : wait
   end

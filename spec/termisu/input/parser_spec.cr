@@ -127,6 +127,58 @@ private class ParserDripProbe < Termisu::Input::Parser
   end
 end
 
+# Supplies exactly one byte per read so parser continuation paths cannot rely on
+# Reader's internal buffering. It also records every requested wait and exact
+# byte consumption for deterministic nonblocking and differential assertions.
+private class ParserCountingReader < Termisu::Reader
+  getter waits = [] of Int32
+  getter consumed = 0
+
+  @bytes : Array(UInt8)
+
+  def initialize(bytes : Bytes)
+    super(-1)
+    @bytes = bytes.to_a
+  end
+
+  def append(bytes : Bytes) : Nil
+    bytes.each { |byte| @bytes << byte }
+  end
+
+  def read_byte(timeout_ms : Int32) : UInt8?
+    @waits << timeout_ms
+    return if @consumed >= @bytes.size
+
+    byte = @bytes[@consumed]
+    @consumed += 1
+    byte
+  end
+
+  def peek_byte(timeout_ms : Int32) : UInt8?
+    @waits << timeout_ms
+    return if @consumed >= @bytes.size
+
+    @bytes[@consumed]
+  end
+end
+
+private class ParserClockProbe < Termisu::Input::Parser
+  getter clock_reads = 0
+
+  def initialize(reader : ParserCountingReader, @now : MonotonicTime)
+    super(reader)
+  end
+
+  def advance(span : Time::Span) : Nil
+    @now += span
+  end
+
+  private def monotonic_now : MonotonicTime
+    @clock_reads += 1
+    @now
+  end
+end
+
 describe Termisu::Input::Parser do
   # A wait is rounded up so a live deadline never truncates to a 0ms spin, but a
   # whole number is already the answer — inflating it would overshoot the budget
@@ -909,6 +961,145 @@ describe Termisu::Input::Parser do
     end
 
     context "parser deadlines" do
+      it "skips parser clock reads for ordinary zero-timeout events" do
+        cases = {
+          "ASCII"        => Bytes['a'.ord],
+          "CSI"          => "\e[A".to_slice,
+          "SGR mouse"    => "\e[<0;10;20M".to_slice,
+          "normal mouse" => Bytes[0x1B, '['.ord, 'M'.ord, 32, 33, 33],
+          "Kitty"        => "\e[97;1u".to_slice,
+          "UTF-8"        => "€".to_slice,
+        }
+
+        cases.each do |name, bytes|
+          reader = ParserCountingReader.new(bytes)
+          parser = ParserClockProbe.new(reader, monotonic_now)
+
+          event = parser.poll_event(0)
+
+          event.should_not be_nil, name
+          parser.clock_reads.should eq(0), name
+          reader.consumed.should eq(bytes.size), name
+          reader.waits.all?(&.zero?).should be_true, name
+        end
+      end
+
+      it "keeps empty input and a fragmented Escape nonblocking without clock reads" do
+        empty_reader = ParserCountingReader.new(Bytes.empty)
+        empty_parser = ParserClockProbe.new(empty_reader, monotonic_now)
+        empty_parser.poll_event(0).should be_nil
+        empty_parser.clock_reads.should eq(0)
+        empty_reader.waits.should eq([0])
+
+        escape_reader = ParserCountingReader.new(Bytes[0x1B])
+        escape_parser = ParserClockProbe.new(escape_reader, monotonic_now)
+        event = escape_parser.poll_event(0).as(Termisu::Event::Key)
+        event.key.should eq(Termisu::Input::Key::Escape)
+        escape_parser.clock_reads.should eq(0)
+        escape_reader.consumed.should eq(1)
+        escape_reader.waits.should eq([0, 0])
+      end
+
+      it "clears transient deadlines when switching to a zero-timeout poll" do
+        reader = ParserCountingReader.new("a\e[A".to_slice)
+        parser = ParserClockProbe.new(reader, monotonic_now)
+
+        parser.poll_event(10).as(Termisu::Event::Key).key.should eq(Termisu::Input::Key::LowerA)
+        reads_before_zero_poll = parser.clock_reads
+        waits_before_zero_poll = reader.waits.size
+
+        parser.poll_event(0).as(Termisu::Event::Key).key.should eq(Termisu::Input::Key::Up)
+        parser.clock_reads.should eq(reads_before_zero_poll)
+        reader.waits[waits_before_zero_poll..].all?(&.zero?).should be_true
+      end
+
+      it "retains positive and blocking poll deadline setup" do
+        positive_reader = ParserCountingReader.new(Bytes['a'.ord])
+        positive_parser = ParserClockProbe.new(positive_reader, monotonic_now)
+        positive_parser.poll_event(10).as(Termisu::Event::Key).key.should eq(Termisu::Input::Key::LowerA)
+        positive_parser.clock_reads.should eq(1)
+        positive_reader.waits.should eq([10])
+
+        blocking_reader = ParserCountingReader.new(Bytes['a'.ord])
+        blocking_parser = ParserClockProbe.new(blocking_reader, monotonic_now)
+        blocking_parser.poll_event.as(Termisu::Event::Key).key.should eq(Termisu::Input::Key::LowerA)
+        blocking_parser.clock_reads.should eq(2)
+        blocking_reader.waits.should eq([Int32::MAX])
+      end
+
+      it "keeps the paste-tail deadline across zero-timeout polls and recovers after expiry" do
+        reader = ParserCountingReader.new("\e[200~\e".to_slice)
+        parser = ParserClockProbe.new(reader, monotonic_now)
+
+        parser.poll_event(0).as(Termisu::Event::Key).key.should eq(Termisu::Input::Key::PasteStart)
+        parser.clock_reads.should eq(0)
+
+        parser.poll_event(0).should be_nil
+        parser.clock_reads.should eq(2) # establish and check the persistent deadline
+
+        parser.advance(999.milliseconds)
+        parser.poll_event(0).should be_nil
+        parser.clock_reads.should eq(3)
+
+        parser.advance(2.milliseconds)
+        expired = parser.poll_event(0).as(Termisu::Event::Key)
+        expired.key.should eq(Termisu::Input::Key::Escape)
+        expired.char.should eq('\e')
+        parser.clock_reads.should eq(4)
+
+        reader.append("\e[201~".to_slice)
+        parser.poll_event(0).as(Termisu::Event::Key).key.should eq(Termisu::Input::Key::PasteEnd)
+        parser.clock_reads.should eq(5)
+        parser.prepare_raw_handoff.should be_true
+      end
+
+      it "matches the positive-deadline path on a fixed-seed fragmented corpus" do
+        random = Random.new(0x5EED_u64)
+
+        256.times do |index|
+          bytes = case random.rand(10)
+                  when 0
+                    Bytes[(32 + random.rand(95)).to_u8]
+                  when 1
+                    ["é", "€", "界", "🙂"][random.rand(4)].to_slice
+                  when 2
+                    "\e[#{"ABCDHFZ"[random.rand(7)]}".to_slice
+                  when 3
+                    "\e[#{97 + random.rand(26)};#{1 + random.rand(8)}u".to_slice
+                  when 4
+                    "\e[<#{random.rand(80)};#{1 + random.rand(200)};#{1 + random.rand(200)}M".to_slice
+                  when 5
+                    Bytes[0x1B, '['.ord, 'M'.ord, (32 + random.rand(4)).to_u8,
+                      (33 + random.rand(100)).to_u8, (33 + random.rand(100)).to_u8]
+                  when 6
+                    "\eO#{"PQRSABCDHF"[random.rand(10)]}".to_slice
+                  when 7
+                    Bytes[0xF0, 0x9F]
+                  when 8
+                    "\e[1;".to_slice
+                  else
+                    random.rand(2).zero? ? "\e[200~".to_slice : "\e[201~".to_slice
+                  end
+
+          fast_reader = ParserCountingReader.new(bytes)
+          fast = ParserClockProbe.new(fast_reader, monotonic_now)
+          reference_reader = ParserCountingReader.new(bytes)
+          reference = ParserClockProbe.new(reference_reader, monotonic_now)
+
+          fast_event = fast.poll_event(0)
+          reference_event = reference.poll_event(100)
+          fast_event.should eq(reference_event), "case #{index}"
+          fast_reader.consumed.should eq(reference_reader.consumed), "case #{index}"
+
+          sentinel = Bytes['!'.ord]
+          fast_reader.append(sentinel)
+          reference_reader.append(sentinel)
+          fast.poll_event(0).should eq(reference.poll_event(100)), "following event for case #{index}"
+          fast_reader.consumed.should eq(reference_reader.consumed), "following bytes for case #{index}"
+          fast.prepare_raw_handoff.should eq(reference.prepare_raw_handoff), "state for case #{index}"
+        end
+      end
+
       it "parses complete buffered sequences nonblockingly across every read boundary" do
         utf8 = parse_sequence_with_buffer("€".to_slice, 1, 0)
         utf8.should be_a(Termisu::Event::Key)
