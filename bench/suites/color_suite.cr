@@ -4,20 +4,20 @@ module Termisu::Bench
   module ColorSuite
     extend self
 
-    def run : Array(BenchGroup)
+    def run(config : BenchConfig = BenchConfig.from_env) : Array(BenchGroup)
       groups = [] of BenchGroup
 
-      groups << run_creation_benchmarks
-      groups << run_conversion_benchmarks
-      groups << run_palette_benchmarks
-      groups << run_equality_benchmarks
-      groups << run_escape_sequence_benchmarks
+      groups << run_creation_benchmarks(config)
+      groups << run_conversion_benchmarks(config)
+      groups << run_palette_benchmarks(config)
+      groups << run_equality_benchmarks(config)
+      groups << run_escape_sequence_benchmarks(config)
 
       groups
     end
 
-    private def run_creation_benchmarks : BenchGroup
-      capture = BenchCapture.new
+    private def run_creation_benchmarks(config : BenchConfig) : BenchGroup
+      capture = BenchCapture.new(config)
 
       capture.report("Color.default") { Color.default }
       capture.report("Color.black") { Color.black }
@@ -27,8 +27,8 @@ module Termisu::Bench
       BenchGroup.new("Color Creation", capture.results)
     end
 
-    private def run_conversion_benchmarks : BenchGroup
-      capture = BenchCapture.new
+    private def run_conversion_benchmarks(config : BenchConfig) : BenchGroup
+      capture = BenchCapture.new(config)
 
       capture.report("rgb_to_ansi256") do
         Color::Conversions.rgb_to_ansi256(128_u8, 64_u8, 200_u8)
@@ -45,8 +45,9 @@ module Termisu::Bench
       BenchGroup.new("Color Conversions", capture.results)
     end
 
-    private def run_palette_benchmarks : BenchGroup
-      capture = BenchCapture.new
+    private def run_palette_benchmarks(config : BenchConfig) : BenchGroup
+      capture = BenchCapture.new(config)
+      index = 0_u8
 
       capture.report("basic_color(:red)") do
         Color::Palette.basic_color(:red)
@@ -56,20 +57,20 @@ module Termisu::Bench
         Color::Palette.grayscale_color(12)
       end
 
-      capture.report("grayscale range check") do
-        idx = rand(256).to_u8
-        idx >= 232 && idx <= 255
+      capture.report("grayscale range check", before_sample: -> { index = 0_u8; nil }) do
+        index &+= 1
+        index >= 232 && index <= 255
       end
 
       BenchGroup.new("Palette Lookups", capture.results)
     end
 
-    private def run_equality_benchmarks : BenchGroup
+    private def run_equality_benchmarks(config : BenchConfig) : BenchGroup
       color1 = Color.rgb(100_u8, 150_u8, 200_u8)
       color2 = Color.rgb(100_u8, 150_u8, 200_u8)
       color3 = Color.rgb(200_u8, 150_u8, 100_u8)
 
-      capture = BenchCapture.new
+      capture = BenchCapture.new(config)
 
       capture.report("color == (equal)") { color1 == color2 }
       capture.report("color == (not equal)") { color1 == color3 }
@@ -77,19 +78,24 @@ module Termisu::Bench
       BenchGroup.new("Color Equality", capture.results)
     end
 
-    private def run_escape_sequence_benchmarks : BenchGroup
-      capture = BenchCapture.new
+    private def run_escape_sequence_benchmarks(config : BenchConfig) : BenchGroup
+      capture = BenchCapture.new(config)
+      index = 0_u8
+      reset_index = -> { index = 0_u8; nil }
 
-      capture.report("build fg sequence") do
-        "\e[38;5;#{rand(256)}m"
+      capture.report("build fg sequence", before_sample: reset_index) do
+        index &+= 1
+        "\e[38;5;#{index}m"
       end
 
-      capture.report("build rgb sequence") do
-        "\e[38;2;#{rand(256)};#{rand(256)};#{rand(256)}m"
+      capture.report("build rgb sequence", before_sample: reset_index) do
+        index &+= 1
+        "\e[38;2;#{index};#{index &+ 1};#{index &+ 2}m"
       end
 
-      capture.report("build combined") do
-        "\e[38;5;#{rand(256)};48;5;#{rand(256)}m"
+      capture.report("build combined", before_sample: reset_index) do
+        index &+= 1
+        "\e[38;5;#{index};48;5;#{index &+ 1}m"
       end
 
       BenchGroup.new("Escape Sequence Building", capture.results)

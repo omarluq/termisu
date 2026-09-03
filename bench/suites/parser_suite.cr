@@ -33,20 +33,20 @@ module Termisu::Bench
       io.to_slice
     end
 
-    def run : Array(BenchGroup)
+    def run(config : BenchConfig = BenchConfig.from_env) : Array(BenchGroup)
       mock_data = create_mock_data
       groups = [] of BenchGroup
 
-      groups << run_parser_creation(mock_data)
-      groups << run_capability_parsing(mock_data)
-      groups << run_full_parse_cycle(mock_data)
-      groups << run_error_handling(mock_data)
+      groups << run_parser_creation(mock_data, config)
+      groups << run_capability_parsing(mock_data, config)
+      groups << run_full_parse_cycle(mock_data, config)
+      groups << run_error_handling(mock_data, config)
 
       groups
     end
 
-    private def run_parser_creation(mock_data : Bytes) : BenchGroup
-      capture = BenchCapture.new
+    private def run_parser_creation(mock_data : Bytes, config : BenchConfig) : BenchGroup
+      capture = BenchCapture.new(config)
 
       capture.report("Parser.new") do
         Terminfo::Parser.new(mock_data)
@@ -55,9 +55,9 @@ module Termisu::Bench
       BenchGroup.new("Parser Creation", capture.results)
     end
 
-    private def run_capability_parsing(mock_data : Bytes) : BenchGroup
+    private def run_capability_parsing(mock_data : Bytes, config : BenchConfig) : BenchGroup
       parser = Terminfo::Parser.new(mock_data)
-      capture = BenchCapture.new
+      capture = BenchCapture.new(config)
 
       capture.report("parse 1 cap") do
         parser.parse(["clear"])
@@ -75,8 +75,8 @@ module Termisu::Bench
       BenchGroup.new("Capability Parsing", capture.results)
     end
 
-    private def run_full_parse_cycle(mock_data : Bytes) : BenchGroup
-      capture = BenchCapture.new
+    private def run_full_parse_cycle(mock_data : Bytes, config : BenchConfig) : BenchGroup
+      capture = BenchCapture.new(config)
 
       capture.report("Parser.parse (1 cap)") do
         Terminfo::Parser.parse(mock_data, ["clear"])
@@ -93,13 +93,13 @@ module Termisu::Bench
       BenchGroup.new("Full Parse Cycle", capture.results)
     end
 
-    private def run_error_handling(mock_data : Bytes) : BenchGroup
+    private def run_error_handling(mock_data : Bytes, config : BenchConfig) : BenchGroup
       corrupt_data = Bytes[1, 2, 3]
       invalid_magic = mock_data.clone
       invalid_magic[0] = 0xFF_u8
       invalid_magic[1] = 0xFF_u8
 
-      capture = BenchCapture.new
+      capture = BenchCapture.new(config)
 
       capture.report("parse? (corrupt - nil)") do
         Terminfo::Parser.parse?(corrupt_data, ["clear"])
