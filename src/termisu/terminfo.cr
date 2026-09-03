@@ -6,9 +6,13 @@
 #
 # ## Loading Strategy
 #
-# 1. Attempts to load capabilities from terminfo database at standard locations
-# 2. Falls back to built-in escape sequences for xterm/linux if database unavailable
-# 3. Merges database values with builtins, preferring database values
+# 1. Attempts to load the output capabilities Termisu consumes from the terminfo database
+# 2. Falls back to built-in escape sequences for xterm/linux if the database is unavailable
+# 3. Fills missing output capabilities from builtins, preferring database values
+#
+# Keyboard capabilities are not loaded here because input parsing does not consume them.
+# The public keyboard capability tables and generic binary parser remain available to
+# applications that explicitly request those capabilities.
 #
 # ## Usage
 #
@@ -173,11 +177,14 @@ class Termisu::Terminfo
                           @cached_invis == "\e[8m" && @cached_smxx == "\e[9m"
   end
 
-  # Loads capabilities from the terminfo database.
+  # Loads the output capabilities consumed by Terminfo.
+  #
+  # Capability-specific corruption in an unrequested keyboard entry is deliberately
+  # ignored. Keyboard input is parsed independently, while callers that need terminfo
+  # key strings can still request REQUIRED_KEYS directly through Parser.
   private def self.load_from_database(term_name : String) : Hash(String, String)
     data = Database.new(term_name).load
-    required = Capabilities::REQUIRED_FUNCS + Capabilities::REQUIRED_KEYS
-    caps = Parser.parse(data, required)
+    caps = Parser.parse(data, Capabilities::REQUIRED_FUNCS)
     Log.debug { "Loaded #{caps.size} capabilities from database" }
     caps
   rescue ex
@@ -185,11 +192,10 @@ class Termisu::Terminfo
     {} of String => String
   end
 
-  # Fills in missing capabilities with hardcoded fallback values.
+  # Fills in missing output capabilities with hardcoded fallback values.
   private def self.fill_missing_with_builtins(caps : Hash(String, String), term_name : String)
     before_count = caps.size
     fill_capability_group(caps, Capabilities::REQUIRED_FUNCS, Builtin.funcs_for(term_name))
-    fill_capability_group(caps, Capabilities::REQUIRED_KEYS, Builtin.keys_for(term_name))
     added = caps.size - before_count
     Log.debug { "Filled #{added} missing capabilities from builtins" } if added > 0
   end

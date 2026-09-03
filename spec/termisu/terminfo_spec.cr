@@ -335,6 +335,83 @@ describe Termisu::Terminfo do
     end
   end
 
+  describe "runtime capability composition" do
+    it "stores only production output capabilities for builtin fallback" do
+      original_term = ENV["TERM"]?
+
+      begin
+        term_name = "termisu-missing-runtime-caps"
+        ENV["TERM"] = term_name
+        Termisu::Terminfo.clear_caps_cache
+
+        Termisu::Terminfo.new
+        caps = Termisu::Terminfo.cached_caps?(term_name)
+        caps.should_not be_nil
+        caps = caps.as(Hash(String, String))
+
+        caps.size.should eq(Termisu::Terminfo::Capabilities::REQUIRED_FUNCS.size)
+        caps.keys.sort!.should eq(Termisu::Terminfo::Capabilities::REQUIRED_FUNCS.sort)
+      ensure
+        Termisu::Terminfo.clear_caps_cache
+        if original_term
+          ENV["TERM"] = original_term
+        else
+          ENV.delete("TERM")
+        end
+      end
+    end
+
+    it "combines custom database output with function builtins and ignores a malformed key" do
+      data = create_sparse_terminfo_data({"clear" => "custom-clear"}, ["kf1"])
+
+      with_mock_terminfo_database("zterm-termisu-custom", data) do
+        term = Termisu::Terminfo.new
+        caps = Termisu::Terminfo.cached_caps?("zterm-termisu-custom")
+        caps.should_not be_nil
+        caps = caps.as(Hash(String, String))
+
+        term.clear_screen_seq.should eq("custom-clear")
+        term.bold_seq.should eq("\e[1m")
+        caps.size.should eq(Termisu::Terminfo::Capabilities::REQUIRED_FUNCS.size)
+        caps.keys.sort!.should eq(Termisu::Terminfo::Capabilities::REQUIRED_FUNCS.sort)
+        caps.has_key?("kf1").should be_false
+      end
+    end
+
+    if TerminfoHelpers.terminfo_db_available?("xterm")
+      it "combines a real database with function builtins only" do
+        original_term = ENV["TERM"]?
+
+        begin
+          ENV["TERM"] = "xterm"
+          Termisu::Terminfo.clear_caps_cache
+
+          parsed = Termisu::Terminfo::Parser.parse(
+            Termisu::Terminfo::Database.new("xterm").load,
+            Termisu::Terminfo::Capabilities::REQUIRED_FUNCS
+          )
+          expected = parsed.dup
+          builtins = Termisu::Terminfo::Builtin.funcs_for("xterm")
+          Termisu::Terminfo::Capabilities::REQUIRED_FUNCS.each_with_index do |name, index|
+            expected[name] ||= builtins[index]
+          end
+
+          Termisu::Terminfo.new
+          Termisu::Terminfo.cached_caps?("xterm").should eq(expected)
+        ensure
+          Termisu::Terminfo.clear_caps_cache
+          if original_term
+            ENV["TERM"] = original_term
+          else
+            ENV.delete("TERM")
+          end
+        end
+      end
+    else
+      pending "real database runtime composition (no xterm terminfo on this system)"
+    end
+  end
+
   describe "cross-init capability cache" do
     it "caches the merged caps hash by TERM and hits it on subsequent inits" do
       original_term = ENV["TERM"]?
@@ -380,6 +457,53 @@ describe Termisu::Terminfo do
       ensure
         Termisu::Terminfo.clear_caps_cache
         ENV["TERM"] = original_term if original_term
+      end
+    end
+
+    it "serializes concurrent cold cache access" do
+      original_term = ENV["TERM"]?
+
+      begin
+        term_name = "termisu-concurrent-missing"
+        ENV["TERM"] = term_name
+        Termisu::Terminfo.clear_caps_cache
+        worker_count = 8
+        ready = Atomic(Int32).new(0)
+        start = Atomic(Bool).new(false)
+        results = Array(String | Exception | Nil).new(worker_count, nil)
+        threads = Array(Thread).new(worker_count)
+
+        worker_count.times do |index|
+          threads << Thread.new do
+            ready.add(1)
+            until start.get
+              Thread.yield
+            end
+            results[index] = Termisu::Terminfo.new.clear_screen_seq
+          rescue ex
+            results[index] = ex
+          end
+        end
+
+        until ready.get == worker_count
+          Thread.yield
+        end
+        start.set(true)
+        threads.each(&.join)
+        results.should eq(Array.new(worker_count, "\e[H\e[2J"))
+
+        caps = Termisu::Terminfo.cached_caps?(term_name)
+        caps.should_not be_nil
+        caps.as(Hash(String, String)).keys.sort!.should eq(
+          Termisu::Terminfo::Capabilities::REQUIRED_FUNCS.sort
+        )
+      ensure
+        Termisu::Terminfo.clear_caps_cache
+        if original_term
+          ENV["TERM"] = original_term
+        else
+          ENV.delete("TERM")
+        end
       end
     end
   end
