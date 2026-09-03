@@ -1,3 +1,5 @@
+TERMISU_INPUT_READINESS_SPEC = true
+
 require "spec"
 require "../src/termisu"
 require "./support/*"
