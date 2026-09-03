@@ -11,8 +11,12 @@ module Termisu::System
       revents : Int16
     end
 
-    # nfds_t maps to unsigned long on supported Termisu targets.
-    alias NfdsT = LibC::ULong
+    # Linux defines nfds_t as unsigned long; Darwin and FreeBSD use unsigned int.
+    {% if flag?(:darwin) || flag?(:freebsd) %}
+      alias NfdsT = LibC::UInt
+    {% else %}
+      alias NfdsT = LibC::ULong
+    {% end %}
 
     fun poll(fds : Pollfd*, nfds : NfdsT, timeout : Int32) : Int32
 

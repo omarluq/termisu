@@ -1119,15 +1119,13 @@ describe "Termisu Event::Loop Integration" do
         bytes = Bytes['z'.ord.to_u8]
         LibC.write(write_fd, bytes, bytes.size)
 
-        # Give fiber a chance to process
-        sleep 10.milliseconds
-
-        # Should get event immediately via select/else
+        # Worker-thread startup is not ordered by a scheduler sleep. Wait for
+        # the input event itself instead of treating 10ms as a readiness barrier.
         select
         when event = event_loop.output.receive
           event.should be_a(Termisu::Event::Key)
           event.as(Termisu::Event::Key).char.should eq('z')
-        else
+        when timeout(200.milliseconds)
           fail "Should have received event"
         end
 
