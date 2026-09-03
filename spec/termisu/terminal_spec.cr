@@ -427,6 +427,174 @@ describe Termisu::Terminal do
       terminal.try &.close
     end
 
+    it "serializes crossed scopes and restores all terminal state" do
+      terminal = CaptureTerminal.new(sync_updates: false)
+      terminal.mode = Termisu::Terminal::Mode.raw
+      terminal.enter_alternate_screen
+      terminal.enable_mouse
+      terminal.enable_bracketed_paste
+      terminal.move_cursor(7, 4)
+      terminal.hide_cursor
+
+      first_entered = Channel(Nil).new
+      release_first = Channel(Nil).new
+      first_done = Channel(Exception?).new(1)
+      second_started = Channel(Nil).new
+      second_entered = Channel(Nil).new(1)
+      release_second = Channel(Nil).new
+      second_done = Channel(Exception?).new(1)
+
+      spawn do
+        error = nil.as(Exception?)
+        begin
+          terminal.with_mode(Termisu::Terminal::Mode.cooked, preserve_screen: true) do
+            first_entered.send(nil)
+            release_first.receive
+            terminal.current_mode.should eq(Termisu::Terminal::Mode.cooked)
+          end
+        rescue ex
+          error = ex
+        ensure
+          first_done.send(error)
+        end
+      end
+
+      first_entered.receive
+      spawn do
+        error = nil.as(Exception?)
+        begin
+          second_started.send(nil)
+          terminal.with_mode(Termisu::Terminal::Mode.password, preserve_screen: true) do
+            second_entered.send(nil)
+            release_second.receive
+          end
+        rescue ex
+          error = ex
+        ensure
+          second_done.send(error)
+        end
+      end
+
+      # The rendezvous and yield let the second fiber reach the scope gate.
+      # It must not change any state until the first scope has restored.
+      second_started.receive
+      Fiber.yield
+      terminal.current_mode.should eq(Termisu::Terminal::Mode.cooked)
+      select
+      when second_entered.receive
+        fail "cross-fiber mode scope entered before the active scope restored"
+      else
+      end
+
+      release_first.send(nil)
+      first_done.receive.should be_nil
+      second_entered.receive
+      terminal.current_mode.should eq(Termisu::Terminal::Mode.password)
+      release_second.send(nil)
+      second_done.receive.should be_nil
+
+      terminal.current_mode.should eq(Termisu::Terminal::Mode.raw)
+      terminal.alternate_screen?.should be_true
+      terminal.mouse_enabled?.should be_true
+      terminal.bracketed_paste?.should be_true
+      terminal.cursor.x.should eq(7)
+      terminal.cursor.y.should eq(4)
+      terminal.cursor.visible?.should be_false
+    ensure
+      terminal.try &.close
+    end
+
+    it "lets close finish the active scope and reject a queued scope" do
+      terminal = LoggingLifecycleTerminal.new(sync_updates: false)
+      terminal.enable_raw_mode
+      active_entered = Channel(Nil).new
+      release_active = Channel(Nil).new
+      active_done = Channel(Exception?).new(1)
+      queued_started = Channel(Nil).new
+      queued_ran = Atomic(Bool).new(false)
+      queued_done = Channel(Exception?).new(1)
+      close_done = Channel(Exception?).new(1)
+
+      spawn do
+        error = nil.as(Exception?)
+        begin
+          terminal.with_mode(Termisu::Terminal::Mode.cooked, preserve_screen: true) do
+            active_entered.send(nil)
+            release_active.receive
+          end
+        rescue ex
+          error = ex
+        ensure
+          active_done.send(error)
+        end
+      end
+
+      active_entered.receive
+      spawn do
+        error = nil.as(Exception?)
+        begin
+          queued_started.send(nil)
+          terminal.with_mode(Termisu::Terminal::Mode.password, preserve_screen: true) do
+            queued_ran.set(true)
+          end
+        rescue ex
+          error = ex
+        ensure
+          queued_done.send(error)
+        end
+      end
+      queued_started.receive
+      Fiber.yield
+
+      spawn do
+        error = nil.as(Exception?)
+        begin
+          terminal.close
+        rescue ex
+          error = ex
+        ensure
+          close_done.send(error)
+        end
+      end
+      until terminal.@terminal_closed.get
+        Fiber.yield
+      end
+
+      select
+      when close_done.receive
+        fail "close returned before the active mode scope restored"
+      else
+      end
+
+      release_active.send(nil)
+      active_done.receive.should be_nil
+      queued_done.receive.should be_a(IO::Error)
+      queued_ran.get.should be_false
+      close_done.receive.should be_nil
+    ensure
+      terminal.try &.close
+    end
+
+    it "rejects same-fiber close before teardown and restores the scope" do
+      terminal = LoggingLifecycleTerminal.new(sync_updates: false)
+      terminal.enable_raw_mode
+
+      terminal.with_mode(Termisu::Terminal::Mode.cooked, preserve_screen: true) do
+        expect_raises(IO::Error, "cannot close Terminal from inside") do
+          terminal.close
+        end
+        terminal.current_mode.should eq(Termisu::Terminal::Mode.cooked)
+        terminal.@terminal_closed.get.should be_false
+      end
+
+      terminal.current_mode.should eq(Termisu::Terminal::Mode.raw)
+      terminal.@terminal_closed.get.should be_false
+      terminal.close
+      terminal.@terminal_closed.get.should be_true
+    ensure
+      terminal.try &.close
+    end
+
     it "defaults to raw mode when no previous mode was set" do
       terminal = CaptureTerminal.new
       terminal.current_mode.should be_nil

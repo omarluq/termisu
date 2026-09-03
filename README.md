@@ -364,6 +364,26 @@ termisu.with_mode(mode) { }       # Custom mode
 - `preserve_screen: true` - Stay in alternate screen (overlay mode)
 - `preserve_screen: false` - Exit alternate screen (shell-out mode)
 
+#### Fiber ownership
+
+Mode scopes may be nested in the same fiber. Across fibers, Termisu serializes the
+entire scope: snapshot, transition, user block, and restoration all finish before
+the next fiber enters. `close` called from another fiber waits for an active scope
+to restore, then rejects scopes that were queued when closing began. Calling
+`close` from the fiber that owns a mode scope is rejected before teardown; close
+the instance after the block returns instead.
+
+Because ownership is held while your block runs, do not wait inside a mode block
+for another fiber to enter a mode scope or close the same `Termisu` or `Terminal`.
+Those are prohibited wait cycles: the other fiber cannot proceed until the first
+block returns. Coordinate unrelated work outside the mode scope instead.
+
+The facade mode gate is held while its input-pause depth is updated and while the
+terminal mode gate runs. The input lock is never held while waiting for the
+terminal gate or running user code. Close uses each mode gate only as a barrier
+and releases it before stopping or joining event sources. Applications should
+use the scoped APIs rather than coordinating these ownership domains themselves.
+
 ### Colors
 
 ```crystal

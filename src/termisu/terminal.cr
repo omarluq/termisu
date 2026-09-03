@@ -29,6 +29,7 @@ class Termisu::Terminal < Termisu::Renderer
   @enhanced_keyboard : Bool = false
   @bracketed_paste : Bool = false
   @sync_updates : Bool = true
+  @mode_scope_gate = ModeScopeGate.new
   @terminal_closed = Atomic(Bool).new(false)
   getter cursor : Cursor = Cursor.new
   getter title : String = ""
@@ -543,6 +544,12 @@ class Termisu::Terminal < Termisu::Renderer
 
   # Executes a block with specific terminal mode, restoring previous mode after.
   #
+  # Mode scopes may nest in the same fiber. A scope in another fiber waits for
+  # the active scope's user block and complete restoration. A mode block must
+  # therefore not wait for another fiber to enter a mode scope or close this
+  # terminal; those cross-fiber wait cycles cannot complete. Calling close
+  # directly from the owning block is rejected before teardown.
+  #
   # This is the recommended way to temporarily switch modes for operations
   # like shell-out or password input. Handles:
   # - Mode switching via Backend
@@ -562,66 +569,73 @@ class Termisu::Terminal < Termisu::Renderer
   # # Previous mode and screen state restored
   # ```
   def with_mode(mode : Terminal::Mode, preserve_screen : Bool = false, &)
-    lifecycle_log { Log.debug { "Entering with_mode: #{mode}, preserve_screen: #{preserve_screen}" } }
-    user_interactive = mode.canonical? || mode.echo?
+    @mode_scope_gate.synchronize do
+      raise IO::Error.new("Terminal is closed") if @terminal_closed.get
 
-    # Track state to restore
-    was_in_alternate = @alternate_screen
-    was_mouse_enabled = @mouse_enabled
-    was_bracketed_paste = @bracketed_paste
+      lifecycle_log { Log.debug { "Entering with_mode: #{mode}, preserve_screen: #{preserve_screen}" } }
+      user_interactive = mode.canonical? || mode.echo?
 
-    # Mouse off before the block gets the tty, restored in the `ensure` from the local
-    # above. The block hands fd 0 to another program — an editor, a shell, a pager — and
-    # with tracking still on the emulator writes `\e[<0;40;12M` into THAT program's stdin
-    # on every click. A pager shows garbage; an editor inserts the bytes into the buffer
-    # being edited, which for anything editing wire-exact data is corruption.
-    #
-    # Must be the first thing written for the switch: neither the cursor writes below nor
-    # exit_alternate_screen are guaranteed to flush on every path. Clearing the flag is
-    # what makes nesting safe — an inner `with_mode` then sees it already off and its
-    # restore cannot re-enable reporting while this block still owns the tty.
-    if was_mouse_enabled
-      apply_mouse_state false
-      flush
-      @mouse_enabled = false
+      # Track state to restore while holding the scope lock. The same lock stays
+      # held through transition, user code, and restoration.
+      was_in_alternate = @alternate_screen
+      was_mouse_enabled = @mouse_enabled
+      was_bracketed_paste = @bracketed_paste
+      backup_cursor = @cursor
+
+      begin
+        # Mouse off before the block gets the tty, restored in the `ensure` from the local
+        # above. The block hands fd 0 to another program — an editor, a shell, a pager — and
+        # with tracking still on the emulator writes `\e[<0;40;12M` into THAT program's stdin
+        # on every click. A pager shows garbage; an editor inserts the bytes into the buffer
+        # being edited, which for anything editing wire-exact data is corruption.
+        #
+        # Must be the first thing written for the switch: neither the cursor writes below nor
+        # exit_alternate_screen are guaranteed to flush on every path. Clearing the flag is
+        # what makes nesting safe — an inner `with_mode` then sees it already off and its
+        # restore cannot re-enable reporting while this block still owns the tty.
+        if was_mouse_enabled
+          apply_mouse_state false
+          flush
+          @mouse_enabled = false
+        end
+
+        # Mode 2004 off for the same window and by the same rule as the mouse above. Kept in
+        # a method rather than inlined next to it only to hold `with_mode` under the
+        # cyclomatic-complexity limit; the ordering requirement is identical.
+        suspend_bracketed_paste
+
+        @cursor = Cursor.new visible: true
+        apply_cursor_state
+
+        # For canonical/echo modes, exit alternate screen unless preserving
+        exit_alternate_screen if !preserve_screen && user_interactive && was_in_alternate
+
+        # Switch mode via backend (handles termios and tracking)
+        with_backend_mode(mode) { yield }
+      ensure
+        lifecycle_log { Log.debug { "Exiting with_mode, restoring state" } }
+        if was_in_alternate && !@alternate_screen
+          enter_alternate_screen
+        end
+
+        @cursor = backup_cursor
+        apply_cursor_state
+        @mouse_enabled = was_mouse_enabled
+        restore_bracketed_paste was_bracketed_paste
+        apply_terminal_state
+        # Always invalidate after non-raw modes - screen content is
+        # unpredictable after puts/print/gets during the mode block
+        invalidate_buffer unless mode == Terminal::Mode::None
+        # Reset cached style state so next render re-emits all escape sequences.
+        # External programs during the mode block may have changed terminal
+        # styling, making our cached fg/bg/attr assumptions stale.
+        reset_render_state
+        # Drop the cached size - external programs during the mode block may
+        # have resized the terminal, so the next size call re-queries live.
+        @cached_size = nil
+        flush
+      end
     end
-
-    # Mode 2004 off for the same window and by the same rule as the mouse above. Kept in
-    # a method rather than inlined next to it only to hold `with_mode` under the
-    # cyclomatic-complexity limit; the ordering requirement is identical.
-    suspend_bracketed_paste
-
-    backup_cursor = @cursor
-    @cursor = Cursor.new visible: true
-    apply_cursor_state
-
-    # For canonical/echo modes, exit alternate screen unless preserving
-    exit_alternate_screen if !preserve_screen && user_interactive && was_in_alternate
-
-    # Switch mode via backend (handles termios and tracking)
-    with_backend_mode(mode) { yield }
-  ensure
-    lifecycle_log { Log.debug { "Exiting with_mode, restoring state" } }
-    if was_in_alternate && !@alternate_screen
-      enter_alternate_screen
-    end
-
-    @cursor = backup_cursor unless backup_cursor.nil?
-    apply_cursor_state
-    @mouse_enabled = was_mouse_enabled unless was_mouse_enabled.nil?
-    restore_bracketed_paste was_bracketed_paste
-    apply_terminal_state
-    # Always invalidate after non-raw modes - screen content is
-    # unpredictable after puts/print/gets during the mode block
-    invalidate_buffer unless mode == Terminal::Mode::None
-    # Reset cached style state so next render re-emits all escape sequences.
-    # External programs during the mode block may have changed terminal
-    # styling, making our cached fg/bg/attr assumptions stale.
-    reset_render_state
-    # Drop the cached size - external programs during the mode block may
-    # have resized the terminal, so the next size call re-queries live.
-    @cached_size = nil
-    flush
   end
 
   # Executes a block with cooked (shell-like) mode.
@@ -684,7 +698,14 @@ class Termisu::Terminal < Termisu::Renderer
 
   # Closes the terminal and underlying backend.
   def close
+    if @mode_scope_gate.owned_by_current_fiber?
+      raise IO::Error.new("cannot close Terminal from inside its terminal mode scope")
+    end
     return unless @terminal_closed.compare_and_set(false, true)[1]
+
+    # Wait for an active scope to restore, then release the barrier before
+    # teardown. The closed flag makes queued/new scopes fail before transition.
+    @mode_scope_gate.synchronize { }
 
     lifecycle_log { Log.debug { "Closing terminal" } }
     error = capture_cleanup_error(nil) { disable_mouse }

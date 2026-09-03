@@ -79,6 +79,59 @@ private class CloseDuringRestartInputSource < PausableInputSource
   end
 end
 
+# Event source whose worker enters a mode scope and whose stop synchronously
+# joins that worker. This exercises the close lock order: close must not retain
+# the facade mode gate while Event::Loop#stop joins a source queued on it.
+private class JoiningModeSource < Termisu::Event::Source
+  @running = Atomic(Bool).new(false)
+  @termisu : Termisu? = nil
+  @trigger = Channel(Nil).new
+  @attempting = Channel(Nil).new
+  @done = Channel(Nil).new
+
+  def termisu=(termisu : Termisu) : Termisu
+    @termisu = termisu
+  end
+
+  def start(output : Channel(Termisu::Event::Any)) : Nil
+    _ = output
+    return unless @running.compare_and_set(false, true)[1]
+
+    spawn do
+      @trigger.receive
+      @attempting.send(nil)
+      if termisu = @termisu
+        termisu.with_mode(Termisu::Terminal::Mode.raw) { }
+      else
+        raise "joining mode source has no Termisu instance"
+      end
+    rescue Termisu::Error
+      # Close began before the queued scope entered, so rejection is expected.
+    ensure
+      @running.set(false)
+      @done.close
+    end
+  end
+
+  def enter_mode : Nil
+    @trigger.send(nil)
+    @attempting.receive
+  end
+
+  def stop : Nil
+    @running.set(false)
+    @done.receive?
+  end
+
+  def running? : Bool
+    @running.get
+  end
+
+  def name : String
+    "joining-mode"
+  end
+end
+
 private class FailingStopEventLoop < Termisu::Event::Loop
   getter stop_count : Int32 = 0
 
@@ -160,6 +213,7 @@ class Termisu
     @ownership = TerminalOwnership.acquire
     @closed = Atomic(Bool).new(false)
     @timer_source = nil
+    @mode_scope_gate = ModeScopeGate.new
     @input_ownership_lock = Mutex.new
     @raw_input_owner = nil
     @raw_input_depth = 0
@@ -290,6 +344,193 @@ describe Termisu do
       LibC.close(write_fd) if write_fd
     end
 
+    it "waits for an active mode scope and rejects queued scopes" do
+      read_fd, write_fd = create_pipe
+      reader = Termisu::Reader.new(read_fd)
+      parser = Termisu::Input::Parser.new(reader)
+      input_source = PausableInputSource.new(reader, parser)
+      resize_source = Termisu::Event::Source::Resize.new(-> { {80, 24} })
+      event_loop = Termisu::Event::Loop.new
+      terminal = CaptureTerminal.new(sync_updates: false)
+      terminal.mode = Termisu::Terminal::Mode.raw
+      termisu = Termisu.new(terminal, reader, parser, input_source, resize_source, event_loop)
+      event_loop.add_source(input_source).start
+
+      active_entered = Channel(Nil).new
+      release_active = Channel(Nil).new
+      active_done = Channel(Exception?).new(1)
+      queued_started = Channel(Nil).new
+      queued_ran = Atomic(Bool).new(false)
+      queued_done = Channel(Exception?).new(1)
+      close_done = Channel(Exception?).new(1)
+
+      spawn do
+        error = nil.as(Exception?)
+        begin
+          termisu.with_cooked_mode(preserve_screen: true) do
+            active_entered.send(nil)
+            release_active.receive
+          end
+        rescue ex
+          error = ex
+        ensure
+          active_done.send(error)
+        end
+      end
+      active_entered.receive
+
+      spawn do
+        error = nil.as(Exception?)
+        begin
+          queued_started.send(nil)
+          termisu.with_password_mode(preserve_screen: true) do
+            queued_ran.set(true)
+          end
+        rescue ex
+          error = ex
+        ensure
+          queued_done.send(error)
+        end
+      end
+      queued_started.receive
+      Fiber.yield
+
+      spawn do
+        error = nil.as(Exception?)
+        begin
+          termisu.close
+        rescue ex
+          error = ex
+        ensure
+          close_done.send(error)
+        end
+      end
+      until termisu.@closed.get
+        Fiber.yield
+      end
+
+      select
+      when close_done.receive
+        fail "close returned before the active mode scope restored"
+      else
+      end
+
+      release_active.send(nil)
+      active_done.receive.should be_nil
+      queued_done.receive.should be_a(Termisu::Error)
+      queued_ran.get.should be_false
+      close_done.receive.should be_nil
+      # One transition stop plus Event::Loop's idempotent shutdown stop.
+      input_source.stop_count.should eq(2)
+      input_source.start_count.should eq(1)
+      event_loop.output.closed?.should be_true
+    ensure
+      termisu.try &.close
+      reader.try &.close
+      LibC.close(read_fd) if read_fd
+      LibC.close(write_fd) if write_fd
+    end
+
+    it "releases the mode barrier before joining an event source queued on it" do
+      read_fd, write_fd = create_pipe
+      reader = Termisu::Reader.new(read_fd)
+      parser = Termisu::Input::Parser.new(reader)
+      input_source = PausableInputSource.new(reader, parser)
+      resize_source = Termisu::Event::Source::Resize.new(-> { {80, 24} })
+      joining_source = JoiningModeSource.new
+      event_loop = Termisu::Event::Loop.new
+      terminal = CaptureTerminal.new(sync_updates: false)
+      terminal.mode = Termisu::Terminal::Mode.raw
+      termisu = Termisu.new(terminal, reader, parser, input_source, resize_source, event_loop)
+      joining_source.termisu = termisu
+      event_loop.add_source(input_source).add_source(joining_source).start
+
+      active_entered = Channel(Nil).new
+      release_active = Channel(Nil).new
+      active_done = Channel(Exception?).new(1)
+      close_done = Channel(Exception?).new(1)
+
+      spawn do
+        error = nil.as(Exception?)
+        begin
+          termisu.with_cooked_mode(preserve_screen: true) do
+            active_entered.send(nil)
+            release_active.receive
+          end
+        rescue ex
+          error = ex
+        ensure
+          active_done.send(error)
+        end
+      end
+      active_entered.receive
+
+      spawn do
+        error = nil.as(Exception?)
+        begin
+          termisu.close
+        rescue ex
+          error = ex
+        ensure
+          close_done.send(error)
+        end
+      end
+      until termisu.@closed.get
+        Fiber.yield
+      end
+
+      # Queue the source behind close while the first scope still owns the gate.
+      # Its synchronous stop will join this same worker.
+      joining_source.enter_mode
+      Fiber.yield
+      release_active.send(nil)
+      active_done.receive.should be_nil
+
+      select
+      when error = close_done.receive
+        error.should be_nil
+      when timeout(2.seconds)
+        fail "close retained the mode gate while joining its event source"
+      end
+      event_loop.output.closed?.should be_true
+    ensure
+      termisu.try &.close
+      reader.try &.close
+      LibC.close(read_fd) if read_fd
+      LibC.close(write_fd) if write_fd
+    end
+
+    it "rejects same-fiber close before teardown and restores the scope" do
+      read_fd, write_fd = create_pipe
+      reader = Termisu::Reader.new(read_fd)
+      parser = Termisu::Input::Parser.new(reader)
+      input_source = PausableInputSource.new(reader, parser)
+      resize_source = Termisu::Event::Source::Resize.new(-> { {80, 24} })
+      event_loop = Termisu::Event::Loop.new
+      terminal = CaptureTerminal.new(sync_updates: false)
+      terminal.mode = Termisu::Terminal::Mode.raw
+      termisu = Termisu.new(terminal, reader, parser, input_source, resize_source, event_loop)
+      event_loop.add_source(input_source).start
+
+      termisu.with_cooked_mode(preserve_screen: true) do
+        expect_raises(Termisu::Error, "cannot close Termisu from inside") do
+          termisu.close
+        end
+        termisu.current_mode.should eq(Termisu::Terminal::Mode.cooked)
+        termisu.@closed.get.should be_false
+      end
+
+      termisu.current_mode.should eq(Termisu::Terminal::Mode.raw)
+      input_source.running?.should be_true
+      termisu.close
+      event_loop.output.closed?.should be_true
+    ensure
+      termisu.try &.close
+      reader.try &.close
+      LibC.close(read_fd) if read_fd
+      LibC.close(write_fd) if write_fd
+    end
+
     it "preserves the first failure while completing cleanup and releasing ownership" do
       read_fd, write_fd = create_pipe
       reader = Termisu::Reader.new(read_fd)
@@ -345,6 +586,84 @@ describe Termisu do
   end
 
   describe "#with_mode" do
+    it "serializes crossed cooked and password scopes across fibers" do
+      read_fd, write_fd = create_pipe
+      reader = Termisu::Reader.new(read_fd)
+      parser = Termisu::Input::Parser.new(reader)
+      input_source = PausableInputSource.new(reader, parser)
+      resize_source = Termisu::Event::Source::Resize.new(-> { {80, 24} })
+      event_loop = Termisu::Event::Loop.new
+      terminal = CaptureTerminal.new(sync_updates: false)
+      terminal.mode = Termisu::Terminal::Mode.raw
+      termisu = Termisu.new(terminal, reader, parser, input_source, resize_source, event_loop)
+      input_source.start(event_loop.output)
+
+      cooked_entered = Channel(Nil).new
+      release_cooked = Channel(Nil).new
+      cooked_done = Channel(Exception?).new(1)
+      password_started = Channel(Nil).new
+      password_entered = Channel(Nil).new(1)
+      release_password = Channel(Nil).new
+      password_done = Channel(Exception?).new(1)
+
+      spawn do
+        error = nil.as(Exception?)
+        begin
+          termisu.with_cooked_mode(preserve_screen: true) do
+            cooked_entered.send(nil)
+            release_cooked.receive
+            termisu.current_mode.should eq(Termisu::Terminal::Mode.cooked)
+          end
+        rescue ex
+          error = ex
+        ensure
+          cooked_done.send(error)
+        end
+      end
+      cooked_entered.receive
+
+      spawn do
+        error = nil.as(Exception?)
+        begin
+          password_started.send(nil)
+          termisu.with_password_mode(preserve_screen: true) do
+            password_entered.send(nil)
+            release_password.receive
+          end
+        rescue ex
+          error = ex
+        ensure
+          password_done.send(error)
+        end
+      end
+      password_started.receive
+      Fiber.yield
+
+      termisu.current_mode.should eq(Termisu::Terminal::Mode.cooked)
+      input_source.running?.should be_false
+      select
+      when password_entered.receive
+        fail "password scope entered before cooked scope restored"
+      else
+      end
+
+      release_cooked.send(nil)
+      cooked_done.receive.should be_nil
+      password_entered.receive
+      termisu.current_mode.should eq(Termisu::Terminal::Mode.password)
+      release_password.send(nil)
+      password_done.receive.should be_nil
+
+      termisu.current_mode.should eq(Termisu::Terminal::Mode.raw)
+      input_source.running?.should be_true
+      input_source.stop_count.should eq(2)
+      input_source.start_count.should eq(3)
+    ensure
+      termisu.try &.close
+      LibC.close(read_fd) if read_fd
+      LibC.close(write_fd) if write_fd
+    end
+
     it "pauses input for single and combined non-raw modes, but not raw mode" do
       read_fd, write_fd = create_pipe
       reader = Termisu::Reader.new(read_fd)
@@ -393,20 +712,37 @@ describe Termisu do
       termisu = Termisu.new(terminal, reader, parser, input_source, resize_source, event_loop)
       input_source.start(event_loop.output)
 
-      termisu.with_mode(Termisu::Terminal::Mode.cooked, preserve_screen: true) do
+      result = termisu.with_mode(Termisu::Terminal::Mode.cooked, preserve_screen: true) do
         input_source.running?.should be_false
 
-        termisu.with_mode(Termisu::Terminal::Mode.password, preserve_screen: true) do
+        nested_result = termisu.with_mode(
+          Termisu::Terminal::Mode.password,
+          preserve_screen: true,
+        ) do
           input_source.running?.should be_false
+          42
         end
+        nested_result.should eq(42)
 
         input_source.running?.should be_false
         input_source.start_count.should eq(1)
-        input_source.stop_count.should eq(2)
+        input_source.stop_count.should eq(1)
+        "outer result"
       end
 
+      result.should eq("outer result")
       input_source.running?.should be_true
       input_source.start_count.should eq(2)
+      input_source.stop_count.should eq(1)
+
+      expect_raises(Exception, "mode block failed") do
+        termisu.with_mode(Termisu::Terminal::Mode.cooked, preserve_screen: true) do
+          raise "mode block failed"
+        end
+      end
+      termisu.current_mode.should eq(Termisu::Terminal::Mode.raw)
+      input_source.running?.should be_true
+      input_source.start_count.should eq(3)
       input_source.stop_count.should eq(2)
     ensure
       termisu.try &.close
@@ -448,7 +784,12 @@ describe Termisu do
 
         termisu.input_available?.should be_true
         termisu.read_bytes(2).should eq("AB".to_slice)
+        input_source.stop_count.should eq(1)
+        input_source.start_count.should eq(1)
       end
+
+      input_source.stop_count.should eq(1)
+      input_source.start_count.should eq(2)
     ensure
       termisu.try &.close
       LibC.close(read_fd) if read_fd
@@ -483,7 +824,7 @@ describe Termisu do
 
         mode_entered.receive
         input_source.running?.should be_false
-        input_source.stop_count.should eq(2)
+        input_source.stop_count.should eq(1)
       end
 
       input_source.running?.should be_false
@@ -494,7 +835,7 @@ describe Termisu do
 
       input_source.running?.should be_true
       input_source.start_count.should eq(2)
-      input_source.stop_count.should eq(2)
+      input_source.stop_count.should eq(1)
     ensure
       termisu.try &.close
       LibC.close(read_fd) if read_fd

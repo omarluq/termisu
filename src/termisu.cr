@@ -32,6 +32,7 @@ class Termisu
   @resize_source : Event::Source::Resize
   @event_loop : Event::Loop
   @timer_source : Event::Source::Timer | Event::Source::SystemTimer | Nil
+  @mode_scope_gate : ModeScopeGate
   @input_ownership_lock : Mutex
   @raw_input_owner : Fiber?
   @raw_input_depth : Int32
@@ -54,6 +55,7 @@ class Termisu
   def initialize(*, sync_updates : Bool = true)
     @ownership = TerminalOwnership.acquire
     @closed = Atomic(Bool).new(false)
+    @mode_scope_gate = ModeScopeGate.new
     @input_ownership_lock = Mutex.new
     @raw_input_owner = nil
     @raw_input_depth = 0
@@ -165,10 +167,21 @@ class Termisu
   # The event loop is stopped first to ensure fibers that might be using
   # the reader are terminated before the reader is closed.
   def close
+    if @mode_scope_gate.owned_by_current_fiber?
+      raise Termisu::Error.new("cannot close Termisu from inside its terminal mode scope")
+    end
+
+    # Mark closing while holding the input lock so an in-flight raw lease
+    # release either finishes its restart first or observes the closed state.
     won_close = @input_ownership_lock.synchronize do
       @closed.compare_and_set(false, true)[1]
     end
     return unless won_close
+
+    # Use the mode gate only as a barrier. Once the active scope restores, the
+    # closed flag rejects every queued/new scope, so teardown must not retain
+    # the gate while synchronously stopping and joining event-source fibers.
+    @mode_scope_gate.synchronize { }
 
     lifecycle_log { Log.info { "Closing Termisu" } }
 
@@ -315,13 +328,18 @@ class Termisu
     fiber = Fiber.current
 
     @input_ownership_lock.synchronize do
+      raise InputOwnershipError.new("raw input cannot be leased after Termisu is closed") if @closed.get
+
       if owner = @raw_input_owner
         unless owner.same?(fiber)
           raise InputOwnershipError.new("raw input is already leased by another fiber")
         end
         @raw_input_depth += 1
       else
-        @input_source.stop
+        # Raw ownership and mode scopes share one parser-pause depth. The first
+        # owner stops the parser; overlap in either direction only increments
+        # the depth and cannot produce a second stop/restart cycle.
+        @input_source.stop if @input_pause_depth == 0
         unless @input_source.prepare_raw_handoff
           start_input_processing_if_unpaused
           raise InputOwnershipError.new(
@@ -332,6 +350,7 @@ class Termisu
 
         @raw_input_owner = fiber
         @raw_input_depth = 1
+        @input_pause_depth += 1
       end
     end
 
@@ -389,6 +408,7 @@ class Termisu
       return unless @raw_input_depth == 0
 
       @raw_input_owner = nil
+      @input_pause_depth -= 1
       start_input_processing_if_unpaused
     end
   end
@@ -767,6 +787,13 @@ class Termisu
 
   # Executes a block with specific terminal mode, restoring previous mode after.
   #
+  # Mode scopes are fiber-reentrant: nesting in the calling fiber is supported.
+  # Scopes entered by other fibers wait until the complete active scope,
+  # including its user block and restoration, has returned. Consequently, a
+  # mode block must not wait for another fiber to enter a mode scope or close
+  # this instance; those wait cycles cannot complete. Calling close directly
+  # from the owning block is rejected before teardown.
+  #
   # This is the recommended way to temporarily switch modes for operations
   # like shell-out or password input. Handles:
   # - Event loop coordination (pauses input for user-interactive modes)
@@ -786,29 +813,31 @@ class Termisu
   # # Terminal state fully restored
   # ```
   def with_mode(mode : Terminal::Mode, preserve_screen : Bool = false, &)
-    Log.debug { "Termisu.with_mode: #{mode}, preserve_screen: #{preserve_screen}" }
+    @mode_scope_gate.synchronize do
+      raise Termisu::Error.new("cannot enter a terminal mode scope after Termisu is closed") if @closed.get
 
-    # Terminal::Mode.raw uses the zero-valued None member, so every other mode
-    # needs input processing paused to avoid conflicts between our input reader
-    # and direct STDIN access. Every non-raw scope participates in pause-depth
-    # accounting so overlapping raw leases cannot restart input prematurely.
-    owns_input_pause = mode != Terminal::Mode::None
-    previous_mode = @terminal.current_mode
+      Log.debug { "Termisu.with_mode: #{mode}, preserve_screen: #{preserve_screen}" }
 
-    # Pause input processing to avoid conflict with shell/external program.
-    # Nested and overlapping non-raw scopes each own one pause-depth entry.
-    pause_input_processing if owns_input_pause
+      # Terminal::Mode.raw uses the zero-valued None member, so every other mode
+      # needs input processing paused to avoid conflicts between our input reader
+      # and direct STDIN access.
+      owns_input_pause = mode != Terminal::Mode::None
+      previous_mode = @terminal.current_mode
+      pause_input_processing if owns_input_pause
 
-    @terminal.with_mode(mode, preserve_screen) do
-      emit_mode_change(mode, previous_mode)
-      yield
+      begin
+        @terminal.with_mode(mode, preserve_screen) do
+          emit_mode_change(mode, previous_mode)
+          yield
+        end
+      ensure
+        # Emit event for restoration (back to previous mode or raw default).
+        restored_mode = @terminal.current_mode
+        emit_mode_change(restored_mode, mode) if restored_mode
+        resume_input_processing if owns_input_pause
+        Log.debug { "Termisu.with_mode: restored" }
+      end
     end
-  ensure
-    # Emit event for restoration (back to previous mode or raw default)
-    restored_mode = @terminal.current_mode
-    emit_mode_change(restored_mode, mode) if restored_mode
-    resume_input_processing if owns_input_pause
-    Log.debug { "Termisu.with_mode: restored" }
   end
 
   # Executes a block with cooked (shell-like) mode.
@@ -906,28 +935,35 @@ class Termisu
 
   # Pauses input processing for mode transitions.
   #
-  # Stops the input source and clears any pending event input to avoid conflicts
-  # when switching to user-interactive modes. Buffered input is preserved if a
-  # raw lease acquired ownership while mode scopes overlapped across fibers.
+  # Stop and clear are edge-triggered. Nested mode scopes and overlapping raw
+  # leases only increase the shared depth, leaving the parser quiesced once.
   private def pause_input_processing
     Log.debug { "Pausing input processing" }
     @input_ownership_lock.synchronize do
-      @input_source.stop
+      if @input_pause_depth == 0
+        @input_source.stop
+        @reader.clear_buffer if @raw_input_owner.nil?
+      end
       @input_pause_depth += 1
-      @reader.clear_buffer if @raw_input_owner.nil?
     end
   end
 
   # Resumes input processing after mode transitions.
   #
-  # Clears stale event input and restarts the input source only after every mode
-  # pause and raw lease has ended. An active raw owner's buffer is left intact.
+  # Clears stale direct input and restarts the parser only on the final 1 -> 0
+  # transition. An active raw owner's buffer is always left intact.
   private def resume_input_processing
     Log.debug { "Resuming input processing" }
     @input_ownership_lock.synchronize do
-      @reader.clear_buffer if @raw_input_owner.nil?
-      @input_pause_depth -= 1 if @input_pause_depth > 0
-      start_input_processing_if_unpaused
+      return if @input_pause_depth == 0
+
+      if @input_pause_depth == 1
+        @reader.clear_buffer if @raw_input_owner.nil?
+        @input_pause_depth = 0
+        start_input_processing_if_unpaused
+      else
+        @input_pause_depth -= 1
+      end
     end
   end
 
