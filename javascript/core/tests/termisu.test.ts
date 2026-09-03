@@ -2,13 +2,19 @@ import { describe, expect, it } from "bun:test";
 
 import { Attribute, attrs } from "../src/attribute";
 import { Color } from "../src/color";
-import { Status } from "../src/constants";
+import { STRUCT, Status } from "../src/constants";
 import { TermisuError } from "../src/errors";
 import { Termisu } from "../src/termisu";
 import type { CellOp } from "../src/types";
 
 type NativeValue = number | bigint | undefined;
 type SymbolFn = (...args: Array<number | bigint>) => NativeValue;
+
+type TestScratch = {
+  bytes: Uint8Array;
+  view: DataView;
+  pointer: number;
+};
 
 type TestTermisu = {
   size(): { width: number; height: number };
@@ -44,6 +50,9 @@ type TestTermisu = {
     path: string;
   };
   handle: bigint;
+  styleScratch: TestScratch | null;
+  eventScratch: TestScratch | null;
+  cellOpsScratch: TestScratch | null;
   getLastError: () => string;
 };
 
@@ -234,13 +243,81 @@ describe("Termisu wrapper behavior", () => {
     expect(batchCalls[0]?.args[2]).toBe(4n);
   });
 
-  it("skips the native call for empty setCells batches", () => {
+  it("reuses cell op scratch, grows it, and ignores stale capacity", () => {
+    const { termisu, calls } = buildMockTermisu();
+
+    termisu.setCells([
+      { x: 10, y: 0, char: "A" },
+      { x: 20, y: 0, char: "B" },
+    ]);
+    const initial = termisu.cellOpsScratch;
+    if (!initial) throw new Error("expected cell op scratch");
+    expect(initial.bytes.byteLength).toBe(2 * STRUCT.cellOp.size);
+
+    termisu.setCells([{ x: 30, y: 1, char: "🙂" }]);
+    expect(termisu.cellOpsScratch).toBe(initial);
+
+    termisu.setCells([
+      { x: 40, y: 2, char: "D" },
+      { x: 50, y: 2, char: "E" },
+      { x: 60, y: 2, char: "F" },
+    ]);
+    const grown = termisu.cellOpsScratch;
+    if (!grown) throw new Error("expected grown cell op scratch");
+    expect(grown).not.toBe(initial);
+    expect(grown.pointer).not.toBe(initial.pointer);
+    expect(grown.bytes.byteLength).toBe(3 * STRUCT.cellOp.size);
+
+    termisu.setCells([{ x: 70, y: 3, char: "G" }]);
+    expect(termisu.cellOpsScratch).toBe(grown);
+    expect(grown.view.getInt32(STRUCT.cellOp.size + STRUCT.cellOp.x, true)).toBe(50);
+
+    const batchCalls = calls.filter((entry) => entry.name === "termisu_set_cells");
+    expect(batchCalls.map((entry) => entry.args[1])).toEqual([
+      initial.pointer,
+      initial.pointer,
+      grown.pointer,
+      grown.pointer,
+    ]);
+    expect(batchCalls.map((entry) => entry.args[2])).toEqual([2n, 1n, 3n, 1n]);
+  });
+
+  it("skips allocation and the native call for empty setCells batches", () => {
     const { termisu, calls } = buildMockTermisu();
 
     termisu.setCells([]);
 
+    expect(termisu.cellOpsScratch).toBeFalsy();
     const batchCalls = calls.filter((entry) => entry.name === "termisu_set_cells");
     expect(batchCalls).toHaveLength(0);
+  });
+
+  it("does not call native code when setCells marshalling fails", () => {
+    const { termisu, calls } = buildMockTermisu();
+
+    expect(() =>
+      termisu.setCells([
+        { x: 0, y: 0, char: "A" },
+        { x: 1, y: 0, char: "" },
+      ])
+    ).toThrow("Character must not be empty");
+    expect(calls.filter((entry) => entry.name === "termisu_set_cells")).toHaveLength(0);
+  });
+
+  it("checks a destroyed handle before validating setCells input", () => {
+    const { termisu, calls } = buildMockTermisu({}, 0n);
+
+    let thrown: unknown;
+    try {
+      termisu.setCells([{ x: 0, y: 0, char: "" }]);
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(TermisuError);
+    expect((thrown as TermisuError).status).toBe(Status.InvalidHandle);
+    expect(calls).toHaveLength(0);
+    expect(termisu.cellOpsScratch).toBeFalsy();
   });
 
   it("throws TermisuError when setCells reports a rejected batch", () => {
@@ -261,20 +338,33 @@ describe("Termisu wrapper behavior", () => {
     expect(okNone.pollEvent(0)).toBeNull();
   });
 
-  it("throws TermisuError and preserves handle when destroy fails", () => {
+  it("throws TermisuError and preserves scratch when destroy fails", () => {
     const { termisu } = buildMockTermisu({
       termisu_destroy: () => Status.InvalidHandle,
     });
+    termisu.setCells([{ x: 0, y: 0, char: "A" }]);
+    const scratch = termisu.cellOpsScratch;
 
     expect(() => termisu.destroy()).toThrow(TermisuError);
     expect(termisu.handle).toBe(1n);
+    expect(termisu.cellOpsScratch).toBe(scratch);
   });
 
-  it("sets handle to zero after successful destroy and enforces closed-handle checks", () => {
+  it("releases marshalling scratch after successful destroy", () => {
     const { termisu } = buildMockTermisu();
+    termisu.setCell(0, 0, "A", { fg: Color.green });
+    termisu.setCells([{ x: 0, y: 0, char: "A" }]);
+    termisu.pollEvent(0);
+    expect(termisu.styleScratch).toBeTruthy();
+    expect(termisu.cellOpsScratch).toBeTruthy();
+    expect(termisu.eventScratch).toBeTruthy();
 
     termisu.destroy();
+
     expect(termisu.handle).toBe(0n);
+    expect(termisu.styleScratch).toBeNull();
+    expect(termisu.cellOpsScratch).toBeNull();
+    expect(termisu.eventScratch).toBeNull();
     expect(() => termisu.clear()).toThrow(TermisuError);
   });
 

@@ -8,6 +8,7 @@ import {
   createStyleBuffer,
   readEvent,
   readSize,
+  writeCellOps,
 } from "../src/structs";
 
 const LE = true;
@@ -219,6 +220,62 @@ describe("struct helpers", () => {
     );
     expect(view.getInt32(second + style + STRUCT.cellStyle.fg + STRUCT.color.index, LE)).toBe(-1);
     expect(view.getUint16(second + style + STRUCT.cellStyle.attr, LE)).toBe(0);
+  });
+
+  it("writes cell ops in place with exact allocating-helper parity", () => {
+    const ops = [
+      { x: -1, y: 2, char: "🙂" },
+      {
+        x: 3,
+        y: 4,
+        char: "A",
+        style: {
+          fg: { mode: ColorMode.Rgb, r: 7, g: 8, b: 9 } as const,
+          bg: { mode: ColorMode.Ansi256, index: 201 } as const,
+          attr: 0xabcd,
+        },
+      },
+      {
+        x: 5,
+        y: 6,
+        char: 0x10ffff,
+        style: {
+          fg: { mode: ColorMode.Ansi8, index: 2 } as const,
+          bg: { mode: ColorMode.Default } as const,
+        },
+      },
+    ];
+    const expected = createCellOpsBuffer(ops);
+    const storage = new ArrayBuffer(expected.byteLength + STRUCT.cellOp.size);
+    const bytes = new Uint8Array(storage);
+    bytes.fill(0xa5);
+    const view = new DataView(storage);
+    const previousOps = ops.map((op) => ({
+      ...op,
+      style: {
+        fg: { mode: ColorMode.Ansi256, index: 255 } as const,
+        bg: { mode: ColorMode.Rgb, r: 255, g: 254, b: 253 } as const,
+        attr: 0xffff,
+      },
+    }));
+
+    writeCellOps(view, previousOps);
+    writeCellOps(view, ops);
+
+    expect(Array.from(bytes.subarray(0, expected.byteLength))).toEqual(
+      Array.from(new Uint8Array(expected))
+    );
+    expect(Array.from(bytes.subarray(expected.byteLength))).toEqual(
+      Array(STRUCT.cellOp.size).fill(0xa5)
+    );
+  });
+
+  it("requires enough in-place storage before writing", () => {
+    const buffer = new ArrayBuffer(STRUCT.cellOp.size - 1);
+    expect(() => writeCellOps(new DataView(buffer), [{ x: 0, y: 0, char: "A" }])).toThrow(
+      RangeError
+    );
+    expect(Array.from(new Uint8Array(buffer))).toEqual(Array(buffer.byteLength).fill(0));
   });
 
   it("returns an empty buffer for zero cell ops and rejects empty chars", () => {

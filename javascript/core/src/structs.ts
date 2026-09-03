@@ -19,6 +19,9 @@ export function readSize(buffer: ArrayBuffer): Size {
 function writeColor(view: DataView, offset: number, color?: CellStyle["fg"]): void {
   const mode = color?.mode ?? ColorMode.Default;
   view.setUint8(offset + STRUCT.color.mode, mode);
+  view.setUint8(offset + 1, 0);
+  view.setUint8(offset + 2, 0);
+  view.setUint8(offset + 3, 0);
 
   let index = -1;
   if (color && (color.mode === ColorMode.Ansi8 || color.mode === ColorMode.Ansi256)) {
@@ -29,14 +32,20 @@ function writeColor(view: DataView, offset: number, color?: CellStyle["fg"]): vo
   view.setUint8(offset + STRUCT.color.r, color?.r ?? 0);
   view.setUint8(offset + STRUCT.color.g, color?.g ?? 0);
   view.setUint8(offset + STRUCT.color.b, color?.b ?? 0);
+  view.setUint8(offset + 11, 0);
 }
 
-// Writes every meaningful field, so a reused scratch view never leaks
-// values from a previous call (untouched padding bytes stay zero).
+function writeStyleAt(view: DataView, offset: number, style?: CellStyle): void {
+  writeColor(view, offset + STRUCT.cellStyle.fg, style?.fg);
+  writeColor(view, offset + STRUCT.cellStyle.bg, style?.bg);
+  view.setUint16(offset + STRUCT.cellStyle.attr, style?.attr ?? 0, LITTLE_ENDIAN);
+  view.setUint16(offset + STRUCT.cellStyle.size - 2, 0, LITTLE_ENDIAN);
+}
+
+// Writes the complete ABI record, including reserved and padding bytes, so a
+// reused or caller-provided view has the same bytes as a fresh allocation.
 export function writeStyle(view: DataView, style?: CellStyle): void {
-  writeColor(view, STRUCT.cellStyle.fg, style?.fg);
-  writeColor(view, STRUCT.cellStyle.bg, style?.bg);
-  view.setUint16(STRUCT.cellStyle.attr, style?.attr ?? 0, LITTLE_ENDIAN);
+  writeStyleAt(view, 0, style);
 }
 
 export function createStyleBuffer(style?: CellStyle): ArrayBuffer {
@@ -56,11 +65,13 @@ function opCodepoint(char: string | number): number {
   return codepoint;
 }
 
-// Marshals every op into one contiguous termisu_cell_op_t array so a whole
-// frame crosses the FFI boundary with a single pointer.
-export function createCellOpsBuffer(ops: readonly CellOp[]): ArrayBuffer {
-  const buffer = new ArrayBuffer(STRUCT.cellOp.size * ops.length);
-  const view = new DataView(buffer);
+// Writes every op into contiguous termisu_cell_op_t storage. The view may be
+// larger than the logical batch, but only the first ops.length records change.
+export function writeCellOps(view: DataView, ops: readonly CellOp[]): void {
+  const requiredBytes = STRUCT.cellOp.size * ops.length;
+  if (view.byteLength < requiredBytes) {
+    throw new RangeError("Cell operation buffer is too small");
+  }
 
   let offset = 0;
   for (const op of ops) {
@@ -68,14 +79,16 @@ export function createCellOpsBuffer(ops: readonly CellOp[]): ArrayBuffer {
     view.setInt32(offset + STRUCT.cellOp.y, op.y, LITTLE_ENDIAN);
     view.setInt32(offset + STRUCT.cellOp.codepoint, opCodepoint(op.char), LITTLE_ENDIAN);
 
-    const styleOffset = offset + STRUCT.cellOp.style;
-    writeColor(view, styleOffset + STRUCT.cellStyle.fg, op.style?.fg);
-    writeColor(view, styleOffset + STRUCT.cellStyle.bg, op.style?.bg);
-    view.setUint16(styleOffset + STRUCT.cellStyle.attr, op.style?.attr ?? 0, LITTLE_ENDIAN);
+    writeStyleAt(view, offset + STRUCT.cellOp.style, op.style);
 
     offset += STRUCT.cellOp.size;
   }
+}
 
+// Retained for callers that need an independently allocated ABI buffer.
+export function createCellOpsBuffer(ops: readonly CellOp[]): ArrayBuffer {
+  const buffer = new ArrayBuffer(STRUCT.cellOp.size * ops.length);
+  writeCellOps(new DataView(buffer), ops);
   return buffer;
 }
 
