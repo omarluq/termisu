@@ -36,3 +36,16 @@ end
 ```
 
 Mode transitions emit `Event::ModeChange` events.
+
+## Fiber Ownership
+
+Mode scopes are reentrant in the calling fiber, so same-fiber nesting is safe.
+A scope started by another fiber waits for the active scope's user block and
+restoration to finish. Closing from another fiber waits for restoration and
+prevents queued scopes from entering. Closing from inside the owning mode block
+is rejected before teardown; close the instance after the block returns.
+
+Do not wait inside a mode block for another fiber to enter a mode scope or close
+the same `Termisu` or `Terminal`. The first fiber owns the mode until its block
+returns, so those cross-fiber wait cycles cannot complete. Coordinate that work
+before entering or after leaving the mode scope.

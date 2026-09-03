@@ -10,12 +10,14 @@ describe Termisu::Testing::Pty do
     Termisu::Testing.terminal(
       "bin/input-ownership-fixture",
       cols: 80,
-      rows: 11,
+      rows: 13,
       env: {"TERM" => "xterm-256color"},
     ) do |term|
       term.get_by_text("LEASE REQUIRED").should be_true
       term.get_by_text("COOKED RAW OK").should be_true
       term.get_by_text("RAW COOKED OK").should be_true
+      term.get_by_text("CROSSED MODES OK").should be_true
+      term.get_by_text("SCOPE CLOSE OK").should be_true
       term.get_by_text("PROBE READY").should be_true
 
       term.write("\e[200~")
@@ -32,8 +34,8 @@ describe Termisu::Testing::Pty do
 
       term.write("z")
       term.get_by_text("EVENT z").should be_true
-      term.row(9).rstrip.should eq("EVENT READY")
-      term.row(10).rstrip.should eq("EVENT z")
+      term.row(11).rstrip.should eq("EVENT READY")
+      term.row(12).rstrip.should eq("EVENT z")
     end
   end
 

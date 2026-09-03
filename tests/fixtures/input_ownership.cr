@@ -7,6 +7,13 @@ private def show(termisu : Termisu, message : String, row : Int32) : Nil
   termisu.render
 end
 
+private def same_fiber_close_rejected?(termisu : Termisu) : Bool
+  termisu.close
+  false
+rescue Termisu::Error
+  !termisu.@closed.get && termisu.current_mode == Termisu::Terminal::Mode.cooked
+end
+
 private def wait_for_key(
   termisu : Termisu,
   expected : Termisu::Input::Key,
@@ -53,15 +60,77 @@ begin
   raw_nested &&= termisu.@input_source.running?
   show(termisu, "RAW COOKED #{raw_nested ? "OK" : "BAD"}", 2)
 
-  show(termisu, "PROBE READY", 3)
+  first_entered = Channel(Nil).new
+  release_first = Channel(Nil).new
+  first_done = Channel(Exception?).new(1)
+  second_started = Channel(Nil).new
+  second_entered = Channel(Nil).new(1)
+  release_second = Channel(Nil).new
+  second_done = Channel(Exception?).new(1)
+
+  spawn do
+    error = nil.as(Exception?)
+    begin
+      termisu.with_cooked_mode(preserve_screen: true) do
+        first_entered.send(nil)
+        release_first.receive
+      end
+    rescue ex
+      error = ex
+    ensure
+      first_done.send(error)
+    end
+  end
+  first_entered.receive
+
+  spawn do
+    error = nil.as(Exception?)
+    begin
+      second_started.send(nil)
+      termisu.with_password_mode(preserve_screen: true) do
+        second_entered.send(nil)
+        release_second.receive
+      end
+    rescue ex
+      error = ex
+    ensure
+      second_done.send(error)
+    end
+  end
+  second_started.receive
+  Fiber.yield
+
+  crossed = termisu.current_mode == Termisu::Terminal::Mode.cooked
+  select
+  when second_entered.receive
+    crossed = false
+  else
+  end
+  release_first.send(nil)
+  crossed &&= first_done.receive.nil?
+  second_entered.receive
+  crossed &&= termisu.current_mode == Termisu::Terminal::Mode.password
+  release_second.send(nil)
+  crossed &&= second_done.receive.nil?
+  crossed &&= termisu.current_mode == Termisu::Terminal::Mode.raw
+  show(termisu, "CROSSED MODES #{crossed ? "OK" : "BAD"}", 3)
+
+  same_fiber_close = false
+  termisu.with_cooked_mode(preserve_screen: true) do
+    same_fiber_close = same_fiber_close_rejected?(termisu)
+  end
+  same_fiber_close &&= termisu.current_mode == Termisu::Terminal::Mode.raw
+  show(termisu, "SCOPE CLOSE #{same_fiber_close ? "OK" : "BAD"}", 4)
+
+  show(termisu, "PROBE READY", 5)
   if wait_for_key(termisu, Termisu::Input::Key::PasteStart)
-    show(termisu, "PROBE ESC", 4)
+    show(termisu, "PROBE ESC", 6)
     sleep 100.milliseconds
 
     begin
       termisu.with_raw_input { }
     rescue Termisu::InputOwnershipError
-      show(termisu, "PROBE RETAINED", 5)
+      show(termisu, "PROBE RETAINED", 7)
     end
 
     # Complete the event-owned probe under explicit source quiescence. The
@@ -71,23 +140,23 @@ begin
     retained = termisu.@input_parser.poll_event(2_000)
     termisu.@input_source.start(termisu.@event_loop.output)
     if retained.as?(Termisu::Event::Key).try(&.key) == Termisu::Input::Key::PasteEnd
-      show(termisu, "PROBE COMPLETE", 6)
+      show(termisu, "PROBE COMPLETE", 8)
     end
   end
 
   termisu.with_raw_input do
-    show(termisu, "RAW READY", 7)
+    show(termisu, "RAW READY", 9)
     if termisu.wait_for_input(2_000)
       if bytes = termisu.read_bytes(3)
-        show(termisu, "RAW #{bytes.hexstring}", 8)
+        show(termisu, "RAW #{bytes.hexstring}", 10)
       end
     end
   end
 
-  show(termisu, "EVENT READY", 9)
+  show(termisu, "EVENT READY", 11)
   if event = termisu.poll_event(2.seconds)
     if key = event.as?(Termisu::Event::Key)
-      show(termisu, "EVENT #{key.char}", 10)
+      show(termisu, "EVENT #{key.char}", 12)
     end
   end
   sleep 100.milliseconds
