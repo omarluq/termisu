@@ -1,5 +1,5 @@
 /docs/
-/lib/
+/lib
 /.shards/
 *.dwarf
 
@@ -23,7 +23,7 @@
 .croupier
 
 # E2E test artifacts
-/node_modules/
+/node_modules
 /javascript/**/node_modules/
 /javascript/node_modules/
 /e2e/node_modules/

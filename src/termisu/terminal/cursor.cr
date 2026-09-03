@@ -20,8 +20,15 @@ class Termisu::Terminal
     desired = @cursor
     begin
       x, y = desired.x, desired.y
-      @cursor.x, @cursor.y = -1, -1
-      move_cursor(x, y)
+      width, height = size
+      if width > 0 && height > 0
+        @cursor.x, @cursor.y = -1, -1
+        move_cursor(x, y)
+      else
+        # There is no physical position to establish yet. Keep the logical
+        # request intact so a later resize can apply it.
+        @cursor.x, @cursor.y = x, y
+      end
 
       if desired.visible?
         @cursor.visible = false
@@ -42,6 +49,9 @@ class Termisu::Terminal
     return unless @cursor.visible?
     write(@terminfo.hide_cursor_seq)
     @cursor.visible = false
+  rescue error
+    invalidate_physical_render_state
+    raise error
   end
 
   def show_cursor
@@ -49,18 +59,27 @@ class Termisu::Terminal
     write(@terminfo.show_cursor_seq)
     @cursor.visible = true
     write_cursor
+  rescue error
+    invalidate_physical_render_state
+    raise error
   end
 
   def enable_cursor_blink
     return if @cursor.blink?
     @cursor.blink = true
     write_cursor
+  rescue error
+    invalidate_physical_render_state
+    raise error
   end
 
   def disable_cursor_blink
     return unless @cursor.blink?
     @cursor.blink = false
     write_cursor
+  rescue error
+    invalidate_physical_render_state
+    raise error
   end
 
   def cursor_shape=(shape : Cursor::Shape)
@@ -68,6 +87,9 @@ class Termisu::Terminal
     @cursor.shape = shape
     write_cursor
     shape
+  rescue error
+    invalidate_physical_render_state
+    raise error
   end
 
   private def write_cursor
@@ -89,7 +111,13 @@ class Termisu::Terminal
     y : Int32 = @cursor.y,
   )
     width, height = size
-    return if width <= 0 || height <= 0
+    if width <= 0 || height <= 0
+      if x != @cursor.x || y != @cursor.y
+        @cursor.x, @cursor.y = x, y
+        @established_cursor = nil
+      end
+      return
+    end
 
     x = x.clamp(0, width - 1)
     y = y.clamp(0, height - 1)
@@ -108,6 +136,9 @@ class Termisu::Terminal
     end
 
     @cursor.x, @cursor.y = x, y
+  rescue error
+    invalidate_physical_render_state
+    raise error
   end
 
   # Streams the standard CSI cursor-position sequence through the scratch
@@ -136,14 +167,20 @@ class Termisu::Terminal
 
   private def with_ephemeral_cursor(visible : Bool = false, &)
     cursor_backup = @cursor
+    primary_error : Exception? = nil
     @cursor = Cursor.new visible
+
     begin
       apply_cursor_state
       yield
+    rescue error
+      primary_error = error
     ensure
       @cursor = cursor_backup
-      apply_cursor_state
+      primary_error = capture_cleanup_error(primary_error) { apply_cursor_state }
     end
+
+    raise primary_error if primary_error
   end
 
   # Write *data* to the terminal. Use *columns_advanced* to specify how
@@ -152,6 +189,10 @@ class Termisu::Terminal
   def write(data : String, columns_advanced = 0)
     @backend.write(data)
     advance_cursor(columns_advanced)
+    @established_cursor = nil
+  rescue error
+    invalidate_physical_render_state
+    raise error
   end
 
   # Byte overload of `write` for pre-composed escape sequences and batch
@@ -159,6 +200,10 @@ class Termisu::Terminal
   def write(data : Bytes, columns_advanced = 0)
     @backend.write(data)
     advance_cursor(columns_advanced)
+    @established_cursor = nil
+  rescue error
+    invalidate_physical_render_state
+    raise error
   end
 
   private def advance_cursor(columns_advanced : Int32) : Nil

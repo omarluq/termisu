@@ -30,6 +30,11 @@ class Termisu::Terminal < Termisu::Renderer
   @bracketed_paste : Bool = false
   @sync_updates : Bool = true
   @terminal_closed = Atomic(Bool).new(false)
+
+  # A clean buffer may skip frame control bytes only while its requested cursor
+  # state still matches the state established by a successful render.
+  @established_cursor : Cursor?
+  @buffer_may_be_dirty : Bool = false
   getter cursor : Cursor = Cursor.new
   getter title : String = ""
 
@@ -167,6 +172,7 @@ class Termisu::Terminal < Termisu::Renderer
     @cached_bg = nil
     @cached_attr = Attribute::None
     @cached_attr_known = false
+    @established_cursor = nil
   end
 
   # Precomputed SGR color sequences, indexed by color index.
@@ -461,6 +467,9 @@ class Termisu::Terminal < Termisu::Renderer
   # Delegates flush to backend.
   def flush
     @backend.flush
+  rescue error
+    invalidate_physical_render_state
+    raise error
   end
 
   # Returns the terminal size as {width, height}.
@@ -704,6 +713,11 @@ class Termisu::Terminal < Termisu::Renderer
     error || ex
   end
 
+  private def invalidate_physical_render_state : Nil
+    @buffer.invalidate
+    reset_render_state
+  end
+
   private def lifecycle_log(&) : Nil
     yield
   rescue
@@ -724,7 +738,31 @@ class Termisu::Terminal < Termisu::Renderer
   #
   # Returns false if coordinates are out of bounds.
   # Call render() to display changes on screen.
-  delegate set_cell, to: @buffer
+  def set_cell(
+    x : Int32,
+    y : Int32,
+    grapheme : String,
+    fg : Color = Color.white,
+    bg : Color = Color.default,
+    attr : Attribute = Attribute::None,
+  ) : Bool
+    accepted = @buffer.set_cell(x, y, grapheme, fg, bg, attr)
+    @buffer_may_be_dirty = true if accepted
+    accepted
+  end
+
+  def set_cell(
+    x : Int32,
+    y : Int32,
+    ch : Char,
+    fg : Color = Color.white,
+    bg : Color = Color.default,
+    attr : Attribute = Attribute::None,
+  ) : Bool
+    accepted = @buffer.set_cell(x, y, ch, fg, bg, attr)
+    @buffer_may_be_dirty = true if accepted
+    accepted
+  end
 
   # Gets a cell at the specified position from the buffer.
   #
@@ -737,6 +775,7 @@ class Termisu::Terminal < Termisu::Renderer
   #
   # Call render() to display changes on screen.
   def clear_cells
+    @buffer_may_be_dirty = true
     @buffer.clear
   end
 
@@ -747,10 +786,21 @@ class Termisu::Terminal < Termisu::Renderer
   #
   # When sync_updates is enabled, wraps the render in DEC mode 2026 sequences
   # (BSU/ESU) to prevent screen tearing during rapid updates.
-  def render
-    render_transaction do
-      @buffer.render_to(self, auto_flush: !@sync_updates)
+  def render : Nil
+    if !@buffer_may_be_dirty && @established_cursor == @cursor
+      flush
+      return
     end
+
+    render_transaction do
+      @buffer.render_to(self, auto_flush: false)
+    end
+    @established_cursor = @cursor
+    @buffer_may_be_dirty = false
+    nil
+  rescue error
+    invalidate_physical_render_state
+    raise error
   end
 
   # Forces a full redraw of all cells.
@@ -759,10 +809,16 @@ class Termisu::Terminal < Termisu::Renderer
   #
   # When sync_updates is enabled, wraps the sync in DEC mode 2026 sequences
   # (BSU/ESU) to prevent screen tearing during the full redraw.
-  def sync
+  def sync : Nil
     render_transaction do
-      @buffer.sync_to(self, auto_flush: !@sync_updates)
+      @buffer.sync_to(self, auto_flush: false)
     end
+    @established_cursor = @cursor
+    @buffer_may_be_dirty = false
+    nil
+  rescue error
+    invalidate_physical_render_state
+    raise error
   end
 
   # Keeps Buffer and Terminal caches provisional until every operation around
@@ -778,21 +834,13 @@ class Termisu::Terminal < Termisu::Renderer
     rescue error
       primary_error = error
     ensure
-      # BSU writes can fail after partial output, so attempt ESU even when
-      # beginning the synchronized update raises. If rendering already failed,
-      # preserve that primary error when cleanup fails too.
-      begin
-        end_sync_update
-      rescue exception
-        raise exception unless primary_error
-      end
+      # BSU writes can fail after partial output, so attempt ESU and the final
+      # flush even when beginning or rendering fails. Preserve the first error.
+      primary_error = capture_cleanup_error(primary_error) { end_sync_update }
+      primary_error = capture_cleanup_error(primary_error) { flush }
     end
 
     raise primary_error if primary_error
-  rescue error
-    @buffer.invalidate
-    reset_render_state
-    raise error
   end
 
   # Emits BSU (Begin Synchronized Update) sequence if sync_updates is enabled.
@@ -800,11 +848,10 @@ class Termisu::Terminal < Termisu::Renderer
     write(BSU) if @sync_updates
   end
 
-  # Emits ESU (End Synchronized Update) sequence and flushes if sync_updates is enabled.
+  # Emits ESU (End Synchronized Update) sequence if sync_updates is enabled.
+  # The transaction flushes after cursor restoration and this closing sequence.
   private def end_sync_update
-    return unless @sync_updates
-    write(ESU)
-    flush
+    write(ESU) if @sync_updates
   end
 
   # Invalidates the buffer, forcing a full re-render on next render().
@@ -813,6 +860,7 @@ class Termisu::Terminal < Termisu::Renderer
   # Unlike sync(), this doesn't render immediately - it marks the buffer
   # so the next render() call will redraw everything.
   def invalidate_buffer
+    @established_cursor = nil
     @buffer.invalidate
   end
 
@@ -821,6 +869,7 @@ class Termisu::Terminal < Termisu::Renderer
   # Preserves existing content where possible. Also refreshes the cached
   # size so subsequent size calls reflect the new dimensions.
   def resize(width : Int32, height : Int32)
+    @buffer_may_be_dirty = true
     @cached_size = {width, height}
     @buffer.resize(width, height)
     move_cursor
