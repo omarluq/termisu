@@ -1,0 +1,7 @@
+{
+  "target": "native-linux-x64-gnu",
+  "os": "linux",
+  "cpu": "x64",
+  "libc": "glibc",
+  "library": "libtermisu.so"
+}
