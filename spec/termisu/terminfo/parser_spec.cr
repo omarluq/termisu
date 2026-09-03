@@ -38,6 +38,112 @@ private def reference_parse_all_then_filter(data : Bytes, requested : Array(Stri
   result
 end
 
+private def bounded_terminfo_fixture(
+  clear_offset : Int16,
+  table : Bytes,
+  *,
+  trailing : Bytes = Bytes.new(0),
+  magic : Int16 = Termisu::Terminfo::Parser::MAGIC,
+) : Bytes
+  io = IO::Memory.new
+  io.write_bytes(magic, IO::ByteFormat::LittleEndian)
+  io.write_bytes(0_i16, IO::ByteFormat::LittleEndian)             # names length
+  io.write_bytes(0_i16, IO::ByteFormat::LittleEndian)             # boolean count
+  io.write_bytes(0_i16, IO::ByteFormat::LittleEndian)             # number count
+  io.write_bytes(6_i16, IO::ByteFormat::LittleEndian)             # through clear (index 5)
+  io.write_bytes(table.size.to_i16, IO::ByteFormat::LittleEndian) # string table size
+  5.times { io.write_bytes(-1_i16, IO::ByteFormat::LittleEndian) }
+  io.write_bytes(clear_offset, IO::ByteFormat::LittleEndian)
+  io.write(table)
+  io.write(trailing)
+  io.to_slice
+end
+
+private def infocmp_available?(terminal : String) : Bool
+  Termisu::Terminfo::Database.new(terminal).load
+  Process.run("infocmp", ["-1", terminal], output: IO::Memory.new, error: IO::Memory.new).success?
+rescue
+  false
+end
+
+private def infocmp_strings(terminal : String, requested : Array(String)) : Hash(String, String)
+  output = IO::Memory.new
+  status = Process.run("infocmp", ["-1", terminal], output: output, error: IO::Memory.new)
+  raise "infocmp failed for #{terminal}" unless status.success?
+
+  result = {} of String => String
+  output.to_s.each_line do |line|
+    entry = line.strip
+    separator = entry.index('=')
+    next unless separator && entry.ends_with?(',')
+
+    name = entry[0, separator]
+    next unless requested.includes?(name)
+
+    encoded = entry[separator + 1, entry.size - separator - 2]
+    result[name] = decode_infocmp_string(encoded)
+  end
+  result
+end
+
+private def decode_infocmp_string(encoded : String) : String
+  source = encoded.to_slice
+  output = IO::Memory.new
+  index = 0
+
+  while index < source.size
+    byte = source[index]
+    if byte == '\\'.ord
+      index = write_infocmp_escape(output, source, index + 1)
+    elsif byte == '^'.ord && index + 1 < source.size
+      control = source[index + 1]
+      output.write_byte(control == '?'.ord ? 0x7f_u8 : (control & 0x1f).to_u8)
+      index += 2
+    else
+      output.write_byte(byte)
+      index += 1
+    end
+  end
+
+  output.to_s
+end
+
+private def write_infocmp_escape(output : IO, source : Bytes, index : Int32) : Int32
+  return index if index == source.size
+
+  byte = source[index]
+  return write_infocmp_octal(output, source, index) if byte >= '0'.ord && byte <= '7'.ord
+
+  output.write_byte decoded_infocmp_escape_byte(byte)
+  index + 1
+end
+
+private def write_infocmp_octal(output : IO, source : Bytes, index : Int32) : Int32
+  value = 0
+  digits = 0
+  while digits < 3 && index < source.size && source[index] >= '0'.ord && source[index] <= '7'.ord
+    value = (value * 8) + source[index] - '0'.ord
+    index += 1
+    digits += 1
+  end
+  output.write_byte(value.to_u8)
+  index
+end
+
+private def decoded_infocmp_escape_byte(byte : UInt8) : UInt8
+  case byte
+  when 'E'.ord, 'e'.ord then 0x1b_u8
+  when 'a'.ord          then 0x07_u8
+  when 'b'.ord          then 0x08_u8
+  when 'f'.ord          then 0x0c_u8
+  when 'n'.ord, 'l'.ord then 0x0a_u8
+  when 'r'.ord          then 0x0d_u8
+  when 's'.ord          then 0x20_u8
+  when 't'.ord          then 0x09_u8
+  else                       byte
+  end
+end
+
 describe Termisu::Terminfo::Parser do
   describe ".parse" do
     it "is a class method that creates parser and parses by capability name" do
@@ -269,7 +375,107 @@ describe Termisu::Terminfo::Parser do
     end
   end
 
+  describe "bounded string table" do
+    it "raises InvalidOffset when a requested offset points into trailing data" do
+      data = bounded_terminfo_fixture(1_i16, Bytes[0_u8], trailing: "outside\0".to_slice)
+
+      error = expect_raises(Termisu::ParseError) do
+        Termisu::Terminfo::Parser.parse(data, ["clear"])
+      end
+
+      error.type.should eq(Termisu::ParseError::Type::InvalidOffset)
+      error.details.should eq("Offset out of bounds")
+    end
+
+    it "raises CorruptedString rather than scanning for a terminator in trailing data" do
+      data = bounded_terminfo_fixture(0_i16, "inside".to_slice, trailing: Bytes[0_u8])
+
+      error = expect_raises(Termisu::ParseError) do
+        Termisu::Terminfo::Parser.parse(data, ["clear"])
+      end
+
+      error.type.should eq(Termisu::ParseError::Type::CorruptedString)
+      error.details.should eq("String crosses the declared table boundary")
+    end
+
+    it "raises TruncatedData when the declared table extends past the input" do
+      data = bounded_terminfo_fixture(0_i16, "x\0".to_slice)
+      data[10] = 20_u8 # table size, little-endian
+
+      error = expect_raises(Termisu::ParseError) do
+        Termisu::Terminfo::Parser.parse(data, ["clear"])
+      end
+
+      error.type.should eq(Termisu::ParseError::Type::TruncatedData)
+    end
+
+    it "accepts trailing extended-section data without reading it as standard data" do
+      data = bounded_terminfo_fixture(
+        0_i16,
+        "value\0".to_slice,
+        trailing: Bytes[0xff_u8, 0xff_u8, 0xff_u8],
+        magic: Termisu::Terminfo::Parser::EXTENDED_MAGIC
+      )
+
+      Termisu::Terminfo::Parser.parse(data, ["clear"]).should eq({"clear" => "value"})
+    end
+
+    it "validates malformed offsets only for requested capabilities" do
+      data = bounded_terminfo_fixture(1_i16, Bytes[0_u8], trailing: "outside\0".to_slice)
+
+      Termisu::Terminfo::Parser.parse(data, ["cbt"]).should be_empty
+    end
+  end
+
+  describe "requested capability behavior" do
+    it "ignores duplicate and unknown requests without duplicating results" do
+      data = bounded_terminfo_fixture(0_i16, "value\0".to_slice)
+
+      result = Termisu::Terminfo::Parser.parse(data, ["unknown", "clear", "clear", "other"])
+
+      result.should eq({"clear" => "value"})
+    end
+
+    it "omits absent and cancelled negative offsets" do
+      [-1_i16, -2_i16].each do |offset|
+        data = bounded_terminfo_fixture(offset, "unused\0".to_slice)
+        Termisu::Terminfo::Parser.parse(data, ["clear"]).should be_empty
+      end
+    end
+
+    it "preserves the existing omission of empty capability strings" do
+      data = bounded_terminfo_fixture(0_i16, Bytes[0_u8])
+
+      Termisu::Terminfo::Parser.parse(data, ["clear"]).should be_empty
+    end
+
+    it "returns exact owned strings that do not alias the input bytes" do
+      data = bounded_terminfo_fixture(0_i16, "value\0".to_slice)
+      value = Termisu::Terminfo::Parser.parse(data, ["clear"])["clear"]
+      table_start = Termisu::Terminfo::Parser::HEADER_LENGTH + (6 * 2)
+
+      data[table_start] = 'X'.ord.to_u8
+      value.should eq("value")
+      value.bytesize.should eq(5)
+    end
+
+    it "reads little-endian fields safely from an unaligned Bytes slice" do
+      data = bounded_terminfo_fixture(0_i16, "value\0".to_slice)
+      storage = Bytes.new(data.size + 1, 0_u8)
+      unaligned = storage[1, data.size]
+      unaligned.copy_from(data)
+
+      Termisu::Terminfo::Parser.parse(unaligned, ["clear"]).should eq({"clear" => "value"})
+    end
+  end
+
   describe "error details" do
+    it "preserves the named arguments for InvalidOffset errors" do
+      error = Termisu::ParseError.invalid_offset(offset: 1, max: 2)
+
+      error.type.should eq(Termisu::ParseError::Type::InvalidOffset)
+    end
+
     it "provides details for truncated data error" do
       corrupt_data = Bytes[1, 2, 3]
 
@@ -362,6 +568,24 @@ describe Termisu::Terminfo::Parser do
       reference = reference_parse_all_then_filter(data, requested)
 
       fast.should eq(reference)
+    end
+  end
+
+  describe "infocmp differential" do
+    ["xterm", "xterm-256color", "linux", "screen", "tmux"].each do |terminal|
+      if infocmp_available?(terminal)
+        it "matches infocmp for installed #{terminal}" do
+          requested = ["clear", "bold", "cup", "smcup", "rmcup"]
+          data = Termisu::Terminfo::Database.new(terminal).load
+          expected = infocmp_strings(terminal, requested)
+          actual = Termisu::Terminfo::Parser.parse(data, requested)
+
+          expected.should_not be_empty
+          actual.should eq(expected)
+        end
+      else
+        pending "infocmp differential for #{terminal} (entry or infocmp unavailable)"
+      end
     end
   end
 

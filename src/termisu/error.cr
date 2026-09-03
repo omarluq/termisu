@@ -47,7 +47,7 @@ class Termisu::ParseError < Termisu::Error
     InvalidMagic    # Magic number not recognized
     TruncatedData   # Data smaller than expected
     InvalidHeader   # Header contains invalid values
-    InvalidOffset   # String offset points outside data
+    InvalidOffset   # String offset points outside the declared string table
     CorruptedString # String table is malformed
   end
 
@@ -83,7 +83,7 @@ class Termisu::ParseError < Termisu::Error
   # Creates an InvalidOffset error.
   def self.invalid_offset(offset : Int32, max : Int32) : ParseError
     new(Type::InvalidOffset,
-      "Invalid string offset: #{offset} exceeds data size #{max}",
+      "Invalid string offset: #{offset} is outside string table ending at #{max}",
       "Offset out of bounds")
   end
 end

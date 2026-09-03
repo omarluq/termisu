@@ -26,7 +26,13 @@
 # - `InvalidMagic`: Unrecognized format identifier
 # - `TruncatedData`: File smaller than header indicates
 # - `InvalidHeader`: Negative or unreasonable header values
-# - `InvalidOffset`: String offsets point outside data bounds
+# - `InvalidOffset`: String offsets point outside the declared string table
+# - `CorruptedString`: A requested string has no terminator in that table
+#
+# String offsets and terminator searches are intentionally bounded by the standard
+# string table declared in the header. Trailing extended data is accepted, but is
+# never interpreted as part of that table. Consequently, malformed files that only
+# worked by reading into a trailing section are rejected.
 #
 # ## Usage
 #
@@ -109,17 +115,14 @@ class Termisu::Terminfo::Parser
   def parse(required_caps : Array(String)) : Hash(String, String)
     validate_minimum_size!
 
-    io = IO::Memory.new(@data)
-
-    header = read_header(io)
+    header = read_header
     validate_header!(header)
 
     offsets = calculate_offsets(header)
-    validate_offsets!(offsets, header)
+    table_end = validate_offsets!(offsets, header)
 
     string_count = header[4].to_i32
-
-    read_required_capabilities(io, required_caps, string_count, offsets)
+    read_required_capabilities(required_caps, string_count, offsets, table_end)
   end
 
   # Validates that data is at least large enough for the header.
@@ -153,38 +156,43 @@ class Termisu::Terminfo::Parser
     end
   end
 
-  # Validates that calculated offsets don't exceed data bounds.
-  private def validate_offsets!(offsets : NamedTuple, header : StaticArray(Int16, 6))
-    table_size = header[5]
-    expected_end = offsets[:table_offset] + table_size.to_i32
+  # Validates that calculated offsets don't exceed data bounds and returns the
+  # exclusive end of the declared standard string table. Bytes after that point
+  # may hold an extended section and are deliberately not validated here.
+  private def validate_offsets!(offsets : NamedTuple, header : StaticArray(Int16, 6)) : Int32
+    table_end = offsets[:table_offset] + header[5].to_i32
 
-    if expected_end > @data.size
-      raise ParseError.truncated_data(expected_end, @data.size)
+    if table_end > @data.size
+      raise ParseError.truncated_data(table_end, @data.size)
     end
+
+    table_end
   end
 
   # Decodes only the requested capabilities from the strings section.
   #
   # Maps each requested name to its STRING_CAPS index, reads that entry's
   # 16-bit offset, and extracts the null-terminated string from the string
-  # table. Names beyond the file's string count or with absent (-1) offsets
-  # are omitted, matching a full decode filtered to the same names.
-  private def read_required_capabilities(io, requested, string_count, offsets)
-    result = {} of String => String
+  # table. Names beyond the file's string count, negative offsets, and empty
+  # values are omitted, matching the existing requested-only behavior.
+  private def read_required_capabilities(requested, string_count, offsets, table_end)
+    capacity = Math.min(requested.size, string_count)
+    result = Hash(String, String).new(initial_capacity: capacity)
 
     requested.each do |cap_name|
       index = Capabilities.string_cap_index(cap_name)
       next unless index && index < string_count
 
       offset_position = offsets[:str_offset] + (2 * index)
-      value = read_string_at(io, offset_position, offsets[:table_offset])
-      result[cap_name] = value unless value.empty?
+      value = read_string_at(offset_position, offsets[:table_offset], table_end)
+      result[cap_name] = value if value && !value.empty?
     end
 
     result
   end
 
-  # Reads the 12-byte terminfo header.
+  # Reads the 12-byte terminfo header with endian-explicit byte operations.
+  # This remains safe when the supplied Bytes starts at an unaligned address.
   #
   # Header structure:
   # - [0]: Magic number (format identifier)
@@ -193,9 +201,9 @@ class Termisu::Terminfo::Parser
   # - [3]: Numeric capabilities count
   # - [4]: String capabilities count
   # - [5]: String table size
-  private def read_header(io : IO::Memory)
-    StaticArray(Int16, 6).new do |_|
-      io.read_bytes(Int16, IO::ByteFormat::LittleEndian)
+  private def read_header : StaticArray(Int16, 6)
+    StaticArray(Int16, 6).new do |index|
+      read_i16_le(index * 2)
     end
   end
 
@@ -226,41 +234,40 @@ class Termisu::Terminfo::Parser
     {str_offset: str_offset, table_offset: table_offset}
   end
 
-  # Reads a null-terminated string at the given offset position.
-  #
-  # ## Parameters
-  #
-  # - `io`: Memory IO containing terminfo data
-  # - `offset_pos`: Position of the 16-bit offset value
-  # - `table_start`: Start position of the string table
-  #
-  # ## Returns
-  #
-  # The null-terminated string, or empty string if offset is -1 (absent capability).
-  private def read_string_at(io : IO::Memory, offset_pos : Int32, table_start : Int32) : String
-    io.pos = offset_pos
-    offset = io.read_bytes(Int16, IO::ByteFormat::LittleEndian)
+  # Reads a requested null-terminated string, bounded to the standard string
+  # table. Negative offsets represent absent or cancelled capabilities.
+  private def read_string_at(offset_pos : Int32, table_start : Int32, table_end : Int32) : String?
+    offset = read_i16_le(offset_pos)
+    return nil if offset < 0
 
-    # -1 offset means capability is absent (not an error)
-    return "" if offset < 0
-
-    string_pos = table_start + offset
-
-    # Validate the string position is within bounds
-    if string_pos >= @data.size
-      raise ParseError.invalid_offset(string_pos, @data.size)
+    string_start = table_start + offset
+    if string_start >= table_end
+      raise ParseError.invalid_offset(string_start, table_end)
     end
 
-    io.pos = string_pos
-    read_null_terminated_string(io)
+    string_end = string_start
+    while string_end < table_end && @data[string_end] != 0
+      string_end += 1
+    end
+
+    if string_end == table_end
+      raise ParseError.new(
+        ParseError::Type::CorruptedString,
+        "Corrupted string at offset #{string_start}: no NUL before string table end #{table_end}",
+        "String crosses the declared table boundary"
+      )
+    end
+
+    # String.new(Bytes) copies exactly the capability bytes, so results do not
+    # retain or alias a database-sized backing buffer.
+    String.new(@data[string_start, string_end - string_start])
   end
 
-  # Reads a null-terminated string from the current IO position.
-  private def read_null_terminated_string(io : IO::Memory) : String
-    String.build do |builder|
-      while (byte = io.read_byte) && byte != 0
-        builder.write_byte(byte)
-      end
-    end
+  # Reads a signed little-endian 16-bit value without pointer casts or
+  # alignment assumptions. Callers establish the two-byte bound first.
+  private def read_i16_le(offset : Int32) : Int16
+    value = @data[offset].to_i32 | (@data[offset + 1].to_i32 << 8)
+    value -= 0x10000 if value >= 0x8000
+    value.to_i16
   end
 end
