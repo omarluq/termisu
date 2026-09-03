@@ -61,6 +61,18 @@ describe "Animation example (e2e)" do
     end
   end
 
+  describe "resize handling" do
+    it "responds to a PTY resize signal at the new terminal bounds" do
+      with_animation do |term|
+        term.resize(100, 10)
+        moved = term.wait_until do
+          term.find("Q=quit").try { |position| position[1] == 9 } || false
+        end
+        moved.should be_true
+      end
+    end
+  end
+
   describe "layout snapshot" do
     it "matches the chrome snapshot (moving ball + live FPS masked)" do
       with_animation do |term|

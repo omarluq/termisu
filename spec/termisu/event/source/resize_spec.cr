@@ -1,5 +1,18 @@
 require "../../../spec_helper"
 
+unless ENV.delete("TERMISU_RESIZE_SIGNAL_STOP_CHILD").nil?
+  source = Termisu::Event::Source::Resize.new(-> { {80, 24} }, poll_interval: 1.hour)
+  child_output = Channel(Termisu::Event::Any).new(1)
+
+  16.times do
+    source.start(child_output)
+    Process.signal(Signal::WINCH, Process.pid)
+    source.stop
+  end
+  sleep 10.milliseconds
+  LibC._exit(0)
+end
+
 describe Termisu::Event::Source::Resize do
   describe "#initialize" do
     it "creates with a size provider" do
@@ -307,6 +320,262 @@ describe Termisu::Event::Source::Resize do
 
       source.stop
       channel.close
+    end
+  end
+
+  describe "completion-safe lifecycle" do
+    it "leaves a synchronous provider failure restartable" do
+      calls = 0
+      provider = -> do
+        calls += 1
+        raise "injected initial provider failure" if calls == 1
+        {80, 24}
+      end
+      source = Termisu::Event::Source::Resize.new(provider)
+      output = Channel(Termisu::Event::Any).new(1)
+
+      expect_raises(Exception, "injected initial provider failure") { source.start(output) }
+      source.running?.should be_false
+      source.stop
+
+      source.start(output)
+      source.running?.should be_true
+      source.stop
+      output.close
+    end
+
+    it "survives a queued SIGWINCH during immediate stop" do
+      executable = Process.executable_path || fail "spec executable path is unavailable"
+      process_output = IO::Memory.new
+      status = Process.run(
+        executable,
+        env: {"TERMISU_RESIZE_SIGNAL_STOP_CHILD" => "1"},
+        output: process_output,
+        error: process_output,
+      )
+
+      fail "resize shutdown subprocess failed: #{process_output}" unless status.success?
+    end
+
+    it "wakes immediately for real SIGWINCH with a long fallback interval" do
+      size = MutableSize.new(80, 24)
+      source = Termisu::Event::Source::Resize.new(-> { size.to_tuple }, poll_interval: 5.seconds)
+      output = Channel(Termisu::Event::Any).new(1)
+
+      source.start(output)
+
+      3.times do |index|
+        size.width = 81 + index
+        Process.signal(Signal::WINCH, Process.pid)
+
+        select
+        when event = output.receive
+          event.as(Termisu::Event::Resize).width.should eq(81 + index)
+        when timeout(500.milliseconds)
+          fail "SIGWINCH did not wake the resize source"
+        end
+      end
+
+      source.stop
+      output.close
+    end
+
+    it "deactivates the captured run callback before stop returns" do
+      source = Termisu::Event::Source::Resize.new(-> { {80, 24} }, poll_interval: 1.hour)
+      output = Channel(Termisu::Event::Any).new(1)
+
+      source.start(output)
+      wake = source.@wake || fail "resize wake was not installed"
+      handler = Signal::WINCH.trap_handler? || fail "SIGWINCH handler was not installed"
+      source.stop
+
+      handler.call(Signal::WINCH)
+      select
+      when wake.receive
+        fail "stopped run callback enqueued a wake"
+      else
+      end
+      output.close
+    end
+
+    it "coalesces a burst into one pending size check" do
+      calls = Atomic(Int32).new(0)
+      second_call = Channel(Nil).new
+      release_second = Channel(Nil).new
+      third_call = Channel(Nil).new
+      provider = -> do
+        call = calls.add(1) + 1
+        if call == 2
+          second_call.send(nil)
+          release_second.receive
+        elsif call == 3
+          third_call.send(nil)
+        end
+        {80, 24}
+      end
+      source = Termisu::Event::Source::Resize.new(provider, poll_interval: 1.hour)
+      output = Channel(Termisu::Event::Any).new(1)
+
+      source.start(output)
+      wake = source.@wake || fail "resize wake was not installed"
+      wake.send(nil)
+      second_call.receive
+
+      accepted = 0
+      32.times do
+        select
+        when wake.send(nil)
+          accepted += 1
+        else
+        end
+      end
+      accepted.should eq(1)
+
+      release_second.send(nil)
+      third_call.receive
+      source.stop
+      calls.get.should eq(3)
+      output.close
+    end
+
+    it "cancels a send blocked by output backpressure before returning" do
+      size = MutableSize.new(80, 24)
+      queried = Channel(Nil).new(1)
+      calls = 0
+      provider = -> do
+        calls += 1
+        queried.send(nil) if calls == 2
+        size.to_tuple
+      end
+      source = Termisu::Event::Source::Resize.new(provider, poll_interval: 1.hour)
+      output = Channel(Termisu::Event::Any).new
+
+      source.start(output)
+      size.width = 100
+      (source.@wake || fail "resize wake was not installed").send(nil)
+      queried.receive
+      Fiber.yield
+
+      source.stop
+      source.running?.should be_false
+      calls.should eq(2)
+      select
+      when event = output.receive
+        fail "received event after stop: #{event}"
+      else
+      end
+      output.close
+    end
+
+    it "handles output closure while delivering a changed size" do
+      size = MutableSize.new(80, 24)
+      queried = Channel(Nil).new(1)
+      calls = 0
+      provider = -> do
+        calls += 1
+        queried.send(nil) if calls == 2
+        size.to_tuple
+      end
+      source = Termisu::Event::Source::Resize.new(provider, poll_interval: 1.hour)
+      output = Channel(Termisu::Event::Any).new
+
+      source.start(output)
+      output.close
+      size.width = 100
+      (source.@wake || fail "resize wake was not installed").send(nil)
+      queried.receive
+      Fiber.yield
+
+      source.stop
+      source.running?.should be_false
+    end
+
+    it "joins a provider race and excludes stale wakes from a rapid restart" do
+      calls = Atomic(Int32).new(0)
+      second_call = Channel(Nil).new
+      release_second = Channel(Nil).new
+      fourth_call = Channel(Nil).new
+      provider = -> do
+        call = calls.add(1) + 1
+        if call == 2
+          second_call.send(nil)
+          release_second.receive
+        elsif call == 4
+          fourth_call.send(nil)
+        end
+        {80, 24}
+      end
+      source = Termisu::Event::Source::Resize.new(provider, poll_interval: 1.hour)
+      first_output = Channel(Termisu::Event::Any).new(1)
+      second_output = Channel(Termisu::Event::Any).new(1)
+      stopped = Channel(Nil).new
+      restarted = Channel(Nil).new
+
+      source.start(first_output)
+      old_wake = source.@wake || fail "resize wake was not installed"
+      Process.signal(Signal::WINCH, Process.pid)
+      second_call.receive
+
+      spawn do
+        source.stop
+        stopped.send(nil)
+      end
+      Fiber.yield
+      select
+      when stopped.receive
+        fail "stop returned while the provider was still running"
+      else
+      end
+
+      spawn do
+        source.start(second_output)
+        restarted.send(nil)
+      end
+      Fiber.yield
+      release_second.send(nil)
+      stopped.receive
+      restarted.receive
+      calls.get.should eq(3)
+
+      old_wake.send(nil)
+      Fiber.yield
+      calls.get.should eq(3)
+
+      Process.signal(Signal::WINCH, Process.pid)
+      fourth_call.receive
+      source.stop
+      calls.get.should eq(4)
+      first_output.close
+      second_output.close
+    end
+
+    it "reports a provider failure once and leaves the source restartable" do
+      calls = Atomic(Int32).new(0)
+      failed_call = Channel(Nil).new(1)
+      provider = -> do
+        call = calls.add(1) + 1
+        if call == 2
+          failed_call.send(nil)
+          raise "injected resize provider failure"
+        end
+        {80, 24}
+      end
+      source = Termisu::Event::Source::Resize.new(provider, poll_interval: 1.hour)
+      output = Channel(Termisu::Event::Any).new(1)
+
+      source.start(output)
+      (source.@wake || fail "resize wake was not installed").send(nil)
+      failed_call.receive
+      Fiber.yield
+
+      expect_raises(Exception, "injected resize provider failure") { source.stop }
+      source.running?.should be_false
+      source.stop
+
+      source.start(output)
+      calls.get.should eq(3)
+      source.stop
+      output.close
     end
   end
 
