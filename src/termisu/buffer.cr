@@ -97,29 +97,24 @@ class Termisu::Buffer
     attr : Attribute = Attribute::None,
   ) : Bool
     return false if out_of_bounds?(x, y)
+
+    index = y * @width + x
+    style_key = Cell.style_key(fg, bg, attr)
+    return true if current_cell_matches?(index, grapheme, style_key)
+
     return false unless single_grapheme?(grapheme)
     return false if control_char?(grapheme[0])
 
-    # Create cell to determine width
-    cell = Cell.new(grapheme, fg: fg, bg: bg, attr: attr)
-    width = cell.width
+    width = UnicodeWidth.grapheme_width(grapheme)
+    return false unless valid_width_at?(width, x)
 
-    # Reject wide writes that cannot fit
-    return false if width == 2 && x >= @width - 1
-
-    # Enforce width-0 policy: standalone width-0 characters (combining marks)
-    # are rejected so the Char API never consumes a logical grid cell without
-    # consuming columns. This prevents rendering anomalies where invisible
-    # characters would occupy buffer cells without visible content.
-    return false if width == 0
-
-    set_cell_internal(x, y, cell, width)
+    set_changed_cell(x, y, grapheme, width, style_key)
     true
   end
 
   # Interned single-character strings for ASCII, avoiding one Char#to_s heap
   # allocation per set_cell(Char) call. Control-char entries are harmless:
-  # they are rejected downstream by control_char?, identical to ch.to_s.
+  # the Char overload rejects them before looking up this table.
   private ASCII_GRAPHEMES = Array(String).new(128, &.unsafe_chr.to_s)
 
   def set_cell(
@@ -130,49 +125,55 @@ class Termisu::Buffer
     bg : Color = Color.default,
     attr : Attribute = Attribute::None,
   ) : Bool
-    # ch.ascii? proves ch.ord is in 0..127, so unsafe_fetch is in bounds.
-    grapheme = ch.ascii? ? ASCII_GRAPHEMES.unsafe_fetch(ch.ord) : ch.to_s
-    set_cell(x, y, grapheme, fg, bg, attr)
+    return false if out_of_bounds?(x, y)
+
+    codepoint = ch.ord
+    return false unless scalar_codepoint?(codepoint)
+    return false if control_codepoint?(codepoint)
+
+    index = y * @width + x
+    style_key = Cell.style_key(fg, bg, attr)
+    return true if current_cell_matches?(index, ch, style_key)
+
+    width = UnicodeWidth.codepoint_width(codepoint)
+    return false unless valid_width_at?(width, x)
+
+    grapheme = codepoint < 0x80 ? ASCII_GRAPHEMES.unsafe_fetch(codepoint) : ch.to_s
+    set_changed_cell(x, y, grapheme, width, style_key)
+    true
   end
 
-  # Internal cell writer that handles occupancy invariants and overlap clearing.
-  #
-  # This is the core write primitive that handles:
-  # - Wide character writes (creates leading + continuation cells)
-  # - Overlap clearing when overwriting wide cells or their continuations
-  # - Direct overwrite of target cells (assign_back_key handles count/dirty
-  #   deltas per transition)
-  #
-  # Assumes caller has validated bounds and fit constraints.
-  private def set_cell_internal(x : Int32, y : Int32, cell : Cell, width : UInt8) : Nil
+  # Core writer for a validated value known to differ from the current leading
+  # cell. It owns all wide-cell and overlap invariants for both public overloads.
+  private def set_changed_cell(
+    x : Int32,
+    y : Int32,
+    grapheme : String,
+    width : UInt8,
+    style_key : UInt128,
+  ) : Nil
     row_start = y * @width
+    index = row_start + x
+    key = Cell.validated_key(grapheme, width, style_key)
 
     # Clear overlap: if writing into a continuation cell, clear its owner first
-    if Cell.key_continuation?(@back_keys[row_start + x])
-      clear_continuation_owner(x, y)
-    end
+    clear_continuation_owner(x, y) if Cell.key_continuation?(@back_keys[index])
 
-    # Clear overlap: if overwriting a wide cell, clear its continuation
     if width == 2
       # If x+1 is a wide leading cell, clear its continuation at x+2 first
-      # to prevent orphan continuation cells (BUG-008)
-      if x + 2 < @width && Cell.key_width(@back_keys[row_start + x + 1]) == 2
-        assign_back_key(row_start + x + 2, y, Cell::DEFAULT_KEY, "")
+      # to prevent orphan continuation cells (BUG-008).
+      if x + 2 < @width && Cell.key_width(@back_keys[index + 1]) == 2
+        assign_back_key(index + 2, y, Cell::DEFAULT_KEY, "")
       end
 
-      # Overwrite targets directly: assign_back_key count/dirty updates depend
-      # only on old/new endpoints, so no pre-clear is needed; a rewrite of an
-      # identical wide cell is a no-op and leaves the row clean.
-      # Write leading cell
-      assign_back_key(row_start + x, y, cell.key, cell.grapheme)
-      # Write continuation cell
-      assign_back_key(row_start + x + 1, y, Cell::CONTINUATION_KEY, "")
+      assign_back_key(index, y, key, grapheme)
+      assign_back_key(index + 1, y, Cell::CONTINUATION_KEY, "")
     else
-      # Narrow write: clear any wide cell that overlaps next position
-      if x + 1 < @width && Cell.key_width(@back_keys[row_start + x]) == 2
-        assign_back_key(row_start + x + 1, y, Cell::DEFAULT_KEY, "")
+      # A narrow write over a wide leading cell releases its continuation.
+      if x + 1 < @width && Cell.key_width(@back_keys[index]) == 2
+        assign_back_key(index + 1, y, Cell::DEFAULT_KEY, "")
       end
-      assign_back_key(row_start + x, y, cell.key, cell.grapheme)
+      assign_back_key(index, y, key, grapheme)
     end
   end
 
@@ -366,12 +367,61 @@ class Termisu::Buffer
     x < 0 || x >= @width || y < 0 || y >= @height
   end
 
-  # Rejects C0 controls (0x00-0x1F except space) and C1 controls (0x7F-0x9F).
-  # These characters would desync render-state cursor tracking because
-  # the terminal interprets them as movement commands, not display characters.
+  # Exact retained-write checks happen before segmentation, width calculation,
+  # String conversion, or grapheme interning. Continuations never match: a
+  # submission at one must still clear its owner and establish a new lead.
+  private def current_cell_matches?(index : Int32, grapheme : String, style_key : UInt128) : Bool
+    key = @back_keys.unsafe_fetch(index)
+    return false if Cell.key_continuation?(key)
+    return false unless (key & Cell::KEY_STYLE_MASK) == style_key
+
+    if grapheme.bytesize == 1
+      byte = grapheme.to_unsafe[0]
+      return Cell.key_grapheme_id(key) == byte if byte < 0x80
+    end
+
+    Cell.key_grapheme_interned?(key) && @graphemes.unsafe_fetch(index) == grapheme
+  end
+
+  private def current_cell_matches?(index : Int32, ch : Char, style_key : UInt128) : Bool
+    key = @back_keys.unsafe_fetch(index)
+    return false if Cell.key_continuation?(key)
+    return false unless (key & Cell::KEY_STYLE_MASK) == style_key
+
+    codepoint = ch.ord
+    return Cell.key_grapheme_id(key) == codepoint if codepoint < 0x80
+    return false unless Cell.key_grapheme_interned?(key)
+
+    grapheme = @graphemes.unsafe_fetch(index)
+    return false unless grapheme.bytesize == ch.bytesize
+
+    offset = 0
+    ch.each_byte do |byte|
+      return false unless grapheme.to_unsafe[offset] == byte
+      offset += 1
+    end
+    true
+  end
+
+  # Rejects C0 controls (0x00-0x1F) and C1 controls (0x7F-0x9F). These would
+  # desync render-state cursor tracking because terminals interpret them as
+  # movement commands rather than displayed characters.
   private def control_char?(char : Char) : Bool
-    cp = char.ord
-    cp < 0x20 || (cp >= 0x7F && cp <= 0x9F)
+    control_codepoint?(char.ord)
+  end
+
+  private def control_codepoint?(codepoint : Int32) : Bool
+    codepoint < 0x20 || (codepoint >= 0x7F && codepoint <= 0x9F)
+  end
+
+  # Char can contain out-of-range values when constructed with unsafe_chr.
+  # Reject them before any table access or UTF-8 conversion.
+  private def scalar_codepoint?(codepoint : Int32) : Bool
+    codepoint >= 0 && codepoint <= Char::MAX_CODEPOINT && !(0xD800..0xDFFF).includes?(codepoint)
+  end
+
+  private def valid_width_at?(width : UInt8, x : Int32) : Bool
+    width > 0 && (width < 2 || x < @width - 1)
   end
 
   # Fast path: a single ASCII byte is always exactly one grapheme cluster,

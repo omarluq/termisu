@@ -194,13 +194,41 @@ struct Termisu::Cell
   end
 
   private def compute_key : UInt128
-    key = UInt128.new(@attr.value)
-    key |= UInt128.new(Cell.color_key(@fg)) << 16
-    key |= UInt128.new(Cell.color_key(@bg)) << 50
-    key |= UInt128.new(Cell.grapheme_id(@grapheme)) << 84
-    key |= UInt128.new(@width) << 116
-    key |= CONTINUATION_BIT if @continuation
+    Cell.validated_key(@grapheme, @width, @fg, @bg, @attr, @continuation)
+  end
+
+  # Builds a packed key for fields whose grapheme and width invariants have
+  # already been validated. Buffer uses this after its submission fast paths so
+  # changed writes do not repeat segmentation or width calculation in Cell.
+  protected def self.validated_key(
+    grapheme : String,
+    width : UInt8,
+    fg : Color,
+    bg : Color,
+    attr : Attribute,
+    continuation : Bool = false,
+  ) : UInt128
+    validated_key(grapheme, width, style_key(fg, bg, attr), continuation)
+  end
+
+  protected def self.validated_key(
+    grapheme : String,
+    width : UInt8,
+    style_key : UInt128,
+    continuation : Bool = false,
+  ) : UInt128
+    key = style_key | (UInt128.new(grapheme_id(grapheme)) << 84)
+    key |= UInt128.new(width) << 116
+    key |= CONTINUATION_BIT if continuation
     key
+  end
+
+  # Packed style identity used to compare a submitted style with an existing
+  # Buffer key before grapheme conversion or interning.
+  protected def self.style_key(fg : Color, bg : Color, attr : Attribute) : UInt128
+    key = UInt128.new(attr.value)
+    key |= UInt128.new(color_key(fg)) << 16
+    key | (UInt128.new(color_key(bg)) << 50)
   end
 
   # 34-bit color key: bits 32..33 carry the mode so equal keys always imply
