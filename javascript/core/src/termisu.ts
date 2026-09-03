@@ -3,27 +3,22 @@ import { ptr } from "bun:ffi";
 import { EventType, STRUCT, Status } from "./constants";
 import { TermisuError } from "./errors";
 import { loadNative, type NativeLibrary } from "./native";
-import {
-  createCellOpsBuffer,
-  createSizeBuffer,
-  readEventFrom,
-  readSize,
-  writeStyle,
-} from "./structs";
+import { createSizeBuffer, readEventFrom, readSize, writeCellOps, writeStyle } from "./structs";
 import type { AnyEvent, CellOp, CellStyle, TermisuOptions } from "./types";
 
 const ERROR_DECODER = new TextDecoder();
 
 interface Scratch {
+  bytes: Uint8Array;
   view: DataView;
   pointer: number;
 }
 
-// The view retains the backing buffer, keeping the pointer valid for the
+// The bytes retain the backing buffer, keeping the pointer valid for the
 // lifetime of the scratch.
 function createScratch(size: number): Scratch {
   const bytes = new Uint8Array(size);
-  return { view: new DataView(bytes.buffer), pointer: ptr(bytes) };
+  return { bytes, view: new DataView(bytes.buffer), pointer: ptr(bytes) };
 }
 
 function asBigInt(value: number | bigint): bigint {
@@ -51,6 +46,7 @@ export class Termisu {
   // are rewritten in place instead of allocated (and ptr-registered) per call.
   private styleScratch: Scratch | null = null;
   private eventScratch: Scratch | null = null;
+  private cellOpsScratch: Scratch | null = null;
 
   constructor(options: TermisuOptions = {}) {
     this.native = loadNative(options.libraryPath);
@@ -76,6 +72,9 @@ export class Termisu {
     const status = asNumber(this.native.symbols.termisu_destroy(this.handle) as number | bigint);
     this.assertStatus(status, "termisu_destroy");
     this.handle = 0n;
+    this.styleScratch = null;
+    this.eventScratch = null;
+    this.cellOpsScratch = null;
   }
 
   close(): void {
@@ -153,20 +152,18 @@ export class Termisu {
     this.assertStatus(status, "termisu_set_cell");
   }
 
-  // Batched setCell: marshals all ops into one typed array and crosses the
-  // FFI boundary once, instead of one native call (and guard + handle
-  // lookup) per cell.
+  // Batched setCell: marshals all ops into reusable contiguous storage and
+  // crosses the FFI boundary once. Capacity is never passed as the count.
   setCells(ops: readonly CellOp[]): void {
     this.assertAlive();
     if (ops.length === 0) return;
 
-    const buffer = createCellOpsBuffer(ops);
+    const scratch = this.ensureCellOpsScratch(ops.length);
+    writeCellOps(scratch.view, ops);
     const status = asNumber(
-      this.native.symbols.termisu_set_cells(
-        this.handle,
-        ptr(new Uint8Array(buffer)),
-        BigInt(ops.length)
-      ) as number | bigint
+      this.native.symbols.termisu_set_cells(this.handle, scratch.pointer, BigInt(ops.length)) as
+        | number
+        | bigint
     );
     this.assertStatus(status, "termisu_set_cells");
   }
@@ -305,6 +302,14 @@ export class Termisu {
   private ensureEventScratch(): Scratch {
     this.eventScratch ??= createScratch(STRUCT.event.size);
     return this.eventScratch;
+  }
+
+  private ensureCellOpsScratch(count: number): Scratch {
+    const requiredBytes = STRUCT.cellOp.size * count;
+    if (!this.cellOpsScratch || this.cellOpsScratch.bytes.byteLength < requiredBytes) {
+      this.cellOpsScratch = createScratch(requiredBytes);
+    }
+    return this.cellOpsScratch;
   }
 
   private assertAlive(): void {
