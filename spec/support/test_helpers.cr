@@ -18,10 +18,22 @@ module TestHelpers
     was_log_file = Termisu::Logging.log_file
     was_async = Termisu::Logging.async_mode?
     was_configured = Termisu::Logging.configured?
+    loggers = [
+      Termisu::Log,
+      Termisu::Logs::Terminal,
+      Termisu::Logs::Buffer,
+      Termisu::Logs::Reader,
+      Termisu::Logs::Render,
+      Termisu::Logs::Input,
+      Termisu::Logs::Color,
+      Termisu::Logs::Terminfo,
+      Termisu::Logs::Event,
+    ] of ::Log
+    previous_bindings = loggers.map { |logger| {logger.backend, logger.initial_level} }
 
     begin
-      # Keep Logging.close inside the block from detaching or closing the
-      # process-wide configuration that this fault injector must preserve.
+      # Keep Logging.close inside the block from closing any real configured
+      # resource while injecting failures only into Termisu-owned loggers.
       Termisu::Logging.backend = nil
       Termisu::Logging.log_file = nil
       Termisu::Logging.async_mode = false
@@ -30,14 +42,17 @@ module TestHelpers
         io: RaisingLogIO.new,
         dispatcher: ::Log::DispatchMode::Direct,
       )
-      ::Log.builder.bind("*", ::Log::Severity::Trace, backend)
-
-      begin
-        yield
-      ensure
-        ::Log.builder.unbind("*", ::Log::Severity::Trace, backend)
+      loggers.each do |logger|
+        logger.backend = backend
+        logger.initial_level = ::Log::Severity::Trace
       end
+
+      yield
     ensure
+      loggers.zip(previous_bindings) do |logger, binding|
+        logger.backend = binding[0]
+        logger.initial_level = binding[1]
+      end
       Termisu::Logging.backend = was_backend
       Termisu::Logging.log_file = was_log_file
       Termisu::Logging.async_mode = was_async
