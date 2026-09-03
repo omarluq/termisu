@@ -123,6 +123,14 @@ describe Termisu::Buffer do
       buffer.set_cell(5, 5, 'A').should be_false
     end
 
+    it "rejects String, Char, and unsafe Char writes for zero dimensions" do
+      [Termisu::Buffer.new(0, 0), Termisu::Buffer.new(0, 2), Termisu::Buffer.new(2, 0)].each do |buffer|
+        buffer.set_cell(0, 0, "A").should be_false
+        buffer.set_cell(0, 0, 'A').should be_false
+        buffer.set_cell(0, 0, (-1).unsafe_chr).should be_false
+      end
+    end
+
     it "returns false for C0 control characters (except space)" do
       buffer = Termisu::Buffer.new(10, 5)
       buffer.set_cell(0, 0, '\u{0}').should be_false  # NUL
@@ -182,6 +190,104 @@ describe Termisu::Buffer do
       buffer.set_cell(0, 0, "\u{7F}").should be_false                  # DEL rejected as control
       buffer.set_cell(0, 0, '\u{80}').should be_false                  # C1 control rejected (2-byte UTF-8)
       buffer.set_cell(0, 0, String.new(Bytes[0xFF_u8])).should be_true # invalid byte keeps replacement-char acceptance
+    end
+
+    it "retains exact graphemes for equal-content String and Char rewrites" do
+      buffer = Termisu::Buffer.new(6, 1)
+      renderer = MockRenderer.new
+      style = Termisu::Attribute::Bold | Termisu::Attribute::Underline
+      original = String.new("e\u{301}".to_slice)
+
+      buffer.set_cell(1, 0, original,
+        fg: Termisu::Color.rgb(1, 2, 3), bg: Termisu::Color.ansi256(42), attr: style).should be_true
+      buffer.set_cell(3, 0, '中', fg: Termisu::Color.red, attr: Termisu::Attribute::Reverse).should be_true
+      buffer.render_to(renderer)
+      renderer.clear
+
+      equal_copy = String.new(original.to_slice)
+      equal_copy.should_not be(original)
+      buffer.set_cell(1, 0, equal_copy,
+        fg: Termisu::Color.rgb(1, 2, 3), bg: Termisu::Color.ansi256(42), attr: style).should be_true
+      buffer.set_cell(3, 0, '中', fg: Termisu::Color.red, attr: Termisu::Attribute::Reverse).should be_true
+      buffer.render_to(renderer)
+
+      renderer.write_calls.should be_empty
+      buffer.get_cell(1, 0).as(Termisu::Cell).grapheme.should be(original)
+      buffer.get_cell(3, 0).as(Termisu::Cell).width.should eq(2u8)
+      buffer.get_cell(4, 0).as(Termisu::Cell).continuation?.should be_true
+
+      buffer.set_cell(1, 0, equal_copy,
+        fg: Termisu::Color.rgb(1, 2, 3), bg: Termisu::Color.ansi256(42),
+        attr: Termisu::Attribute::Bold).should be_true
+      buffer.get_cell(1, 0).as(Termisu::Cell).attr.should eq(Termisu::Attribute::Bold)
+    end
+
+    it "rejects unsafe non-scalar Char values without mutation" do
+      buffer = Termisu::Buffer.new(5, 1)
+      buffer.set_cell(1, 0, '中', fg: Termisu::Color.green).should be_true
+      before = Array.new(5) { |x| buffer.get_cell(x, 0) }
+
+      [-1, 0xD800, 0xDFFF, 0x110000, Int32::MAX].each do |codepoint|
+        buffer.set_cell(2, 0, codepoint.unsafe_chr, attr: Termisu::Attribute::Bold).should be_false
+        Array.new(5) { |x| buffer.get_cell(x, 0) }.should eq(before)
+      end
+
+      [0xD7FF, 0xE000, Char::MAX_CODEPOINT].each_with_index do |codepoint, x|
+        ch = codepoint.unsafe_chr
+        buffer.set_cell(x, 0, ch).should be_true
+        buffer.get_cell(x, 0).as(Termisu::Cell).grapheme.should eq(ch.to_s)
+      end
+    end
+
+    it "keeps wide neighbors intact when malformed submissions are rejected" do
+      buffer = Termisu::Buffer.new(5, 1)
+      buffer.set_cell(1, 0, '中', fg: Termisu::Color.blue).should be_true
+      buffer.set_cell(3, 0, 'X').should be_true
+      before = Array.new(5) { |x| buffer.get_cell(x, 0) }
+
+      ["", "AB", "\u{301}", "\u{7F}", String.new(Bytes[0xFF_u8, 0xFF_u8])].each do |invalid|
+        buffer.set_cell(2, 0, invalid, attr: Termisu::Attribute::Bold).should be_false
+        Array.new(5) { |x| buffer.get_cell(x, 0) }.should eq(before)
+      end
+
+      buffer.set_cell(4, 0, '中').should be_false
+      Array.new(5) { |x| buffer.get_cell(x, 0) }.should eq(before)
+    end
+
+    it "keeps Char and String submissions equivalent across generated overlaps" do
+      char_buffer = Termisu::Buffer.new(9, 3)
+      string_buffer = Termisu::Buffer.new(9, 3)
+      chars = ['A', ' ', 'é', '中', '😀', '\u{301}', '\u{7F}', 'Z']
+      colors = [Termisu::Color.white, Termisu::Color.red, Termisu::Color.ansi256(42)]
+      attrs = [Termisu::Attribute::None, Termisu::Attribute::Bold, Termisu::Attribute::Reverse]
+
+      240.times do |iteration|
+        ch = chars[(iteration * 7 + 3) % chars.size]
+        x = (iteration * 5 + iteration // 7) % 9
+        y = (iteration * 2 + iteration // 11) % 3
+        fg = colors[(iteration * 2 + 1) % colors.size]
+        bg = colors[(iteration + 2) % colors.size]
+        attr = attrs[(iteration * 5) % attrs.size]
+
+        char_result = char_buffer.set_cell(x, y, ch, fg: fg, bg: bg, attr: attr)
+        string_result = string_buffer.set_cell(x, y, ch.to_s, fg: fg, bg: bg, attr: attr)
+        char_result.should eq(string_result)
+
+        3.times do |row|
+          9.times do |col|
+            char_cell = char_buffer.get_cell(col, row).as(Termisu::Cell)
+            char_cell.should eq(string_buffer.get_cell(col, row))
+
+            if char_cell.continuation?
+              col.should be > 0
+              char_buffer.get_cell(col - 1, row).as(Termisu::Cell).width.should eq(2u8)
+            elsif char_cell.width == 2
+              col.should be < 8
+              char_buffer.get_cell(col + 1, row).as(Termisu::Cell).continuation?.should be_true
+            end
+          end
+        end
+      end
     end
 
     it "sets cell with attributes" do
@@ -374,6 +480,26 @@ describe Termisu::Buffer do
         renderer.write_calls.join.should contain("B")
         renderer.fg_calls.should contain(Termisu::Color.red)
       end
+    end
+
+    it "keeps an unchanged fast-path rewrite retryable after render failure" do
+      renderer = RenderFaultRenderer.new(RenderFaultRenderer::Phase::Write)
+      buffer = Termisu::Buffer.new(5, 1)
+      combining = "e\u{301}"
+      buffer.set_cell(0, 0, combining, fg: Termisu::Color.green).should be_true
+      buffer.set_cell(2, 0, '中', attr: Termisu::Attribute::Bold).should be_true
+
+      expect_raises(Exception, "injected Write failure") do
+        buffer.render_to(renderer)
+      end
+
+      buffer.set_cell(0, 0, String.new(combining.to_slice), fg: Termisu::Color.green).should be_true
+      buffer.set_cell(2, 0, '中', attr: Termisu::Attribute::Bold).should be_true
+      renderer.clear
+      buffer.render_to(renderer)
+
+      renderer.write_calls.join.should contain(combining)
+      renderer.write_calls.join.should contain("中")
     end
 
     it "clears stale cached attributes when retrying an unstyled frame" do
