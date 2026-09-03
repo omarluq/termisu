@@ -191,32 +191,32 @@ class Termisu::Input::Parser
   # not delivered as key events here. Full preedit support would require terminal-
   # specific protocols (e.g. kitty's input protocol extensions or IM protocol).
   private def read_utf8_char(first_byte : UInt8) : Char?
-    return first_byte.chr if first_byte < 0x80 # ASCII fast path
+    return first_byte.unsafe_chr if first_byte < 0x80 # ASCII fast path
 
-    # Sequence length from the lead byte: count the leading 1-bits (2..4 for a
-    # valid multibyte lead). Anything else (lone continuation byte, 0xFF, etc.)
-    # is rejected here; full validity is confirmed by valid_encoding? below.
-    len = (~first_byte).leading_zeros_count.to_i
-    return nil unless 2 <= len <= 4
+    # Accept the same structural lead-byte range as the old decoder, then apply
+    # the RFC 3629 scalar checks after consuming every valid continuation. This
+    # preserves recovery: malformed continuations stay unread, while overlong,
+    # surrogate, and out-of-range sequences are consumed as one invalid event.
+    length, codepoint, minimum = case first_byte
+                                 when 0xC0..0xDF then {2, (first_byte & 0x1F).to_i32, 0x80}
+                                 when 0xE0..0xEF then {3, (first_byte & 0x0F).to_i32, 0x800}
+                                 when 0xF0..0xF7 then {4, (first_byte & 0x07).to_i32, 0x10000}
+                                 else                 return
+                                 end
 
-    bytes = Bytes.new(len)
-    bytes[0] = first_byte
-
-    (1...len).each do |i|
+    (length - 1).times do
       # Peek + confirm before consuming so a non-continuation byte is left in
       # the buffer rather than swallowed. Every continuation shares the poll's
       # absolute deadline rather than receiving a fresh timeout.
-      b = peek_parse_byte
-      return nil unless b && (b & 0xC0) == 0x80 # continuation 10xxxxxx
+      byte = peek_parse_byte
+      return unless byte && (byte & 0xC0) == 0x80
       read_parse_byte
-      bytes[i] = b
+      codepoint = (codepoint << 6) | (byte & 0x3F)
     end
 
-    # valid_encoding? is a full RFC-3629 check: it rejects overlong encodings,
-    # surrogates, and anything above U+10FFFF. String.new never raises on bad
-    # UTF-8 (it yields U+FFFD), so no begin/rescue is needed.
-    s = String.new(bytes)
-    s.valid_encoding? ? s[0]? : nil
+    return unless codepoint >= minimum && valid_codepoint?(codepoint)
+
+    codepoint.unsafe_chr
   end
 
   # Polls for an input event with optional timeout.
@@ -455,35 +455,52 @@ class Termisu::Input::Parser
     # itself inside the 0x40-0x7E final range, so it must be handled before the
     # fast path below — otherwise '[' is consumed as a final byte and the
     # trailing key letter is lost.
-    if first == '['.ord
-      final = read_parse_byte
-      return Event::Key.new(Key::Unknown) unless final
+    return parse_linux_console_key if first == '['.ord
 
-      key = LINUX_CONSOLE_KEYS["[[#{final.unsafe_chr}"]? || Key::Unknown
-      return Event::Key.new(key)
-    end
+    # Fast path: parameterless CSI keys (\e[A, \e[Z, bare \e[u, \e[~).
+    return decode_csi_key(Bytes.empty, first.unsafe_chr) if 0x40 <= first <= 0x7E
 
-    # Fast path: parameterless CSI keys (\e[A, \e[Z, bare \e[u, \e[~) — the
-    # first byte is already the final char, so params is "" (value-identical
-    # to an empty builder's to_s) and no builder allocation is needed.
-    return decode_csi_key("", first.unsafe_chr) if 0x40 <= first <= 0x7E
+    parse_csi_params(first)
+  end
 
-    buffer = String::Builder.new
-    buffer << first.chr
+  private def parse_linux_console_key : Event::Key
+    final = read_parse_byte
+    return Event::Key.new(Key::Unknown) unless final
+
+    # Avoid constructing a lookup String for this fixed five-key alphabet.
+    key = case final
+          when 'A'.ord then Key::F1
+          when 'B'.ord then Key::F2
+          when 'C'.ord then Key::F3
+          when 'D'.ord then Key::F4
+          when 'E'.ord then Key::F5
+          else              Key::Unknown
+          end
+    Event::Key.new(key)
+  end
+
+  private def parse_csi_params(first : UInt8) : Event::Any
+    # CSI parameters are bounded and only needed for this call, so keep their
+    # raw bytes on the stack. `accounted` deliberately mirrors the old Builder's
+    # UTF-8 byte count: bytes >= 0x80 expanded to two bytes there. SGR mouse has
+    # always counted raw bytes instead (see parse_sgr_mouse).
+    buffer = uninitialized UInt8[MAX_SEQUENCE_LENGTH]
+    length = 1
+    accounted = first < 0x80 ? 1 : 2
+    buffer[0] = first
 
     while byte = read_parse_byte
-      char = byte.chr
-
-      if byte >= 0x40 && byte <= 0x7E
-        # Final character - determines the key
-        params = buffer.to_s
-        return decode_csi_key(params, char)
+      if 0x40 <= byte <= 0x7E
+        return decode_csi_key(buffer.to_slice[0, length], byte.unsafe_chr)
       end
 
-      buffer << char
-
-      # Safety limit
-      if buffer.bytesize >= MAX_SEQUENCE_LENGTH
+      # `accounted >= length` guarantees this write remains within the fixed
+      # buffer. The byte that reaches the historical limit is consumed, while
+      # the following final byte remains available as the next event.
+      buffer[length] = byte
+      length += 1
+      accounted += byte < 0x80 ? 1 : 2
+      if accounted >= MAX_SEQUENCE_LENGTH
         Log.warn { "CSI sequence too long, aborting" }
         return Event::Key.new(Key::Unknown)
       end
@@ -492,44 +509,34 @@ class Termisu::Input::Parser
     Event::Key.new(Key::Unknown)
   end
 
-  # Decodes a CSI sequence into a KeyEvent using hash lookups.
-  # Handles standard CSI sequences, Kitty keyboard protocol, and modifyOtherKeys.
-  # Returns Any because kitty text events with codepoint 0 are emitted as Preedit.
-  private def decode_csi_key(params : String, final : Char) : Event::Any
-    # Kitty keyboard protocol: CSI codepoint ; modifiers u
-    # or: CSI codepoint ; modifiers : event_type u
+  # Decodes a CSI sequence directly from its bounded stack bytes.
+  private def decode_csi_key(params : Bytes, final : Char) : Event::Any
     if final == 'u'
       return parse_kitty_key(params)
     end
 
     modifiers = parse_modifiers(params)
 
-    # Check for tilde sequences (\e[N~ or \e[N;M~)
     if final == '~'
-      parts = params.split(';')
-      code = parts.first?.try(&.to_i?) || 0
+      first_end = index_of(params, ';'.ord.to_u8)
+      code = parse_decimal(params, 0, first_end) || 0
 
-      # modifyOtherKeys: CSI 27 ; modifier ; keycode ~
-      if code == 27 && parts.size >= 3
-        return parse_modify_other_keys(parts)
+      # modifyOtherKeys requires at least three semicolon-separated fields.
+      second_end = first_end < params.size ? index_of(params, ';'.ord.to_u8, first_end + 1) : params.size
+      if code == 27 && second_end < params.size
+        return parse_modify_other_keys(params, first_end + 1, second_end)
       end
 
       # PASTE_KEYS is consulted after TILDE_KEYS so the keys people actually
       # press stay a single lookup; 200/201 would otherwise fall through to
       # Key::Unknown and be indistinguishable from each other.
       key = TILDE_KEYS[code]? || PASTE_KEYS[code]? || Key::Unknown
-      # Only the START marker is recognised through sequence parsing; from here
-      # the end marker is matched literally (see `parse_paste_escape`). An
-      # unmatched PasteEnd arriving outside a paste just clears a flag already
-      # false, so a stray marker cannot open a paste that was never started.
       @in_paste = true if key.paste_start?
       @in_paste = false if key.paste_end?
       return Event::Key.new(key, modifiers)
     end
 
     # Standard CSI key lookup — the hot path (arrows, Home/End, F1-F4, BackTab).
-    # Linux console sequences (\e[[A etc.) are handled earlier in
-    # parse_csi_sequence, before the final-byte fast path consumes the '['.
     if key = CSI_KEYS[final]?
       return Event::Key.new(key, modifiers)
     end
@@ -537,51 +544,34 @@ class Termisu::Input::Parser
     Event::Key.new(Key::Unknown, modifiers)
   end
 
-  # Parses Kitty keyboard protocol sequence.
-  # Format: CSI codepoint ; modifiers u
-  # or: CSI codepoint ; modifiers : event_type u
-  #
-  # Codepoint is the Unicode codepoint of the key.
-  # Modifiers use the same encoding as xterm (1 + shift + alt*2 + ctrl*4 + meta*8).
-  # With report_text, a 3rd field carries the produced text codepoints (prefer for .char).
-  private def parse_kitty_key(params : String) : Event::Any
-    # Fields are ';'-separated: codepoint ; modifiers ; text. The ':' separator is
-    # used *within* fields — alternate keys in the codepoint field
-    # (unicode:shifted:base), an event type in the modifier field (mods:event_type),
-    # and MULTIPLE codepoints in the text field (cp1:cp2:...). Split on ';' first and
-    # strip ':' only from the codepoint/modifier fields; never from the text field,
-    # or multi-codepoint text (e.g. composed Hangul jamo) would be truncated.
-    parts = params.split(';')
+  # Parses Kitty keyboard fields without materializing parameter Strings or
+  # Arrays. Only a pure-text Preedit event receives an owned String.
+  private def parse_kitty_key(params : Bytes) : Event::Any
+    first_end = index_of(params, ';'.ord.to_u8)
+    code_end = index_of(params, ':'.ord.to_u8, 0, first_end)
+    codepoint = parse_decimal(params, 0, code_end) || 0
 
-    codepoint = parts[0]?.try(&.split(':').first).try(&.to_i?) || 0
-    mod_code = parts[1]?.try(&.split(':').first).try(&.to_i?) || 1
-    text_param = parts[2]?
-
+    second_start = first_end < params.size ? first_end + 1 : params.size
+    second_end = index_of(params, ';'.ord.to_u8, second_start)
+    mod_end = index_of(params, ':'.ord.to_u8, second_start, second_end)
+    mod_code = parse_decimal(params, second_start, mod_end) || 1
     modifiers = Modifier.from_xterm_code(mod_code)
 
-    text_str = build_text_from_codepoints(text_param)
-
-    # Prefer associated text (report_text) for the actual inserted char (e.g. shift+a gives 'A' in text)
-    c = text_str[0]? || (valid_codepoint?(codepoint) ? codepoint.chr : nil)
-
-    # If we saw a text-producing CSI report, terminal is using protocol for chars too (report_all+text or similar);
-    # skip raw byte path for printables from now to avoid duplicates.
-    @protocol_active = true if producing_text?(c)
+    text_start = second_end < params.size ? second_end + 1 : params.size
+    text_end = index_of(params, ';'.ord.to_u8, text_start)
 
     if codepoint == 0
-      # Pure text event (no associated key), typically from IME or direct text input.
-      # Emit as Preedit so the TUI can show composing state with underline (e.g.
-      # building Hangul jamo -> syllable). An EMPTY text here is the terminal
-      # signalling "preedit cleared" — emit Preedit("") so consumers can clear stale
-      # composition UI, rather than dropping it as Key::Unknown. On commit the final
-      # syllable arrives as a normal Key+char (or another report).
+      # Empty text means "preedit cleared" and remains an observable event.
       @protocol_active = true
-      return Event::Preedit.new(text_str)
+      return Event::Preedit.new(build_text_from_codepoints(params, text_start, text_end))
     end
 
+    # Prefer the first valid associated-text codepoint for the inserted char.
+    c = first_text_codepoint(params, text_start, text_end) ||
+        (valid_codepoint?(codepoint) ? codepoint.unsafe_chr : nil)
+    @protocol_active = true if producing_text?(c)
+
     key = codepoint_to_key(codepoint)
-    # Arm the one-shot dup guard so a duplicate raw echo of this exact char
-    # (same byte immediately following) is swallowed; plain keys never match it.
     @dup_guard = c if echoable_text?(c, modifiers)
     Event::Key.new(key, modifiers, char: c)
   end
@@ -607,20 +597,17 @@ class Termisu::Input::Parser
     !(modifiers.ctrl? || modifiers.alt? || modifiers.meta?)
   end
 
-  # Parses modifyOtherKeys sequence.
-  # Format: CSI 27 ; modifier ; keycode ~
-  private def parse_modify_other_keys(parts : Array(String)) : Event::Key
-    mod_code = parts[1]?.try(&.to_i?) || 1
-    keycode = parts[2]?.try(&.to_i?) || 0
+  # Parses modifyOtherKeys: CSI 27 ; modifier ; keycode ~.
+  private def parse_modify_other_keys(params : Bytes, mod_start : Int32, mod_end : Int32) : Event::Key
+    key_start = mod_end + 1
+    key_end = index_of(params, ';'.ord.to_u8, key_start)
+    mod_code = parse_decimal(params, mod_start, mod_end) || 1
+    keycode = parse_decimal(params, key_start, key_end) || 0
 
     modifiers = Modifier.from_xterm_code(mod_code)
     key = codepoint_to_key(keycode)
-    c = (keycode > 0 && keycode <= 0x10FFFF) ? (keycode.chr rescue nil) : nil
+    c = (keycode > 0 && valid_codepoint?(keycode)) ? keycode.unsafe_chr : nil
 
-    # If modify reports a printable via CSI, the terminal is using the protocol
-    # for text; arm the one-shot dup guard so only a duplicate raw echo of this
-    # exact char is swallowed (plain raw keys keep flowing). Same modifier caveat
-    # as the Kitty path — see echoable_text?.
     if producing_text?(c)
       @protocol_active = true
       @dup_guard = c if echoable_text?(c, modifiers)
@@ -630,20 +617,74 @@ class Termisu::Input::Parser
   end
 
   # Whether `cp` is a scalar Unicode codepoint that maps to a real Char: in
-  # range and not a UTF-16 surrogate (U+D800..U+DFFF), which `Int#chr` would
-  # otherwise accept. Filtering here keeps the intent explicit and surrogate-safe.
+  # range and not a UTF-16 surrogate (U+D800..U+DFFF).
   private def valid_codepoint?(cp : Int32) : Bool
     cp >= 0 && cp <= Char::MAX_CODEPOINT && !(0xD800..0xDFFF).includes?(cp)
   end
 
-  private def build_text_from_codepoints(text_param : String?) : String
-    return "" if text_param.nil? || text_param.empty?
-
-    String.build do |io|
-      text_param.split(':').each do |part|
-        cp = part.to_i?
-        io << cp.chr if cp && valid_codepoint?(cp)
+  private def first_text_codepoint(params : Bytes, start : Int32, limit : Int32) : Char?
+    field_start = start
+    while field_start < limit
+      field_end = index_of(params, ':'.ord.to_u8, field_start, limit)
+      if codepoint = parse_decimal(params, field_start, field_end)
+        return codepoint.unsafe_chr if valid_codepoint?(codepoint)
       end
+      field_start = field_end + 1
+    end
+    nil
+  end
+
+  # Builds exactly one owned String for Preedit text. Every scalar's UTF-8
+  # encoding is no longer than its decimal field, so the bounded CSI capacity
+  # also bounds this stack buffer. Invalid fields are skipped as before.
+  private def build_text_from_codepoints(params : Bytes, start : Int32, limit : Int32) : String
+    buffer = uninitialized UInt8[MAX_SEQUENCE_LENGTH]
+    bytesize = 0
+    char_count = 0
+    field_start = start
+    while field_start < limit
+      field_end = index_of(params, ':'.ord.to_u8, field_start, limit)
+      if codepoint = parse_decimal(params, field_start, field_end)
+        if valid_codepoint?(codepoint)
+          size = utf8_size(codepoint)
+          return "" if bytesize > MAX_SEQUENCE_LENGTH - size
+          bytesize += write_utf8(buffer.to_unsafe + bytesize, codepoint)
+          char_count += 1
+        end
+      end
+      field_start = field_end + 1
+    end
+
+    String.new(buffer.to_unsafe, bytesize, char_count)
+  end
+
+  private def utf8_size(codepoint : Int32) : Int32
+    return 1 if codepoint <= 0x7F
+    return 2 if codepoint <= 0x7FF
+    return 3 if codepoint <= 0xFFFF
+    4
+  end
+
+  private def write_utf8(buffer : UInt8*, codepoint : Int32) : Int32
+    case codepoint
+    when ..0x7F
+      buffer[0] = codepoint.to_u8
+      1
+    when ..0x7FF
+      buffer[0] = (0xC0 | (codepoint >> 6)).to_u8
+      buffer[1] = (0x80 | (codepoint & 0x3F)).to_u8
+      2
+    when ..0xFFFF
+      buffer[0] = (0xE0 | (codepoint >> 12)).to_u8
+      buffer[1] = (0x80 | ((codepoint >> 6) & 0x3F)).to_u8
+      buffer[2] = (0x80 | (codepoint & 0x3F)).to_u8
+      3
+    else
+      buffer[0] = (0xF0 | (codepoint >> 18)).to_u8
+      buffer[1] = (0x80 | ((codepoint >> 12) & 0x3F)).to_u8
+      buffer[2] = (0x80 | ((codepoint >> 6) & 0x3F)).to_u8
+      buffer[3] = (0x80 | (codepoint & 0x3F)).to_u8
+      4
     end
   end
 
@@ -694,16 +735,151 @@ class Termisu::Input::Parser
     end
   end
 
-  # Parses modifier code from CSI params string.
-  # Format: "1;2" where 2 is the modifier code.
-  private def parse_modifiers(params : String) : Modifier
-    return Modifier::None unless params.includes?(';')
+  # Parses modifier code from CSI params: "1;2" means modifier code 2.
+  private def parse_modifiers(params : Bytes) : Modifier
+    first_end = index_of(params, ';'.ord.to_u8)
+    return Modifier::None if first_end == params.size
 
-    parts = params.split(';')
-    return Modifier::None if parts.size < 2
-
-    mod_code = parts[1].to_i? || 1
+    second_start = first_end + 1
+    second_end = index_of(params, ';'.ord.to_u8, second_start)
+    mod_code = parse_decimal(params, second_start, second_end) || 1
     Modifier.from_xterm_code(mod_code)
+  end
+
+  private def index_of(bytes : Bytes, value : UInt8, start : Int32 = 0, limit : Int32 = bytes.size) : Int32
+    index = start
+    while index < limit
+      return index if bytes[index] == value
+      index += 1
+    end
+    limit
+  end
+
+  # Allocation-free equivalent of String#to_i? for the Latin-1 characters the
+  # old generic-CSI Builder produced. SGR passes `raw_utf8: true` because its
+  # former String retained raw bytes instead; this distinction is observable on
+  # malformed fields. Signed Int32 overflow is rejected before multiplication.
+  private def parse_decimal(bytes : Bytes, start : Int32, limit : Int32,
+                            raw_utf8 : Bool = false) : Int32?
+    index = skip_decimal_whitespace(bytes, start, limit, raw_utf8)
+    return if index >= limit
+
+    negative = bytes[index] == '-'.ord
+    index += 1 if negative || bytes[index] == '+'.ord
+    maximum = negative ? 2_147_483_648_u64 : 2_147_483_647_u64
+    value, finish = scan_decimal_digits(bytes, index, limit, maximum) || return
+    return unless decimal_terminated?(bytes, start, finish, limit, raw_utf8)
+
+    if negative
+      return Int32::MIN if value == 2_147_483_648_u64
+      -value.to_i32
+    else
+      value.to_i32
+    end
+  end
+
+  private def skip_decimal_whitespace(bytes : Bytes, start : Int32, limit : Int32,
+                                      raw_utf8 : Bool) : Int32
+    index = start
+    while index < limit
+      size = decimal_whitespace_size(bytes, index, limit, raw_utf8)
+      break if size == 0
+      index += size
+    end
+    index
+  end
+
+  private def decimal_whitespace_size(bytes : Bytes, index : Int32, limit : Int32,
+                                      raw_utf8 : Bool) : Int32
+    return bytes[index].unsafe_chr.whitespace? ? 1 : 0 unless raw_utf8
+
+    codepoint, size = decode_utf8_at(bytes, index, limit) || return 0
+    codepoint.unsafe_chr.whitespace? ? size : 0
+  end
+
+  private def decode_utf8_at(bytes : Bytes, index : Int32, limit : Int32) : {Int32, Int32}?
+    first = bytes[index]
+    return {first.to_i32, 1} if first < 0x80
+
+    size, codepoint, minimum = case first
+                               when 0xC0..0xDF then {2, (first & 0x1F).to_i32, 0x80}
+                               when 0xE0..0xEF then {3, (first & 0x0F).to_i32, 0x800}
+                               when 0xF0..0xF7 then {4, (first & 0x07).to_i32, 0x10000}
+                               else                 return
+                               end
+    return if size > limit - index
+
+    (1...size).each do |offset|
+      byte = bytes[index + offset]
+      return unless (byte & 0xC0) == 0x80
+      codepoint = (codepoint << 6) | (byte & 0x3F)
+    end
+    return unless codepoint >= minimum && valid_codepoint?(codepoint)
+
+    {codepoint, size}
+  end
+
+  private def scan_decimal_digits(bytes : Bytes, start : Int32, limit : Int32,
+                                  maximum : UInt64) : {UInt64, Int32}?
+    index = start
+    value = 0_u64
+    while index < limit
+      byte = bytes[index]
+      break unless '0'.ord <= byte <= '9'.ord
+
+      digit = (byte - '0'.ord).to_u64
+      return if value > (maximum - digit) // 10
+      value = value * 10 + digit
+      index += 1
+    end
+    return if index == start
+
+    {value, index}
+  end
+
+  private def decimal_terminated?(bytes : Bytes, start : Int32, finish : Int32, limit : Int32,
+                                  raw_utf8 : Bool) : Bool
+    return true if finish == limit || bytes[finish] == 0
+    return skip_decimal_whitespace(bytes, finish, limit, true) == limit if raw_utf8
+
+    # Generic CSI formerly encoded each input byte as its Latin-1 codepoint in a
+    # Builder. Preserve String#to_i?'s byte-pointer behavior around malformed
+    # embedded NULs without materializing that UTF-8 String.
+    pointer = encoded_bytesize(bytes, start, finish)
+    trailing = limit
+    while trailing > start && bytes[trailing - 1].unsafe_chr.whitespace?
+      trailing -= 1
+    end
+    pointer += encoded_bytesize(bytes, trailing, limit)
+    encoded_byte_at(bytes, start, limit, pointer) == 0
+  end
+
+  private def encoded_bytesize(bytes : Bytes, start : Int32, limit : Int32) : Int32
+    size = 0
+    index = start
+    while index < limit
+      size += bytes[index] < 0x80 ? 1 : 2
+      index += 1
+    end
+    size
+  end
+
+  private def encoded_byte_at(bytes : Bytes, start : Int32, limit : Int32, offset : Int32) : UInt8
+    position = 0
+    index = start
+    while index < limit
+      byte = bytes[index]
+      if byte < 0x80
+        return byte if position == offset
+        position += 1
+      else
+        return (0xC0 | (byte >> 6)).to_u8 if position == offset
+        return (0x80 | (byte & 0x3F)).to_u8 if position + 1 == offset
+        position += 2
+      end
+      index += 1
+    end
+    0_u8
   end
 
   # Parses an SS3 sequence: \eO...
@@ -722,58 +898,40 @@ class Termisu::Input::Parser
   # Parses SGR extended mouse protocol (mode 1006).
   # Format: \e[<Cb;Cx;CyM (press) or \e[<Cb;Cx;Cym (release)
   private def parse_sgr_mouse : Event::Any
-    result = read_sgr_sequence
-    return Event::Key.new(Key::Unknown) unless result
-
-    raw_params, is_release = result
-    parse_sgr_params_to_event(raw_params, is_release) || Event::Key.new(Key::Unknown)
-  end
-
-  # Reads bytes until SGR mouse sequence terminator ('M' or 'm').
-  #
-  # Returns tuple of (raw params string, is_release flag) or nil if overflow/EOF.
-  private def read_sgr_sequence : {String, Bool}?
-    # Stack buffer of raw bytes (may be invalid UTF-8 on malformed input; the
-    # sole consumer only splits/to_i?). The limit counts raw bytes, not
-    # UTF-8-expanded chars as the old String::Builder did.
-    buf = uninitialized UInt8[MAX_SEQUENCE_LENGTH]
-    len = 0
+    # Unlike generic CSI accounting, the historical SGR limit counts raw bytes.
+    buffer = uninitialized UInt8[MAX_SEQUENCE_LENGTH]
+    length = 0
 
     while byte = read_parse_byte
-      case byte
-      when 'M'.ord then return {String.new(buf.to_slice[0, len]), false}
-      when 'm'.ord then return {String.new(buf.to_slice[0, len]), true}
-      else
-        buf[len] = byte
-        len += 1
-        if len >= MAX_SEQUENCE_LENGTH
-          Log.warn { "SGR mouse sequence too long" }
-          return
-        end
+      if byte == 'M'.ord || byte == 'm'.ord
+        event = parse_sgr_params_to_event(buffer.to_slice[0, length], byte == 'm'.ord)
+        return event || Event::Key.new(Key::Unknown)
+      end
+
+      buffer[length] = byte
+      length += 1
+      if length >= MAX_SEQUENCE_LENGTH
+        Log.warn { "SGR mouse sequence too long" }
+        return Event::Key.new(Key::Unknown)
       end
     end
 
-    nil
+    Event::Key.new(Key::Unknown)
   end
 
-  # Parses SGR mouse params (Cb;Cx;Cy) into a Mouse event.
-  #
-  # - `raw_params`: The raw parameter string (e.g., "0;45;12")
-  # - `is_release`: Whether this is a release event (lowercase 'm' terminator)
-  #
-  # Returns Mouse event or nil if params are invalid.
-  private def parse_sgr_params_to_event(raw_params : String, is_release : Bool) : Event::Mouse?
-    parts = raw_params.split(';')
-    return unless parts.size >= 3
+  private def parse_sgr_params_to_event(params : Bytes, is_release : Bool) : Event::Mouse?
+    first_end = index_of(params, ';'.ord.to_u8)
+    return if first_end == params.size
+    second_end = index_of(params, ';'.ord.to_u8, first_end + 1)
+    return if second_end == params.size
+    third_end = index_of(params, ';'.ord.to_u8, second_end + 1)
 
-    cb = parts[0].to_i? || return
-    # Reject malformed coordinates rather than fabricating a mouse event at a
-    # default position — invalid SGR params must not surface as an observable click.
-    x = parts[1].to_i? || return
-    y = parts[2].to_i? || return
+    cb = parse_decimal(params, 0, first_end, raw_utf8: true) || return
+    x = parse_decimal(params, first_end + 1, second_end, raw_utf8: true) || return
+    y = parse_decimal(params, second_end + 1, third_end, raw_utf8: true) || return
 
     button = Event::Mouse::Button.from_cb(cb)
-    # Wheel events are instantaneous - they don't have release events
+    # Wheel events are instantaneous - they don't have release events.
     is_wheel = button.wheel_up? || button.wheel_down? || button.wheel_left? || button.wheel_right?
     button = Event::Mouse::Button::Release if is_release && !is_wheel
 
