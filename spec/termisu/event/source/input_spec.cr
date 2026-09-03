@@ -1,4 +1,14 @@
+require "socket"
 require "../../../spec_helper"
+
+private class InputReadinessCountingReader < Termisu::Reader
+  getter wait_count = Atomic(Int32).new(0)
+
+  def wait_for_data(timeout_ms : Int32) : Bool
+    @wait_count.add(1)
+    super
+  end
+end
 
 private def receive_input_key(channel : Channel(Termisu::Event::Any),
                               wait : Time::Span = 200.milliseconds) : Termisu::Event::Key
@@ -369,6 +379,30 @@ describe Termisu::Event::Source::Input do
       end
     end
 
+    it "wakes for a parser-owned paste deadline without more input" do
+      read_fd, write_fd = create_pipe
+      begin
+        reader = Termisu::Reader.new(read_fd)
+        parser = Termisu::Input::Parser.new(reader)
+        source = Termisu::Event::Source::Input.new(reader, parser)
+        channel = Channel(Termisu::Event::Any).new(2)
+        source.start(channel)
+
+        input = "#{paste_start}\e"
+        LibC.write(write_fd, input.to_unsafe, input.bytesize)
+        receive_input_key(channel).key.should eq(Termisu::Input::Key::PasteStart)
+        receive_input_key(channel, 1500.milliseconds).key.should eq(Termisu::Input::Key::Escape)
+
+        source.stop
+        channel.close
+      ensure
+        source.try(&.stop)
+        reader.try(&.close)
+        LibC.close(read_fd)
+        LibC.close(write_fd)
+      end
+    end
+
     it "does not let a pasted escape consume the closing marker" do
       read_fd, write_fd = create_pipe
       begin
@@ -659,11 +693,198 @@ describe Termisu::Event::Source::Input do
 end
 
 describe Termisu::Event::Source::Input do
-  describe "idle polling" do
-    it "keeps the measured 4ms idle interval" do
-      # Regression pin for the idle busy-poll stopgap: ~978 -> ~244 idle
-      # select(2)/s at the cost of up to 4ms of added idle input latency.
+  describe "cooperative readiness" do
+    it "does not directly probe the input descriptor while idle" do
       Termisu::Event::Source::Input::IDLE_SLEEP.should eq(4.milliseconds)
+      read_fd, write_fd = create_pipe
+      begin
+        reader = InputReadinessCountingReader.new(read_fd)
+        parser = Termisu::Input::Parser.new(reader)
+        source = Termisu::Event::Source::Input.new(reader, parser)
+        channel = Channel(Termisu::Event::Any).new(1)
+
+        source.start(channel)
+        100.times { Fiber.yield }
+        reader.wait_count.get.should eq(0)
+
+        LibC.write(write_fd, "a".to_unsafe, 1)
+        receive_input_key(channel).char.should eq('a')
+
+        source.stop
+        channel.close
+      ensure
+        source.try(&.stop)
+        reader.try(&.close)
+        LibC.close(read_fd)
+        LibC.close(write_fd)
+      end
+    end
+
+    it "preserves descriptor flags throughout the readiness lease" do
+      read_fd, write_fd = create_pipe
+      begin
+        before = LibC.fcntl(read_fd, LibC::F_GETFL, 0)
+        reader = Termisu::Reader.new(read_fd)
+        parser = Termisu::Input::Parser.new(reader)
+        source = Termisu::Event::Source::Input.new(reader, parser)
+        channel = Channel(Termisu::Event::Any).new(1)
+
+        source.start(channel)
+        LibC.fcntl(read_fd, LibC::F_GETFL, 0).should eq(before)
+        source.stop
+        LibC.fcntl(read_fd, LibC::F_GETFL, 0).should eq(before)
+
+        channel.close
+      ensure
+        source.try(&.stop)
+        reader.try(&.close)
+        LibC.close(read_fd)
+        LibC.close(write_fd)
+      end
+    end
+
+    it "keeps output usable when input and output share an open description" do
+      left, right = UNIXSocket.pair
+      begin
+        # Warm Crystal's socket wrapper before taking the baseline: on kqueue
+        # platforms its first write enables nonblocking mode on the shared open
+        # description. The readiness lease itself must make no further change.
+        left.write("warmup".to_slice)
+        warmup = Bytes.new(6)
+        right.read_fully(warmup)
+        before = LibC.fcntl(left.fd, LibC::F_GETFL, 0)
+        reader = Termisu::Reader.new(left.fd)
+        parser = Termisu::Input::Parser.new(reader)
+        source = Termisu::Event::Source::Input.new(reader, parser)
+        channel = Channel(Termisu::Event::Any).new(1)
+
+        source.start(channel)
+        left.write("output".to_slice)
+        buffer = Bytes.new(6)
+        right.read_fully(buffer)
+        String.new(buffer).should eq("output")
+        LibC.fcntl(left.fd, LibC::F_GETFL, 0).should eq(before)
+
+        source.stop
+        channel.close
+      ensure
+        source.try(&.stop)
+        reader.try(&.close)
+        left.close
+        right.close
+      end
+    end
+
+    it "delivers trailing bytes in order and parks after HUP" do
+      read_fd, write_fd = create_pipe
+      begin
+        reader = InputReadinessCountingReader.new(read_fd)
+        parser = Termisu::Input::Parser.new(reader)
+        source = Termisu::Event::Source::Input.new(reader, parser)
+        channel = Channel(Termisu::Event::Any).new(3)
+
+        source.start(channel)
+        LibC.write(write_fd, "aé".to_unsafe, "aé".bytesize)
+        LibC.close(write_fd)
+        write_fd = -1
+
+        receive_input_key(channel).char.should eq('a')
+        receive_input_key(channel).char.should eq('é')
+        1_000.times do
+          break if reader.@eof
+          Fiber.yield
+        end
+        reader.@eof.should be_true
+        count_at_eof = reader.wait_count.get
+        100.times { Fiber.yield }
+        reader.wait_count.get.should eq(count_at_eof)
+
+        source.stop
+        channel.close
+      ensure
+        source.try(&.stop)
+        reader.try(&.close)
+        LibC.close(read_fd)
+        LibC.close(write_fd) if write_fd >= 0
+      end
+    end
+
+    it "closes every descriptor when the worker join re-raises" do
+      read_fd, write_fd = create_pipe
+      begin
+        descriptors, error = Termisu::Event::Source::Input.worker_failure_cleanup_for_spec(read_fd)
+
+        error.should be_a(ArgumentError)
+        error.try(&.message).should eq("readiness worker fault")
+        descriptors.each do |descriptor|
+          LibC.fcntl(descriptor, LibC::F_GETFD, 0).should eq(-1)
+        end
+      ensure
+        LibC.close(read_fd)
+        LibC.close(write_fd)
+      end
+    end
+
+    it "fairly drains a HUP tail larger than one reader buffer" do
+      read_fd, write_fd = create_pipe
+      begin
+        reader = Termisu::Reader.new(read_fd)
+        parser = Termisu::Input::Parser.new(reader)
+        source = Termisu::Event::Source::Input.new(reader, parser)
+        input = String.build do |io|
+          193.times { |index| io << ('a'.ord + index % 26).chr }
+        end
+        channel = Channel(Termisu::Event::Any).new(input.bytesize)
+
+        source.start(channel)
+        LibC.write(write_fd, input.to_unsafe, input.bytesize).should eq(input.bytesize)
+        LibC.close(write_fd)
+        write_fd = -1
+
+        output = String.build do |io|
+          input.bytesize.times { io << receive_input_key(channel).char }
+        end
+        output.should eq(input)
+        reader.@eof.should be_true
+
+        source.stop
+        channel.close
+      ensure
+        source.try(&.stop)
+        reader.try(&.close)
+        LibC.close(read_fd)
+        LibC.close(write_fd) if write_fd >= 0
+      end
+    end
+
+    it "releases every readiness descriptor over repeated restarts" do
+      read_fd, write_fd = create_pipe
+      begin
+        reader = Termisu::Reader.new(read_fd)
+        parser = Termisu::Input::Parser.new(reader)
+        source = Termisu::Event::Source::Input.new(reader, parser)
+        channel = Channel(Termisu::Event::Any).new(1)
+
+        # Warm the Crystal event-loop backend before counting. Other specs may
+        # release process-level descriptors concurrently, so a lower count is
+        # harmless; leaked run descriptors would make the count grow.
+        source.start(channel)
+        source.stop
+        before = Dir["/dev/fd/*"].size
+
+        2_000.times do
+          source.start(channel)
+          source.stop
+        end
+
+        Dir["/dev/fd/*"].size.should be <= before
+        channel.close
+      ensure
+        source.try(&.stop)
+        reader.try(&.close)
+        LibC.close(read_fd)
+        LibC.close(write_fd)
+      end
     end
 
     it "delivers input that arrives after an idle stretch" do

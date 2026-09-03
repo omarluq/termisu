@@ -28,6 +28,7 @@ class Termisu::Reader
   @buffer : Bytes
   @buffer_pos : Int32 = 0
   @buffer_len : Int32 = 0
+  @eof : Bool = false
 
   # Maximum retry attempts for EINTR before giving up.
   # This prevents infinite loops in pathological signal storms.
@@ -287,12 +288,14 @@ class Termisu::Reader
       if bytes_read > 0
         @buffer_pos = 0
         @buffer_len = bytes_read.to_i32
+        @eof = false
         Termisu::Logs::Reader.trace { "fill_buffer: read #{bytes_read} bytes" }
         return true
       elsif bytes_read == 0
         # EOF
         @buffer_pos = 0
         @buffer_len = 0
+        @eof = true
         Termisu::Logs::Reader.debug { "fill_buffer: EOF" }
         return false
       end
@@ -315,6 +318,7 @@ class Termisu::Reader
         # Non-blocking I/O would block - no data available
         @buffer_pos = 0
         @buffer_len = 0
+        @eof = false
         return false
       end
 
