@@ -93,7 +93,9 @@ class Termisu::Terminfo
   @@caps_cache = {} of String => Hash(String, String)
 
   def initialize
-    term_name = ENV["TERM"]? || raise Termisu::Error.new("TERM environment variable not set")
+    # The Windows console sets no TERM; in VT mode it speaks xterm.
+    term_name = ENV["TERM"]? || {{ flag?(:win32) ? "xterm-256color" : nil }} ||
+                raise Termisu::Error.new("TERM environment variable not set")
     Log.info { "Loading terminfo for TERM=#{term_name}" }
 
     @caps = self.class.caps_for(term_name)
