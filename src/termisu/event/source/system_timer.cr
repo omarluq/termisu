@@ -431,7 +431,9 @@ class Termisu::Event::Source::SystemTimer < Termisu::Event::Source
     run.done.receive?
     @run = nil
     if error = run.error
-      raise error
+      lifecycle_log do
+        Log.error(exception: error) { "Previous SystemTimer run failed" }
+      end
     end
   end
 

@@ -755,6 +755,48 @@ describe Termisu::Event::Source::SystemTimer do
       poller.close_calls.should eq(1)
     end
 
+    it "starts a replacement after a failed run without replaying stale errors" do
+      [false, true].each do |fail_wait|
+        first = SystemTimerFakePoller.new([
+          Termisu::Event::Poller::PollResult.new(type: :timer, timer_expirations: 1_u64),
+        ])
+        first.wait_error = Exception.new("wait failed") if fail_wait
+        first.close_error = Exception.new("close failed")
+        second = SystemTimerFakePoller.new([
+          Termisu::Event::Poller::PollResult.new(type: :timer, timer_expirations: 1_u64),
+        ])
+        timer = SystemTimerHarness.new([first, second] of Termisu::Event::Poller)
+        first_output = Channel(Termisu::Event::Any).new(1)
+        second_output = Channel(Termisu::Event::Any).new(1)
+        first_output.close unless fail_wait
+        timer.start(first_output)
+        timer.wait_started.receive
+        timer.wait_release.send(nil)
+        wait_until_system_timer_stops(timer)
+
+        with_raising_lifecycle_logs { timer.start(second_output) }
+        timer.wait_started.receive
+        timer.running?.should be_true
+        timer.create_calls.should eq(2)
+        first.close_calls.should eq(1)
+        timer.wait_release.send(nil)
+        second_output.receive.as(Termisu::Event::Tick).frame.should eq(0_u64)
+        timer.wait_started.receive
+
+        stopped = Channel(Nil).new
+        spawn do
+          timer.stop
+          stopped.send(nil)
+        end
+        wait_until_system_timer_stops(timer)
+        timer.wait_release.send(nil)
+        stopped.receive
+        second.close_calls.should eq(1)
+        first_output.close unless first_output.closed?
+        second_output.close
+      end
+    end
+
     it "reports a close failure once" do
       poller = SystemTimerFakePoller.new
       poller.close_error = Exception.new("close failed")
