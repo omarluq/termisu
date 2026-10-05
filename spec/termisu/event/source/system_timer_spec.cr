@@ -449,11 +449,11 @@ describe Termisu::Event::Source::SystemTimer do
                                interval
                              {% end %}
         missed = ticks.sum(0_u64, &.missed_ticks)
-        missed.should be <= (effective_interval >= 50.milliseconds ? 4_u64 : 100_u64)
-
-        average_emission_period = ticks.last.elapsed / ticks.size
-        average_emission_period.should be > effective_interval * 0.7
-        average_emission_period.should be < effective_interval * 6.0
+        # One delivered event can account for multiple coalesced kernel expirations.
+        expirations = ticks.size.to_u64 + missed
+        average_expiration_period = ticks.last.elapsed / expirations
+        average_expiration_period.should be > effective_interval * 0.7
+        average_expiration_period.should be < effective_interval * 6.0
       end
     end
 
@@ -613,10 +613,10 @@ describe Termisu::Event::Source::SystemTimer do
       output.close
     end
 
-    it "keeps fallback readiness on absolute cadence deadlines" do
+    it "advances absolute cadence deadlines by coalesced expirations" do
       poller = SystemTimerFakePoller.new([
-        Termisu::Event::Poller::PollResult.new(type: :timer, timer_expirations: 1_u64),
-        Termisu::Event::Poller::PollResult.new(type: :timer, timer_expirations: 1_u64),
+        Termisu::Event::Poller::PollResult.new(type: :timer, timer_expirations: 3_u64),
+        Termisu::Event::Poller::PollResult.new(type: :timer, timer_expirations: 2_u64),
       ])
       interval = 6.milliseconds
       timer = SystemTimerHarness.new([poller] of Termisu::Event::Poller, interval)
@@ -630,8 +630,8 @@ describe Termisu::Event::Source::SystemTimer do
       end
       timer.wait_started.receive
 
-      (timer.deadlines[1] - timer.deadlines[0]).should eq(interval)
-      (timer.deadlines[2] - timer.deadlines[1]).should eq(interval)
+      (timer.deadlines[1] - timer.deadlines[0]).should eq(interval * 3)
+      (timer.deadlines[2] - timer.deadlines[1]).should eq(interval * 2)
 
       stopped = Channel(Nil).new
       spawn do
