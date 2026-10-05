@@ -858,7 +858,8 @@ describe Termisu::Terminal do
       # Bold should also re-emit after reset
       terminal.clear_captured
       terminal.enable_bold
-      terminal.output.should contain("\e[1m") # Bold SGR
+      # Bold SGR
+      terminal.output.should contain("\e[1m")
     ensure
       terminal.try &.close
     end
