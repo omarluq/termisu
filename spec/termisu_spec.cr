@@ -182,6 +182,25 @@ private class LifecycleEventLoop < Termisu::Event::Loop
   end
 end
 
+private class FinishedTimerWithStopError < Termisu::Event::Source::SystemTimer
+  getter stop_count = 0
+
+  def start(_output : Channel(Termisu::Event::Any)) : Nil
+  end
+
+  def stop : Nil
+    @stop_count += 1
+    raise "finished timer cleanup failed" if @stop_count == 1
+  end
+end
+
+private class FinishedTimerTermisu < Termisu
+  def install_timer(timer : Termisu::Event::Source::SystemTimer) : Nil
+    @timer_source = timer
+    @event_loop.add_source(timer)
+  end
+end
+
 private class LifecycleTermisu < Termisu
   class_property last_terminal : LifecycleTerminal?
   class_property last_event_loop : LifecycleEventLoop?
@@ -1232,6 +1251,35 @@ describe "Termisu Event::Loop Integration" do
         event_loop.stop
         reader.close
       ensure
+        LibC.close(read_fd)
+        LibC.close(write_fd)
+      end
+    end
+
+    it "disable_timer clears a finished timer while reporting its cleanup error once" do
+      read_fd, write_fd = create_pipe
+      begin
+        timer = FinishedTimerWithStopError.new
+        reader = Termisu::Reader.new(read_fd)
+        parser = Termisu::Input::Parser.new(reader)
+        input_source = Termisu::Event::Source::Input.new(reader, parser)
+        resize_source = Termisu::Event::Source::Resize.new(-> { {80, 24} })
+        event_loop = Termisu::Event::Loop.new
+        termisu = FinishedTimerTermisu.new(
+          CaptureTerminal.new(sync_updates: false),
+          reader, parser, input_source, resize_source, event_loop
+        )
+        termisu.install_timer(timer)
+
+        expect_raises(Exception, "finished timer cleanup failed") { termisu.disable_timer }
+
+        termisu.timer_enabled?.should be_false
+        event_loop.source_names.should_not contain("system-timer")
+        timer.stop_count.should eq(1)
+        termisu.disable_timer
+        timer.stop_count.should eq(1)
+      ensure
+        termisu.try(&.close)
         LibC.close(read_fd)
         LibC.close(write_fd)
       end

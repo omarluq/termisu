@@ -156,6 +156,22 @@ describe Termisu::Event::Loop do
       loop.stop
     end
 
+    it "reaps inactive sources and removes them even when stop fails" do
+      loop = Termisu::Event::Loop.new
+      source = FaultInjectingSource.new("finished", stop_error: "cleanup failed")
+      loop.add_source(source)
+      source.running?.should be_false
+
+      with_raising_lifecycle_logs do
+        expect_raises(Exception, "cleanup failed") { loop.remove_source(source) }
+      end
+
+      source.calls.should eq(["stop"])
+      loop.source_names.should be_empty
+      loop.remove_source(source)
+      source.calls.should eq(["stop"])
+    end
+
     it "handles removing non-existent source gracefully" do
       loop = Termisu::Event::Loop.new
       source = MockSource.new("ghost")
