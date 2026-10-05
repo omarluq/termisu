@@ -191,6 +191,11 @@ class Termisu::Event::Source::SystemTimer < Termisu::Event::Source
     @running.get
   end
 
+  # A retained run still needs reaping even after its worker finishes.
+  def stop_required? : Bool
+    @lifecycle_lock.synchronize { !@run.nil? }
+  end
+
   # Returns the source name for identification.
   def name : String
     "system-timer"

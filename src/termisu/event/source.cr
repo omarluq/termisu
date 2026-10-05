@@ -73,6 +73,14 @@ abstract class Termisu::Event::Source
   # Used to check state and control the event production loop.
   abstract def running? : Bool
 
+  # Returns whether removal must call stop.
+  #
+  # Defaults to running? so never-started sources are not stopped.
+  # Override to include finished runs with pending cleanup.
+  def stop_required? : Bool
+    running?
+  end
+
   # Returns a descriptive name for this source.
   #
   # Used for logging, debugging, and identifying sources in the Event::Loop.
