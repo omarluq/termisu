@@ -770,7 +770,8 @@ class Termisu
 
   # Removes a custom event source from the event loop.
   #
-  # If the source is running, it will be stopped before removal.
+  # Running sources and sources with pending run cleanup are stopped before removal.
+  # Never-started sources are not stopped unless they explicitly require cleanup.
   # Removing a source that isn't registered is a no-op.
   #
   # Parameters:

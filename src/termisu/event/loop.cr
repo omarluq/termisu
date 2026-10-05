@@ -94,7 +94,7 @@ class Termisu::Event::Loop
 
   # Removes an event source from the loop.
   #
-  # Stops the source before removal, including finished runs awaiting cleanup.
+  # Stops running sources and finished runs with pending cleanup before removal.
   # Removing a non-existent source is a no-op.
   #
   # Returns self for method chaining.
@@ -102,7 +102,7 @@ class Termisu::Event::Loop
     @lifecycle_lock.synchronize do
       if @sources.includes?(source)
         begin
-          source.stop
+          source.stop if source.stop_required?
         ensure
           @sources.delete(source)
         end
