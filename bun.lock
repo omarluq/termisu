@@ -14,6 +14,48 @@
     "javascript/core": {
       "name": "@termisu/core",
       "version": "0.0.0",
+      "optionalDependencies": {
+        "@termisu/native-darwin-arm64": "workspace:*",
+        "@termisu/native-darwin-x64": "workspace:*",
+        "@termisu/native-freebsd-arm64": "workspace:*",
+        "@termisu/native-freebsd-x64": "workspace:*",
+        "@termisu/native-linux-arm64-gnu": "workspace:*",
+        "@termisu/native-linux-arm64-musl": "workspace:*",
+        "@termisu/native-linux-x64-gnu": "workspace:*",
+        "@termisu/native-linux-x64-musl": "workspace:*",
+      },
+    },
+    "javascript/native/darwin/arm64": {
+      "name": "@termisu/native-darwin-arm64",
+      "version": "0.0.0",
+    },
+    "javascript/native/darwin/x64": {
+      "name": "@termisu/native-darwin-x64",
+      "version": "0.0.0",
+    },
+    "javascript/native/freebsd/arm64": {
+      "name": "@termisu/native-freebsd-arm64",
+      "version": "0.0.0",
+    },
+    "javascript/native/freebsd/x64": {
+      "name": "@termisu/native-freebsd-x64",
+      "version": "0.0.0",
+    },
+    "javascript/native/linux/arm64/gnu": {
+      "name": "@termisu/native-linux-arm64-gnu",
+      "version": "0.0.0",
+    },
+    "javascript/native/linux/arm64/musl": {
+      "name": "@termisu/native-linux-arm64-musl",
+      "version": "0.0.0",
+    },
+    "javascript/native/linux/x64/gnu": {
+      "name": "@termisu/native-linux-x64-gnu",
+      "version": "0.0.0",
+    },
+    "javascript/native/linux/x64/musl": {
+      "name": "@termisu/native-linux-x64-musl",
+      "version": "0.0.0",
     },
   },
   "packages": {
@@ -36,6 +78,22 @@
     "@biomejs/cli-win32-x64": ["@biomejs/cli-win32-x64@2.4.4", "", { "os": "win32", "cpu": "x64" }, "sha512-gnOHKVPFAAPrpoPt2t+Q6FZ7RPry/FDV3GcpU53P3PtLNnQjBmKyN2Vh/JtqXet+H4pme8CC76rScwdjDcT1/A=="],
 
     "@termisu/core": ["@termisu/core@workspace:javascript/core"],
+
+    "@termisu/native-darwin-arm64": ["@termisu/native-darwin-arm64@workspace:javascript/native/darwin/arm64"],
+
+    "@termisu/native-darwin-x64": ["@termisu/native-darwin-x64@workspace:javascript/native/darwin/x64"],
+
+    "@termisu/native-freebsd-arm64": ["@termisu/native-freebsd-arm64@workspace:javascript/native/freebsd/arm64"],
+
+    "@termisu/native-freebsd-x64": ["@termisu/native-freebsd-x64@workspace:javascript/native/freebsd/x64"],
+
+    "@termisu/native-linux-arm64-gnu": ["@termisu/native-linux-arm64-gnu@workspace:javascript/native/linux/arm64/gnu"],
+
+    "@termisu/native-linux-arm64-musl": ["@termisu/native-linux-arm64-musl@workspace:javascript/native/linux/arm64/musl"],
+
+    "@termisu/native-linux-x64-gnu": ["@termisu/native-linux-x64-gnu@workspace:javascript/native/linux/x64/gnu"],
+
+    "@termisu/native-linux-x64-musl": ["@termisu/native-linux-x64-musl@workspace:javascript/native/linux/x64/musl"],
 
     "@types/node": ["@types/node@25.3.2", "", { "dependencies": { "undici-types": "~7.18.0" } }, "sha512-RpV6r/ij22zRRdyBPcxDeKAzH43phWVKEjL2iksqo1Vz3CuBUrgmPpPhALKiRfU7OMCmeeO9vECBMsV0hMTG8Q=="],
 
