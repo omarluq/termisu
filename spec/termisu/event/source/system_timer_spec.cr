@@ -739,18 +739,22 @@ describe Termisu::Event::Source::SystemTimer do
       ])
       poller.close_error = Exception.new("close failed")
       timer = SystemTimerHarness.new([poller] of Termisu::Event::Poller)
+      timer.stop_required?.should be_false
       loop = Termisu::Event::Loop.new
       loop.add_source(timer)
       loop.output.close
       timer.start(loop.output)
       timer.wait_started.receive
+      timer.stop_required?.should be_true
       timer.wait_release.send(nil)
       wait_until_system_timer_stops(timer)
+      timer.stop_required?.should be_true
 
       expect_raises(Exception, "close failed") { loop.remove_source(timer) }
 
       loop.source_names.should be_empty
       poller.close_calls.should eq(1)
+      timer.stop_required?.should be_false
       timer.stop
       poller.close_calls.should eq(1)
     end

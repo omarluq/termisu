@@ -188,6 +188,10 @@ private class FinishedTimerWithStopError < Termisu::Event::Source::SystemTimer
   def start(_output : Channel(Termisu::Event::Any)) : Nil
   end
 
+  def stop_required? : Bool
+    @stop_count == 0
+  end
+
   def stop : Nil
     @stop_count += 1
     raise "finished timer cleanup failed" if @stop_count == 1
