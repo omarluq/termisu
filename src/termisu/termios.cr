@@ -36,7 +36,11 @@ end
 # - SemiRaw: Raw with signal handling
 class Termisu::Termios
   @fd : Int32
-  @original : LibC::Termios?
+  # Windows has no termios; `termisu/windows.cr` replaces every method that
+  # reads this with console-mode equivalents.
+  {% unless flag?(:win32) %}
+    @original : LibC::Termios?
+  {% end %}
   @current_mode : Terminal::Mode?
 
   # Returns the current terminal mode, or nil if not yet set.

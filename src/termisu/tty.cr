@@ -9,7 +9,7 @@
 class Termisu::TTY
   private PATH = "/dev/tty"
 
-  @out : File
+  @out : IO::FileDescriptor
   @outfd : Int32
   @infd : Int32
   @owns_input_fd : Bool

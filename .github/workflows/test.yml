@@ -68,3 +68,23 @@ jobs:
             shards --version
             shards install
             script -q /dev/null crystal spec spec/termisu_spec.cr spec/termisu -v
+  build-windows:
+    name: Build examples (Windows)
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Setup Crystal
+        uses: ./.github/actions/setup-crystal
+        with:
+          crystal-version: "1.21.0"
+          install-shards: "false"
+      - name: Build examples
+        # The runner has no console, so this links rather than runs: it is
+        # what proves the console backend binds every symbol it calls.
+        shell: bash
+        run: |
+          mkdir -p bin
+          for e in examples/*.cr; do
+            crystal build "$e" -o "bin/$(basename "$e" .cr).exe"
+          done
