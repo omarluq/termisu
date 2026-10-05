@@ -685,9 +685,12 @@ class Termisu
   # is already disabled.
   def disable_timer : self
     if timer = @timer_source
-      @event_loop.remove_source(timer)
-      @timer_source = nil
-      Log.debug { "Timer disabled" }
+      begin
+        @event_loop.remove_source(timer)
+      ensure
+        @timer_source = nil
+      end
+      lifecycle_log { Log.debug { "Timer disabled" } }
     end
 
     self

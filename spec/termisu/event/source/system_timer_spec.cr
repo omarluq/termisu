@@ -733,6 +733,28 @@ describe Termisu::Event::Source::SystemTimer do
       output.close
     end
 
+    it "reports a finished run's close error when removing it from the loop" do
+      poller = SystemTimerFakePoller.new([
+        Termisu::Event::Poller::PollResult.new(type: :timer, timer_expirations: 1_u64),
+      ])
+      poller.close_error = Exception.new("close failed")
+      timer = SystemTimerHarness.new([poller] of Termisu::Event::Poller)
+      loop = Termisu::Event::Loop.new
+      loop.add_source(timer)
+      loop.output.close
+      timer.start(loop.output)
+      timer.wait_started.receive
+      timer.wait_release.send(nil)
+      wait_until_system_timer_stops(timer)
+
+      expect_raises(Exception, "close failed") { loop.remove_source(timer) }
+
+      loop.source_names.should be_empty
+      poller.close_calls.should eq(1)
+      timer.stop
+      poller.close_calls.should eq(1)
+    end
+
     it "reports a close failure once" do
       poller = SystemTimerFakePoller.new
       poller.close_error = Exception.new("close failed")
