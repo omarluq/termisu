@@ -1,6 +1,6 @@
 # Termisu
 
-[![Crystal Version](https://img.shields.io/badge/Crystal-%3E%3D1.17.0-000000?style=flat&labelColor=171717&color=000000&logo=crystal&logoColor=white)](https://crystal-lang.org/)
+[![Crystal Version](https://img.shields.io/badge/Crystal-%3E%3D1.17.0%2C%20%3C1.22.0-000000?style=flat&labelColor=171717&color=000000&logo=crystal&logoColor=white)](https://crystal-lang.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue?style=flat&labelColor=171717&logo=opensourceinitiative&logoColor=white)](LICENSE)
 [![Tests](https://img.shields.io/github/actions/workflow/status/omarluq/termisu/test.yml?style=flat&labelColor=171717&label=Tests&logo=github&logoColor=white)](https://github.com/omarluq/termisu/actions/workflows/test.yml)
 [![Version](https://img.shields.io/github/release/omarluq/termisu?style=flat&labelColor=171717&color=28a745&label=Version&logo=semver&logoColor=white)](https://github.com/omarluq/termisu/releases)
@@ -34,6 +34,10 @@ dependencies:
 ```
 
 2. Run `shards install`
+
+Supported Crystal versions are 1.17.x–1.21.x. Input readiness uses Crystal's internal
+`Thread` API; expanding this range requires validating worker creation, cancellation,
+and failure propagation on the new release.
 
 ## Usage
 

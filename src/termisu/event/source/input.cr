@@ -50,6 +50,13 @@ class Termisu::Event::Source::Input < Termisu::Event::Source
   # A control pipe cancels or rearms the poll worker, while a second pipe wakes
   # the source fiber through Crystal's ordinary public IO API.
   private class ReadinessLease
+    # Thread is an internal Crystal API: qualify the next minor before widening this.
+    {% if compare_versions(Crystal::VERSION, "1.17.0") < 0 || compare_versions(Crystal::VERSION, "1.22.0") >= 0 %}
+      {% raise "Termisu input readiness supports Crystal >= 1.17.0, < 1.22.0 (Thread API)" %}
+    {% elsif !Thread.has_method?(:initialize) || !Thread.has_method?(:join) %}
+      {% raise "Termisu input readiness requires Thread#initialize and Thread#join" %}
+    {% end %}
+
     # POSIX specifies F_DUPFD as command zero on all supported targets.
     private F_DUPFD = 0
 
