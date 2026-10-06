@@ -851,6 +851,69 @@ describe Termisu::Event::Source::Input do
       end
     end
 
+    it "reports the original polling error on removal and restarts cleanly" do
+      read_fd, write_fd = create_pipe
+      reader = Termisu::Reader.new(read_fd)
+      parser = Termisu::Input::Parser.new(reader)
+      source = Termisu::Event::Source::Input.new(reader, parser)
+      event_loop = Termisu::Event::Loop.new
+
+      begin
+        event_loop.add_source(source).start
+        descriptors = input_readiness_descriptors(source)
+        done = source.@done || fail "input completion signal not created"
+        source.fail_readiness_poll_for_spec
+
+        select
+        when done.receive?
+        when timeout(1.second)
+          fail "input source did not finish after its poll failed"
+        end
+
+        error = expect_raises(Termisu::IOError, "Input readiness poll() failed") do
+          event_loop.remove_source(source)
+        end
+        error.errno.should eq(Errno::EFAULT)
+        source.stop_required?.should be_false
+        event_loop.source_names.should_not contain("input")
+        descriptors.each do |descriptor|
+          LibC.fcntl(descriptor, LibC::F_GETFD, 0).should eq(-1)
+        end
+        LibC.fcntl(read_fd, LibC::F_GETFD, 0).should_not eq(-1)
+        source.stop
+
+        restarted_output = Channel(Termisu::Event::Any).new(1)
+        source.start(restarted_output)
+        LibC.write(write_fd, "x".to_unsafe, 1).should eq(1)
+        receive_input_key(restarted_output).char.should eq('x')
+        source.stop
+      ensure
+        source.stop
+        event_loop.stop
+        restarted_output.try(&.close)
+        reader.close
+        LibC.close(read_fd)
+        LibC.close(write_fd)
+      end
+    end
+
+    it "distinguishes invalid descriptors from poll errors and preserves HUP tails" do
+      invalid = expect_raises(Termisu::IOError, "POLLNVAL") do
+        Termisu::Event::Source::Input.readiness_status_for_spec(Termisu::System::Poll::POLLNVAL)
+      end
+      invalid.errno.should eq(Errno::EBADF)
+
+      poll_error = Termisu::System::Poll::POLLERR
+      error = expect_raises(IO::Error, "POLLERR") do
+        Termisu::Event::Source::Input.readiness_status_for_spec(poll_error)
+      end
+      error.message.should eq("Input readiness poll() reported POLLERR (revents=#{poll_error})")
+
+      flags = poll_error | Termisu::System::Poll::POLLIN | Termisu::System::Poll::POLLHUP
+      status = Termisu::Event::Source::Input.readiness_status_for_spec(flags)
+      status.hangup?.should be_true
+    end
+
     it "closes every descriptor when the worker join re-raises" do
       read_fd, write_fd = create_pipe
       begin
