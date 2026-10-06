@@ -1,15 +1,6 @@
 require "socket"
 require "../../../spec_helper"
 
-private class InputReadinessCountingReader < Termisu::Reader
-  getter wait_count = Atomic(Int32).new(0)
-
-  def wait_for_data(timeout_ms : Int32) : Bool
-    @wait_count.add(1)
-    super
-  end
-end
-
 private def receive_input_key(channel : Channel(Termisu::Event::Any),
                               wait : Time::Span = 200.milliseconds) : Termisu::Event::Key
   select
