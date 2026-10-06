@@ -1,6 +1,17 @@
 require "socket"
 require "../../../spec_helper"
 
+private def input_readiness_descriptors(source : Termisu::Event::Source::Input) : Array(Int32)
+  lease = source.@lease || fail "input readiness lease not created"
+  [
+    lease.@input_fd,
+    (lease.@wake_reader || fail("input wake reader not created")).fd,
+    (lease.@wake_writer || fail("input wake writer not created")).fd,
+    (lease.@control_reader || fail("input control reader not created")).fd,
+    (lease.@control_writer || fail("input control writer not created")).fd,
+  ]
+end
+
 private def receive_input_key(channel : Channel(Termisu::Event::Any),
                               wait : Time::Span = 200.milliseconds) : Termisu::Event::Key
   select
@@ -856,19 +867,15 @@ describe Termisu::Event::Source::Input do
         source = Termisu::Event::Source::Input.new(reader, parser)
         channel = Channel(Termisu::Event::Any).new(1)
 
-        # Warm the Crystal event-loop backend before counting. Other specs may
-        # release process-level descriptors concurrently, so a lower count is
-        # harmless; leaked run descriptors would make the count grow.
-        source.start(channel)
-        source.stop
-        before = Dir["/dev/fd/*"].size
-
-        2_000.times do
+        32.times do
           source.start(channel)
+          descriptors = input_readiness_descriptors(source)
           source.stop
+          descriptors.each do |descriptor|
+            LibC.fcntl(descriptor, LibC::F_GETFD, 0).should eq(-1)
+          end
         end
 
-        Dir["/dev/fd/*"].size.should be <= before
         channel.close
       ensure
         source.try(&.stop)
