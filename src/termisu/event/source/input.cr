@@ -507,7 +507,7 @@ class Termisu::Event::Source::Input < Termisu::Event::Source
         next
       end
 
-      eof = @reader.@eof
+      eof = @reader.eof?
       lease.rearm unless eof || descriptor_closed
       Fiber.yield if emitted
     end
@@ -535,7 +535,7 @@ class Termisu::Event::Source::Input < Termisu::Event::Source
     # remains. Keep consuming until read(2) reaches EOF (or a PTY reports EIO),
     # yielding between bounded cycles so a large tail stays scheduler-fair.
     while @running.get && ((exhausted && parser_buffered_input?) ||
-          (descriptor_closed && !@reader.@eof))
+          (descriptor_closed && !@reader.eof?))
       Fiber.yield
       cycle_emitted, exhausted = drain_cycle(output, stop_signal)
       emitted ||= cycle_emitted

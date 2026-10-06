@@ -43,6 +43,11 @@ class Termisu::Reader
     Log.debug { "Reader initialized: fd=#{@fd}, buffer_size=#{buffer_size}" }
   end
 
+  # Whether the last buffer fill reached EOF. This may be temporary on live inputs.
+  def eof? : Bool
+    @eof
+  end
+
   # Reads a single byte from the input.
   #
   # Returns `nil` if no data is available or on EOF.
@@ -266,6 +271,7 @@ class Termisu::Reader
   def clear_buffer
     @buffer_pos = 0
     @buffer_len = 0
+    @eof = false
   end
 
   # Closes the reader (does not close the file descriptor).
