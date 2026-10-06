@@ -1,7 +1,7 @@
 # Terminal input event source.
 #
 # Wraps `Reader` and `Input::Parser` to produce Key and Mouse events
-# via a dedicated polling fiber.
+# via a dedicated fiber.
 #
 # ## Usage
 #
@@ -31,16 +31,8 @@
 class Termisu::Event::Source::Input < Termisu::Event::Source
   Log = Termisu::Logs::Event
 
-  # Idle sleep when no input is available.
-  #
-  # Keeps CPU usage low without introducing long blocking waits that
-  # can starve high-frequency timers.
-  #
-  # 4ms is a measured stopgap for the idle busy-poll: it cuts idle
-  # select(2) calls from ~978/s to ~244/s at the cost of up to 4ms of
-  # added input latency when idle. The proper fix (deferred) is evented
-  # IO on the input fd — cooperative IO::FileDescriptor wakeup on data,
-  # ~20 wakeups/s with lower latency than any fixed sleep.
+  # Ordinary idle input is event-driven. Only transient EOF and saturated wake
+  # pipes retry on this interval, with cancellation checked between retries.
   IDLE_SLEEP = 4.milliseconds
 
   # Maximum events drained per loop iteration.
@@ -49,6 +41,365 @@ class Termisu::Event::Source::Input < Termisu::Event::Source
   # while still allowing bursty input to be processed quickly.
   MAX_DRAIN_PER_CYCLE = 64
 
+  # A run-local bridge between blocking poll(2) and Crystal's cooperative IO.
+  #
+  # The duplicated input descriptor is used only for readiness: Parser remains
+  # the sole consumer. It is never wrapped in
+  # IO::FileDescriptor because that constructor may set O_NONBLOCK on the shared
+  # open-file description.
+  # A control pipe cancels or rearms the poll worker, while a second pipe wakes
+  # the source fiber through Crystal's ordinary public IO API.
+  private class ReadinessLease
+    # Thread is an internal Crystal API: qualify the next minor before widening this.
+    {% if compare_versions(Crystal::VERSION, "1.17.0") < 0 || compare_versions(Crystal::VERSION, "1.22.0") >= 0 %}
+      {% raise "Termisu input readiness supports Crystal >= 1.17.0, < 1.22.0 (Thread API)" %}
+    {% elsif !Thread.has_method?(:initialize) || !Thread.has_method?(:join) %}
+      {% raise "Termisu input readiness requires Thread#initialize and Thread#join" %}
+    {% end %}
+
+    # POSIX specifies F_DUPFD as command zero on all supported targets.
+    private F_DUPFD = 0
+
+    enum Status : UInt8
+      Ready     = 1
+      Hangup    = 2
+      Error     = 3
+      Cancelled = 4
+    end
+
+    private enum Command : UInt8
+      Rearm = 1
+      Stop  = 2
+    end
+
+    @input_fd : Int32 = -1
+    @wake_reader : IO::FileDescriptor?
+    @wake_writer : IO::FileDescriptor?
+    @control_reader : IO::FileDescriptor?
+    @control_writer : IO::FileDescriptor?
+    @thread : Thread?
+    @cancelled = Atomic(Bool).new(false)
+    @closed = Atomic(Bool).new(false)
+    @worker_error : Exception?
+    @worker_failed : Atomic(Bool) = Atomic(Bool).new(false)
+
+    {% if @top_level.has_constant?(:TERMISU_INPUT_READINESS_SPEC) %}
+      @fail_next_poll = Atomic(Bool).new(false)
+    {% end %}
+
+    def initialize(fd : Int32)
+      @input_fd = duplicate(fd)
+      wake_reader, wake_writer = IO.pipe(read_blocking: false, write_blocking: false)
+      @wake_reader = wake_reader
+      @wake_writer = wake_writer
+      control_reader, control_writer = IO.pipe(read_blocking: false, write_blocking: false)
+      @control_reader = control_reader
+      @control_writer = control_writer
+      input_fd = @input_fd
+      wake_fd = wake_writer.fd
+      control_fd = control_reader.fd
+      @thread = Thread.new do
+        worker_loop(input_fd, wake_fd, control_fd)
+      rescue error
+        # Wake the source fiber so stop can reach the synchronous join, which
+        # re-raises this original worker failure after closing all resources.
+        @worker_error = error
+        # Publish the exception across threads before sending the pipe wake.
+        @worker_failed.set(true)
+        publish(wake_fd, Status::Error) rescue nil
+        raise error
+      end
+    rescue error
+      close_descriptors
+      raise error
+    end
+
+    def wait(deadline : MonotonicTime?) : Status?
+      reader = @wake_reader || raise IO::Error.new("Input readiness lease is closed")
+      if deadline
+        remaining = deadline - monotonic_now
+        return if remaining <= Time::Span.zero
+        reader.read_timeout = remaining
+      else
+        reader.read_timeout = nil
+      end
+
+      byte = reader.read_byte
+      byte ? Status.from_value(byte) : nil
+    rescue IO::TimeoutError
+      nil
+    end
+
+    def worker_failed? : Bool
+      @worker_failed.get
+    end
+
+    def worker_error : Exception
+      if @worker_failed.get && (error = @worker_error)
+        return error
+      end
+      raise IO::Error.new("Input readiness worker failed without a recorded error")
+    end
+
+    def rearm : Nil
+      write_command(Command::Rearm)
+    end
+
+    def cancel : Nil
+      return unless @cancelled.compare_and_set(false, true)[1]
+
+      write_command(Command::Stop) rescue nil
+    end
+
+    def close : Nil
+      return unless @closed.compare_and_set(false, true)[1]
+
+      cancel
+      begin
+        @thread.try(&.join)
+      ensure
+        # Thread#join re-raises a worker failure. Descriptor ownership still
+        # ends here, and the worker error remains the primary exception.
+        close_descriptors
+      end
+    end
+
+    {% if @top_level.has_constant?(:TERMISU_INPUT_READINESS_SPEC) %}
+      def fail_worker_for_spec : Array(Int32)
+        cancel
+        @thread.try(&.join)
+        @thread = Thread.new { raise ArgumentError.new("readiness worker fault") }
+        descriptors = [
+          @wake_reader.not_nil!.fd,
+          @wake_writer.not_nil!.fd,
+          @control_reader.not_nil!.fd,
+          @control_writer.not_nil!.fd,
+        ]
+        descriptors << @input_fd
+        descriptors
+      end
+
+      def fail_next_poll_for_spec : Nil
+        @fail_next_poll.set(true)
+        rearm
+      end
+    {% end %}
+
+    private def close_descriptors : Nil
+      @wake_reader.try(&.close) rescue nil
+      @wake_writer.try(&.close) rescue nil
+      @control_reader.try(&.close) rescue nil
+      @control_writer.try(&.close) rescue nil
+      LibC.close(@input_fd) if @input_fd >= 0
+      @input_fd = -1
+    end
+
+    private def duplicate(fd : Int32) : Int32
+      duplicate = LibC.fcntl(fd, F_DUPFD, 0)
+      raise IO::Error.from_errno("Could not duplicate input descriptor") if duplicate == -1
+
+      if LibC.fcntl(duplicate, LibC::F_SETFD, LibC::FD_CLOEXEC) == -1
+        errno = Errno.value
+        LibC.close(duplicate)
+        Errno.value = errno
+        raise IO::Error.from_errno("Could not configure input descriptor duplicate")
+      end
+      duplicate
+    end
+
+    private def poll_descriptors(
+      pollfds : Pointer(Termisu::System::Poll::Pollfd),
+      count : Termisu::System::Poll::NfdsT,
+      timeout_ms : Int32 = -1,
+    ) : Int32
+      {% if @top_level.has_constant?(:TERMISU_INPUT_READINESS_SPEC) %}
+        if @fail_next_poll.compare_and_set(true, false)[1]
+          # A null descriptor array produces a real, bounded EFAULT from poll(2).
+          pollfds = Pointer(Termisu::System::Poll::Pollfd).null
+          count = Termisu::System::Poll::NfdsT.new(1)
+        end
+      {% end %}
+      loop do
+        result = Termisu::System::Poll.poll(pollfds, count, timeout_ms)
+        return result if result >= 0
+        errno = Errno.value
+        if errno.eintr?
+          return 0 if @cancelled.get
+          next
+        end
+        raise Termisu::IOError.new(errno, "Input readiness poll() failed")
+      end
+    end
+
+    private def worker_loop(input_fd : Int32, wake_fd : Int32, control_fd : Int32) : Nil
+      loop do
+        pollfds = uninitialized StaticArray(Termisu::System::Poll::Pollfd, 2)
+        control_pollfd = uninitialized Termisu::System::Poll::Pollfd
+        control_pollfd.fd = control_fd
+        control_pollfd.events = Termisu::System::Poll::POLLIN
+        control_pollfd.revents = 0_i16
+        pollfds[0] = control_pollfd
+        input_pollfd = uninitialized Termisu::System::Poll::Pollfd
+        input_pollfd.fd = input_fd
+        input_pollfd.events = Termisu::System::Poll::POLLIN
+        input_pollfd.revents = 0_i16
+        pollfds[1] = input_pollfd
+
+        poll_descriptors(pollfds.to_unsafe, Termisu::System::Poll::NfdsT.new(2))
+
+        if @cancelled.get
+          publish(wake_fd, Status::Cancelled)
+          return
+        end
+
+        # Cancellation wins a simultaneous input/HUP wake. The worker publishes
+        # it through the cooperative pipe; no cross-fiber descriptor close is
+        # needed to interrupt the source fiber on kqueue-based platforms.
+        if readable?(pollfds[0].revents)
+          ReadinessLease.classify(pollfds[0].revents)
+          if read_command(control_fd).stop?
+            publish(wake_fd, Status::Cancelled)
+            return
+          end
+        end
+        next unless pollfds[1].revents != 0
+
+        status = ReadinessLease.classify(pollfds[1].revents)
+        return unless publish(wake_fd, status)
+        if wait_for_command(control_fd).stop?
+          publish(wake_fd, Status::Cancelled)
+          return
+        end
+      end
+    end
+
+    private def poll_pipe(fd : Int32, events : Int16, timeout_ms : Int32 = -1) : Nil
+      pollfd = uninitialized Termisu::System::Poll::Pollfd
+      pollfd.fd = fd
+      pollfd.events = events
+      pollfd.revents = 0_i16
+      result = poll_descriptors(pointerof(pollfd), Termisu::System::Poll::NfdsT.new(1), timeout_ms)
+      return if result == 0
+      status = ReadinessLease.classify(pollfd.revents)
+      if events == Termisu::System::Poll::POLLOUT && status.hangup?
+        raise IO::Error.new("Input readiness wake pipe closed (revents=#{pollfd.revents})")
+      end
+    end
+
+    private def wait_for_command(control_fd : Int32) : Command
+      return Command::Stop if @cancelled.get
+      poll_pipe(control_fd, Termisu::System::Poll::POLLIN)
+      read_command(control_fd)
+    end
+
+    private def read_command(fd : Int32) : Command
+      byte = uninitialized UInt8
+      loop do
+        return Command::Stop if @cancelled.get
+        result = LibC.read(fd, pointerof(byte), 1)
+        return Command.from_value(byte) if result == 1
+        return Command::Stop if result == 0
+        errno = Errno.value
+        next if errno.eintr?
+        if errno.eagain?
+          {% if @top_level.has_constant?(:TERMISU_INPUT_READINESS_SPEC) %}
+            record_control_backpressure_for_spec
+          {% end %}
+          poll_pipe(fd, Termisu::System::Poll::POLLIN)
+          next
+        end
+        raise Termisu::IOError.new(errno, "Input readiness control pipe read failed")
+      end
+    end
+
+    private def write_command(command : Command) : Nil
+      writer = @control_writer || raise IO::Error.new("Input readiness lease is closed")
+      byte = command.value
+      loop do
+        result = LibC.write(writer.fd, pointerof(byte), 1)
+        return if result == 1
+        errno = Errno.value
+        next if errno.eintr?
+        # A full pipe already holds a command. Rearm coalesces; Stop is also
+        # represented by @cancelled, checked before processing queued commands.
+        return if errno.eagain?
+        raise Termisu::IOError.new(errno, "Input readiness control pipe write failed")
+      end
+    end
+
+    private def publish(fd : Int32, status : Status) : Bool
+      write_byte(fd, status.value)
+      true
+    rescue error : IO::Error
+      raise error unless @cancelled.get
+      false
+    end
+
+    private def write_byte(fd : Int32, byte : UInt8) : Nil
+      loop do
+        result = LibC.write(fd, pointerof(byte), 1)
+        return if result == 1
+        errno = Errno.value
+        next if errno.eintr?
+        if errno.eagain?
+          {% if @top_level.has_constant?(:TERMISU_INPUT_READINESS_SPEC) %}
+            record_wake_backpressure_for_spec
+          {% end %}
+          # Cancellation needs no extra byte when a wake is already queued.
+          return if @cancelled.get
+          # ponytail: bounded POLLOUT retry; monitor control too if saturation becomes common.
+          poll_pipe(fd, Termisu::System::Poll::POLLOUT, IDLE_SLEEP.total_milliseconds.to_i)
+          next
+        end
+        raise Termisu::IOError.new(errno, "Input readiness wake pipe write failed")
+      end
+    end
+
+    private def readable?(events : Int16) : Bool
+      mask = Termisu::System::Poll::POLLIN |
+             Termisu::System::Poll::POLLHUP |
+             Termisu::System::Poll::POLLERR |
+             Termisu::System::Poll::POLLNVAL
+      (events & mask) != 0
+    end
+
+    def self.classify(events : Int16) : Status
+      if (events & Termisu::System::Poll::POLLNVAL) != 0
+        raise Termisu::IOError.new(Errno::EBADF, "Input readiness poll() reported POLLNVAL")
+      elsif (events & Termisu::System::Poll::POLLHUP) != 0
+        # HUP can accompany POLLIN/POLLERR while trailing bytes remain.
+        Status::Hangup
+      elsif (events & Termisu::System::Poll::POLLERR) != 0
+        raise IO::Error.new("Input readiness poll() reported POLLERR (revents=#{events})")
+      else
+        Status::Ready
+      end
+    end
+  end
+
+  {% if @top_level.has_constant?(:TERMISU_INPUT_READINESS_SPEC) %}
+    def self.worker_failure_cleanup_for_spec(fd : Int32) : {Array(Int32), Exception?}
+      lease = ReadinessLease.new(fd)
+      descriptors = lease.fail_worker_for_spec
+      error = begin
+        lease.close
+        nil
+      rescue ex
+        ex
+      end
+      {descriptors, error}
+    end
+
+    def fail_readiness_poll_for_spec : Nil
+      lease = @lease || raise IO::Error.new("Input readiness lease is closed")
+      lease.fail_next_poll_for_spec
+    end
+
+    def self.readiness_status_for_spec(events : Int16) : ReadinessLease::Status
+      ReadinessLease.classify(events)
+    end
+  {% end %}
+
   @reader : Termisu::Reader
   @parser : Termisu::Input::Parser
   @running : Atomic(Bool)
@@ -56,6 +407,7 @@ class Termisu::Event::Source::Input < Termisu::Event::Source
   @stop_signal : Channel(Nil)?
   @done : Channel(Nil)?
   @fiber : Fiber?
+  @lease : ReadinessLease?
   @pending_event : Event::Any?
 
   # Creates a new input source.
@@ -67,27 +419,28 @@ class Termisu::Event::Source::Input < Termisu::Event::Source
     @lifecycle_lock = Mutex.new
   end
 
-  # Starts polling for input events and sending them to the output channel.
+  # Starts waiting for input events and sending them to the output channel.
   #
-  # Spawns a fiber that drains available input events without blocking
-  # and sends them to the channel.
-  #
-  # Serializes lifecycle changes so a previous polling fiber is fully stopped
-  # before another can start.
+  # Each run owns its descriptor duplicate, cancellation pipes, worker, and
+  # source fiber. A previous run is synchronously joined before replacement.
   def start(output : Channel(Event::Any)) : Nil
     @lifecycle_lock.synchronize do
       return if @running.get
+      cleanup_stopped_run
 
+      lease = ReadinessLease.new(@reader.@fd)
       stop_signal = Channel(Nil).new
       done = Channel(Nil).new
+      @lease = lease
       @stop_signal = stop_signal
       @done = done
       @running.set(true)
 
       @fiber = spawn(name: "termisu-input") do
-        run_loop(output, stop_signal)
+        run_loop(output, stop_signal, lease)
       ensure
         @running.set(false)
+        lease.cancel
         done.close
       end
 
@@ -95,20 +448,19 @@ class Termisu::Event::Source::Input < Termisu::Event::Source
     end
   end
 
-  # Stops polling for input events.
+  # Stops input processing and synchronously releases every run-owned resource.
   #
-  # Signals the polling fiber and waits for it to finish. When this method
-  # returns, the parser no longer touches the reader, so ownership can be
-  # handed to a raw-input caller without splitting an input sequence.
+  # When this method returns, the parser no longer touches the reader, so
+  # ownership can be handed to a raw-input caller without splitting a sequence.
   def stop : Nil
     @lifecycle_lock.synchronize do
-      fiber = @fiber
-      return unless fiber
-      return if fiber.dead?
+      return unless @fiber || @lease
 
       @running.set(false)
       @stop_signal.try { |signal| signal.close unless signal.closed? }
+      @lease.try(&.cancel)
       @done.try(&.receive?)
+      cleanup_stopped_run
       lifecycle_log { Log.debug { "Input source stopped" } }
     end
   end
@@ -130,44 +482,176 @@ class Termisu::Event::Source::Input < Termisu::Event::Source
     @running.get
   end
 
+  # Finished runs retain their lease until synchronous cleanup.
+  def stop_required? : Bool
+    @lifecycle_lock.synchronize { !@fiber.nil? || !@lease.nil? }
+  end
+
   # Returns the source name for identification.
   def name : String
     "input"
   end
 
-  # Main input loop - runs in a spawned fiber.
-  private def run_loop(output : Channel(Event::Any), stop_signal : Channel(Nil)) : Nil
+  private def cleanup_stopped_run : Nil
+    lease = @lease
+    @lease = nil
+    @fiber = nil
+    @stop_signal = nil
+    @done = nil
+    lease.try(&.close)
+  end
+
+  private def run_loop(
+    output : Channel(Event::Any),
+    stop_signal : Channel(Nil),
+    lease : ReadinessLease,
+  ) : Nil
+    # A complete event retained across backpressure has precedence over bytes
+    # that arrived later, and does not require descriptor readiness.
+    return unless drain_pending_event(output, stop_signal)
+
+    drain_initial_buffer(output, stop_signal)
+    readiness_loop(output, stop_signal, lease)
+  rescue Channel::ClosedError
+    # Channel closed during shutdown - exit gracefully.
+    Log.debug { "Input channel closed, exiting" }
+  rescue error : IO::Error
+    raise error if @running.get
+  end
+
+  private def drain_initial_buffer(
+    output : Channel(Event::Any),
+    stop_signal : Channel(Nil),
+  ) : Nil
+    # A prior parser/raw-owner call may have filled Reader past the event it
+    # consumed. Those bytes precede future descriptor readiness.
+    while @running.get && parser_buffered_input?
+      emitted, exhausted = drain_cycle(output, stop_signal)
+      break unless exhausted && parser_buffered_input?
+      Fiber.yield if emitted
+    end
+  end
+
+  private def readiness_loop(
+    output : Channel(Event::Any),
+    stop_signal : Channel(Nil),
+    lease : ReadinessLease,
+  ) : Nil
+    descriptor_closed = false
     while @running.get
-      emitted = false
-      drained = 0
+      status = lease.wait(parser_deadline)
+      break unless @running.get
+      break if status == ReadinessLease::Status::Cancelled
 
-      while @running.get && drained < MAX_DRAIN_PER_CYCLE
-        event = @pending_event || @parser.poll_event(0)
-        break unless event
+      if lease.worker_failed?
+        lifecycle_log { Log.error { "Input readiness worker failed: #{lease.worker_error.message}" } }
+        # Synchronous cleanup joins the worker and re-raises its original failure.
+        break
+      end
+      descriptor_closed ||= status == ReadinessLease::Status::Hangup
 
-        unless send_event(output, stop_signal, event)
-          # The parser already consumed this complete event. Keep it for the
-          # next run instead of losing it when a full output channel is paused.
-          @pending_event = event
-          return
-        end
-
-        @pending_event = nil
-        emitted = true
-        drained += 1
+      begin
+        emitted = drain_available(output, stop_signal, descriptor_closed)
+        return unless @running.get
+      rescue error : Termisu::IOError
+        # Some PTYs report EIO rather than a zero-byte read after HUP. Trailing
+        # bytes were drained first; remain cancellably parked like ordinary EOF.
+        raise error unless descriptor_closed
+        next
       end
 
-      break unless @running.get
+      rearm_after_drain(lease, stop_signal, descriptor_closed)
+      Fiber.yield if emitted
+    end
+  end
 
-      if emitted
-        Fiber.yield
-      else
-        sleep IDLE_SLEEP
+  private def rearm_after_drain(lease : ReadinessLease, stop_signal : Channel(Nil),
+                                descriptor_closed : Bool) : Nil
+    return if descriptor_closed
+    if @reader.eof?
+      # EOF without HUP is temporary (e.g. an open file that grows). Polling
+      # such a descriptor is always ready, so back off without delaying a
+      # parser deadline or blocking cancellation.
+      pause = IDLE_SLEEP
+      if deadline = parser_deadline
+        pause = {pause, {deadline - monotonic_now, Time::Span.zero}.max}.min
+      end
+      select
+      when stop_signal.receive?
+        return
+      when timeout(pause)
       end
     end
-  rescue Channel::ClosedError
-    # Channel closed during shutdown - exit gracefully
-    Log.debug { "Input channel closed, exiting" }
+    lease.rearm if @running.get
+  end
+
+  private def drain_pending_event(
+    output : Channel(Event::Any),
+    stop_signal : Channel(Nil),
+  ) : Bool
+    return true unless event = @pending_event
+    return false unless send_event(output, stop_signal, event)
+
+    @pending_event = nil
+    true
+  end
+
+  private def drain_available(
+    output : Channel(Event::Any),
+    stop_signal : Channel(Nil),
+    descriptor_closed : Bool,
+  ) : Bool
+    emitted, exhausted = drain_cycle(output, stop_signal)
+
+    # HUP can be reported while more than one Reader buffer of trailing input
+    # remains. Keep consuming until read(2) reaches EOF (or a PTY reports EIO),
+    # yielding between bounded cycles so a large tail stays scheduler-fair.
+    while @running.get && ((exhausted && parser_buffered_input?) ||
+          (descriptor_closed && !@reader.eof?))
+      Fiber.yield
+      cycle_emitted, exhausted = drain_cycle(output, stop_signal)
+      emitted ||= cycle_emitted
+      # A few PTY implementations can report HUP before a nonblocking read
+      # returns EAGAIN. Do not turn that mismatch into a tight drain loop.
+      break if descriptor_closed && !cycle_emitted && !parser_buffered_input?
+    end
+
+    emitted
+  end
+
+  private def drain_cycle(
+    output : Channel(Event::Any),
+    stop_signal : Channel(Nil),
+  ) : {Bool, Bool}
+    emitted = false
+    drained = 0
+
+    while @running.get && drained < MAX_DRAIN_PER_CYCLE
+      event = @parser.poll_event(0)
+      break unless event
+
+      unless send_event(output, stop_signal, event)
+        # The parser already consumed this complete event. Keep it for the next
+        # run instead of losing it when a full output channel is paused.
+        @pending_event = event
+        return {emitted, false}
+      end
+
+      emitted = true
+      drained += 1
+    end
+
+    {emitted, drained == MAX_DRAIN_PER_CYCLE}
+  end
+
+  # Parser and Reader are private implementation collaborators of this source.
+  # Direct ivar access keeps readiness/deadline plumbing out of the public API.
+  private def parser_deadline : MonotonicTime?
+    @parser.@paste_deadline
+  end
+
+  private def parser_buffered_input? : Bool
+    !@parser.@pending.empty? || @reader.@buffer_pos < @reader.@buffer_len
   end
 
   private def send_event(

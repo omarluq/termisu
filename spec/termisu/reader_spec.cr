@@ -206,10 +206,15 @@ describe Termisu::Reader do
         write_fd = -1 # Mark as closed
 
         reader = Termisu::Reader.new(read_fd)
-        byte = reader.read_byte
-        byte.should be_nil
-
+        reader.eof?.should be_false
+        reader.read_byte.should be_nil
+        reader.eof?.should be_true
+        reader.clear_buffer
+        reader.eof?.should be_false
+        reader.read_byte.should be_nil
+        reader.eof?.should be_true
         reader.close
+        reader.eof?.should be_false
       ensure
         LibC.close(read_fd) if read_fd >= 0
         LibC.close(write_fd) if write_fd >= 0

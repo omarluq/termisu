@@ -28,6 +28,7 @@ class Termisu::Reader
   @buffer : Bytes
   @buffer_pos : Int32 = 0
   @buffer_len : Int32 = 0
+  @eof : Bool = false
 
   # Maximum retry attempts for EINTR before giving up.
   # This prevents infinite loops in pathological signal storms.
@@ -40,6 +41,11 @@ class Termisu::Reader
   def initialize(@fd : Int32, buffer_size : Int32 = 128)
     @buffer = Bytes.new(buffer_size)
     Log.debug { "Reader initialized: fd=#{@fd}, buffer_size=#{buffer_size}" }
+  end
+
+  # Whether the last buffer fill reached EOF. This may be temporary on live inputs.
+  def eof? : Bool
+    @eof
   end
 
   # Reads a single byte from the input.
@@ -265,6 +271,7 @@ class Termisu::Reader
   def clear_buffer
     @buffer_pos = 0
     @buffer_len = 0
+    @eof = false
   end
 
   # Closes the reader (does not close the file descriptor).
@@ -287,12 +294,14 @@ class Termisu::Reader
       if bytes_read > 0
         @buffer_pos = 0
         @buffer_len = bytes_read.to_i32
+        @eof = false
         Termisu::Logs::Reader.trace { "fill_buffer: read #{bytes_read} bytes" }
         return true
       elsif bytes_read == 0
         # EOF
         @buffer_pos = 0
         @buffer_len = 0
+        @eof = true
         Termisu::Logs::Reader.debug { "fill_buffer: EOF" }
         return false
       end
@@ -315,6 +324,7 @@ class Termisu::Reader
         # Non-blocking I/O would block - no data available
         @buffer_pos = 0
         @buffer_len = 0
+        @eof = false
         return false
       end
 
