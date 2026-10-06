@@ -811,6 +811,46 @@ describe Termisu::Event::Source::Input do
       end
     end
 
+    it "reaps a finished readiness lease when removed from a running loop" do
+      read_fd, write_fd = create_pipe
+      reader = Termisu::Reader.new(read_fd)
+      parser = Termisu::Input::Parser.new(reader)
+      source = Termisu::Event::Source::Input.new(reader, parser)
+      event_loop = Termisu::Event::Loop.new
+
+      begin
+        source.stop_required?.should be_false
+        event_loop.add_source(source).start
+        source.stop_required?.should be_true
+
+        descriptors = input_readiness_descriptors(source)
+        done = source.@done || fail "input completion signal not created"
+        event_loop.output.close
+        LibC.write(write_fd, "x".to_unsafe, 1).should eq(1)
+
+        select
+        when done.receive?
+        when timeout(500.milliseconds)
+          fail "input source did not finish after its output closed"
+        end
+
+        source.running?.should be_false
+        source.stop_required?.should be_true
+        event_loop.remove_source(source)
+        source.stop_required?.should be_false
+        descriptors.each do |descriptor|
+          LibC.fcntl(descriptor, LibC::F_GETFD, 0).should eq(-1)
+        end
+        LibC.fcntl(read_fd, LibC::F_GETFD, 0).should_not eq(-1)
+      ensure
+        source.stop
+        event_loop.stop
+        reader.close
+        LibC.close(read_fd)
+        LibC.close(write_fd)
+      end
+    end
+
     it "closes every descriptor when the worker join re-raises" do
       read_fd, write_fd = create_pipe
       begin

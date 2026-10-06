@@ -386,6 +386,11 @@ class Termisu::Event::Source::Input < Termisu::Event::Source
     @running.get
   end
 
+  # Finished runs retain their lease until synchronous cleanup.
+  def stop_required? : Bool
+    @lifecycle_lock.synchronize { !@fiber.nil? || !@lease.nil? }
+  end
+
   # Returns the source name for identification.
   def name : String
     "input"
