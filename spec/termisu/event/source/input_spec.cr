@@ -696,6 +696,58 @@ end
 
 describe Termisu::Event::Source::Input do
   describe "cooperative readiness" do
+    it "retries a nonblocking control read after EAGAIN" do
+      read_fd, write_fd = create_pipe
+      begin
+        Termisu::Event::Source::Input.control_retry_for_spec(read_fd).should be_true
+      ensure
+        LibC.close(read_fd)
+        LibC.close(write_fd)
+      end
+    end
+
+    it "cancels despite a full nonblocking control pipe" do
+      read_fd, write_fd = create_pipe
+      begin
+        Termisu::Event::Source::Input.saturated_cancel_for_spec(read_fd).should be_true
+      ensure
+        LibC.close(read_fd)
+        LibC.close(write_fd)
+      end
+    end
+
+    it "preserves worker failure behind a full nonblocking wake pipe" do
+      read_fd, write_fd = create_pipe
+      begin
+        reader = InputReadinessCountingReader.new(read_fd)
+        parser = Termisu::Input::Parser.new(reader)
+        source = Termisu::Event::Source::Input.new(reader, parser)
+        channel = Channel(Termisu::Event::Any).new(1)
+        source.start(channel)
+        descriptors = input_readiness_descriptors(source)
+        source.saturate_readiness_wake_for_spec
+        source.fail_readiness_poll_for_spec
+        source.await_readiness_backpressure_for_spec
+        done = source.@done || fail "input completion channel not created"
+        select
+        when done.receive?
+        when timeout(1.second)
+          fail "Input did not finish after a backpressured worker failure"
+        end
+        error = expect_raises(Termisu::IOError, "Input readiness poll() failed") { source.stop }
+        error.errno.should eq(Errno::EFAULT)
+        reader.wait_count.get.should eq(0)
+        descriptors.each { |descriptor| LibC.fcntl(descriptor, LibC::F_GETFD, 0).should eq(-1) }
+        LibC.fcntl(read_fd, LibC::F_GETFD, 0).should_not eq(-1)
+      ensure
+        source.try(&.stop)
+        reader.try(&.close)
+        channel.try(&.close)
+        LibC.close(read_fd)
+        LibC.close(write_fd)
+      end
+    end
+
     it "delivers appended regular-file input after EOF without spinning" do
       File.tempfile("termisu-input") do |file|
         file.print("a")

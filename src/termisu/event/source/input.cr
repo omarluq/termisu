@@ -31,8 +31,8 @@
 class Termisu::Event::Source::Input < Termisu::Event::Source
   Log = Termisu::Logs::Event
 
-  # Ordinary idle input is event-driven. Transient EOF retries use this interval,
-  # with cancellation checked between retries.
+  # Ordinary idle input is event-driven. Only transient EOF and saturated wake
+  # pipes retry on this interval, with cancellation checked between retries.
   IDLE_SLEEP = 4.milliseconds
 
   # Maximum events drained per loop iteration.
@@ -73,7 +73,6 @@ class Termisu::Event::Source::Input < Termisu::Event::Source
     @thread : Thread?
     @cancelled = Atomic(Bool).new(false)
     @closed = Atomic(Bool).new(false)
-
     @worker_error : Exception?
     @worker_failed : Atomic(Bool) = Atomic(Bool).new(false)
 
@@ -83,10 +82,10 @@ class Termisu::Event::Source::Input < Termisu::Event::Source
 
     def initialize(fd : Int32)
       @input_fd = duplicate(fd)
-      wake_reader, wake_writer = IO.pipe
+      wake_reader, wake_writer = IO.pipe(read_blocking: false, write_blocking: false)
       @wake_reader = wake_reader
       @wake_writer = wake_writer
-      control_reader, control_writer = IO.pipe
+      control_reader, control_writer = IO.pipe(read_blocking: false, write_blocking: false)
       @control_reader = control_reader
       @control_writer = control_writer
       input_fd = @input_fd
@@ -204,6 +203,7 @@ class Termisu::Event::Source::Input < Termisu::Event::Source
     private def poll_descriptors(
       pollfds : Pointer(Termisu::System::Poll::Pollfd),
       count : Termisu::System::Poll::NfdsT,
+      timeout_ms : Int32 = -1,
     ) : Int32
       {% if @top_level.has_constant?(:TERMISU_INPUT_READINESS_SPEC) %}
         if @fail_next_poll.compare_and_set(true, false)[1]
@@ -213,10 +213,13 @@ class Termisu::Event::Source::Input < Termisu::Event::Source
         end
       {% end %}
       loop do
-        result = Termisu::System::Poll.poll(pollfds, count, -1)
+        result = Termisu::System::Poll.poll(pollfds, count, timeout_ms)
         return result if result >= 0
         errno = Errno.value
-        next if errno.eintr?
+        if errno.eintr?
+          return 0 if @cancelled.get
+          next
+        end
         raise Termisu::IOError.new(errno, "Input readiness poll() failed")
       end
     end
@@ -236,6 +239,11 @@ class Termisu::Event::Source::Input < Termisu::Event::Source
         pollfds[1] = input_pollfd
 
         poll_descriptors(pollfds.to_unsafe, Termisu::System::Poll::NfdsT.new(2))
+
+        if @cancelled.get
+          publish(wake_fd, Status::Cancelled)
+          return
+        end
 
         # Cancellation wins a simultaneous input/HUP wake. The worker publishes
         # it through the cooperative pipe; no cross-fiber descriptor close is
@@ -258,38 +266,65 @@ class Termisu::Event::Source::Input < Termisu::Event::Source
       end
     end
 
-    private def wait_for_command(control_fd : Int32) : Command
-      loop do
-        pollfd = uninitialized Termisu::System::Poll::Pollfd
-        pollfd.fd = control_fd
-        pollfd.events = Termisu::System::Poll::POLLIN
-        pollfd.revents = 0_i16
-        result = poll_descriptors(pointerof(pollfd), Termisu::System::Poll::NfdsT.new(1))
-        next if result == 0
-        ReadinessLease.classify(pollfd.revents)
-        return read_command(control_fd)
+    private def poll_pipe(fd : Int32, events : Int16, timeout_ms : Int32 = -1) : Nil
+      pollfd = uninitialized Termisu::System::Poll::Pollfd
+      pollfd.fd = fd
+      pollfd.events = events
+      pollfd.revents = 0_i16
+      result = poll_descriptors(pointerof(pollfd), Termisu::System::Poll::NfdsT.new(1), timeout_ms)
+      return if result == 0
+      status = ReadinessLease.classify(pollfd.revents)
+      if events == Termisu::System::Poll::POLLOUT && status.hangup?
+        raise IO::Error.new("Input readiness wake pipe closed (revents=#{pollfd.revents})")
       end
+    end
+
+    private def wait_for_command(control_fd : Int32) : Command
+      return Command::Stop if @cancelled.get
+      poll_pipe(control_fd, Termisu::System::Poll::POLLIN)
+      read_command(control_fd)
     end
 
     private def read_command(fd : Int32) : Command
       byte = uninitialized UInt8
       loop do
+        return Command::Stop if @cancelled.get
         result = LibC.read(fd, pointerof(byte), 1)
         return Command.from_value(byte) if result == 1
-        next if result < 0 && Errno.value.eintr?
-        return Command::Stop
+        return Command::Stop if result == 0
+        errno = Errno.value
+        next if errno.eintr?
+        if errno.eagain?
+          {% if @top_level.has_constant?(:TERMISU_INPUT_READINESS_SPEC) %}
+            record_control_backpressure_for_spec
+          {% end %}
+          poll_pipe(fd, Termisu::System::Poll::POLLIN)
+          next
+        end
+        raise Termisu::IOError.new(errno, "Input readiness control pipe read failed")
       end
     end
 
     private def write_command(command : Command) : Nil
       writer = @control_writer || raise IO::Error.new("Input readiness lease is closed")
-      write_byte(writer.fd, command.value)
+      byte = command.value
+      loop do
+        result = LibC.write(writer.fd, pointerof(byte), 1)
+        return if result == 1
+        errno = Errno.value
+        next if errno.eintr?
+        # A full pipe already holds a command. Rearm coalesces; Stop is also
+        # represented by @cancelled, checked before processing queued commands.
+        return if errno.eagain?
+        raise Termisu::IOError.new(errno, "Input readiness control pipe write failed")
+      end
     end
 
     private def publish(fd : Int32, status : Status) : Bool
       write_byte(fd, status.value)
       true
-    rescue IO::Error
+    rescue error : IO::Error
+      raise error unless @cancelled.get
       false
     end
 
@@ -297,8 +332,19 @@ class Termisu::Event::Source::Input < Termisu::Event::Source
       loop do
         result = LibC.write(fd, pointerof(byte), 1)
         return if result == 1
-        next if result < 0 && Errno.value.eintr?
-        raise IO::Error.from_errno("Input readiness pipe write failed")
+        errno = Errno.value
+        next if errno.eintr?
+        if errno.eagain?
+          {% if @top_level.has_constant?(:TERMISU_INPUT_READINESS_SPEC) %}
+            record_wake_backpressure_for_spec
+          {% end %}
+          # Cancellation needs no extra byte when a wake is already queued.
+          return if @cancelled.get
+          # ponytail: bounded POLLOUT retry; monitor control too if saturation becomes common.
+          poll_pipe(fd, Termisu::System::Poll::POLLOUT, IDLE_SLEEP.total_milliseconds.to_i)
+          next
+        end
+        raise Termisu::IOError.new(errno, "Input readiness wake pipe write failed")
       end
     end
 
