@@ -31,8 +31,8 @@
 class Termisu::Event::Source::Input < Termisu::Event::Source
   Log = Termisu::Logs::Event
 
-  # Retained for source compatibility. Input readiness is no longer polled on
-  # this interval.
+  # Ordinary idle input is event-driven. Transient EOF retries use this interval,
+  # with cancellation checked between retries.
   IDLE_SLEEP = 4.milliseconds
 
   # Maximum events drained per loop iteration.
@@ -507,10 +507,29 @@ class Termisu::Event::Source::Input < Termisu::Event::Source
         next
       end
 
-      eof = @reader.eof?
-      lease.rearm unless eof || descriptor_closed
+      rearm_after_drain(lease, stop_signal, descriptor_closed)
       Fiber.yield if emitted
     end
+  end
+
+  private def rearm_after_drain(lease : ReadinessLease, stop_signal : Channel(Nil),
+                                descriptor_closed : Bool) : Nil
+    return if descriptor_closed
+    if @reader.eof?
+      # EOF without HUP is temporary (e.g. an open file that grows). Polling
+      # such a descriptor is always ready, so back off without delaying a
+      # parser deadline or blocking cancellation.
+      pause = IDLE_SLEEP
+      if deadline = parser_deadline
+        pause = {pause, {deadline - monotonic_now, Time::Span.zero}.max}.min
+      end
+      select
+      when stop_signal.receive?
+        return
+      when timeout(pause)
+      end
+    end
+    lease.rearm if @running.get
   end
 
   private def drain_pending_event(

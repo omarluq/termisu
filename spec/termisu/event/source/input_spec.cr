@@ -696,6 +696,36 @@ end
 
 describe Termisu::Event::Source::Input do
   describe "cooperative readiness" do
+    it "delivers appended regular-file input after EOF without spinning" do
+      File.tempfile("termisu-input") do |file|
+        file.print("a")
+        file.flush
+        file.rewind
+        reader = InputReadinessCountingReader.new(file.fd)
+        parser = Termisu::Input::Parser.new(reader)
+        source = Termisu::Event::Source::Input.new(reader, parser)
+        channel = Channel(Termisu::Event::Any).new(1)
+        begin
+          source.start(channel)
+          receive_input_key(channel).char.should eq('a')
+          deadline = monotonic_now + 1.second
+          until reader.eof?
+            fail "Input did not reach regular-file EOF" if monotonic_now >= deadline
+            sleep 1.millisecond
+          end
+          before = reader.wait_count.get
+          sleep 20.milliseconds
+          (reader.wait_count.get - before).should be < 100
+          File.open(file.path, "a", &.print("b"))
+          receive_input_key(channel).char.should eq('b')
+        ensure
+          source.stop
+          reader.close
+          channel.close
+        end
+      end
+    end
+
     it "does not directly probe the input descriptor while idle" do
       Termisu::Event::Source::Input::IDLE_SLEEP.should eq(4.milliseconds)
       read_fd, write_fd = create_pipe
