@@ -74,6 +74,13 @@ class Termisu::Event::Source::Input < Termisu::Event::Source
     @cancelled = Atomic(Bool).new(false)
     @closed = Atomic(Bool).new(false)
 
+    @worker_error : Exception?
+    @worker_failed : Atomic(Bool) = Atomic(Bool).new(false)
+
+    {% if @top_level.has_constant?(:TERMISU_INPUT_READINESS_SPEC) %}
+      @fail_next_poll = Atomic(Bool).new(false)
+    {% end %}
+
     def initialize(fd : Int32)
       @input_fd = duplicate(fd)
       wake_reader, wake_writer = IO.pipe
@@ -90,7 +97,10 @@ class Termisu::Event::Source::Input < Termisu::Event::Source
       rescue error
         # Wake the source fiber so stop can reach the synchronous join, which
         # re-raises this original worker failure after closing all resources.
-        publish(wake_fd, Status::Error)
+        @worker_error = error
+        # Publish the exception across threads before sending the pipe wake.
+        @worker_failed.set(true)
+        publish(wake_fd, Status::Error) rescue nil
         raise error
       end
     rescue error
@@ -112,6 +122,17 @@ class Termisu::Event::Source::Input < Termisu::Event::Source
       byte ? Status.from_value(byte) : nil
     rescue IO::TimeoutError
       nil
+    end
+
+    def worker_failed? : Bool
+      @worker_failed.get
+    end
+
+    def worker_error : Exception
+      if @worker_failed.get && (error = @worker_error)
+        return error
+      end
+      raise IO::Error.new("Input readiness worker failed without a recorded error")
     end
 
     def rearm : Nil
@@ -151,6 +172,11 @@ class Termisu::Event::Source::Input < Termisu::Event::Source
         descriptors << @input_fd
         descriptors
       end
+
+      def fail_next_poll_for_spec : Nil
+        @fail_next_poll.set(true)
+        rearm
+      end
     {% end %}
 
     private def close_descriptors : Nil
@@ -175,6 +201,26 @@ class Termisu::Event::Source::Input < Termisu::Event::Source
       duplicate
     end
 
+    private def poll_descriptors(
+      pollfds : Pointer(Termisu::System::Poll::Pollfd),
+      count : Termisu::System::Poll::NfdsT,
+    ) : Int32
+      {% if @top_level.has_constant?(:TERMISU_INPUT_READINESS_SPEC) %}
+        if @fail_next_poll.compare_and_set(true, false)[1]
+          # A null descriptor array produces a real, bounded EFAULT from poll(2).
+          pollfds = Pointer(Termisu::System::Poll::Pollfd).null
+          count = Termisu::System::Poll::NfdsT.new(1)
+        end
+      {% end %}
+      loop do
+        result = Termisu::System::Poll.poll(pollfds, count, -1)
+        return result if result >= 0
+        errno = Errno.value
+        next if errno.eintr?
+        raise Termisu::IOError.new(errno, "Input readiness poll() failed")
+      end
+    end
+
     private def worker_loop(input_fd : Int32, wake_fd : Int32, control_fd : Int32) : Nil
       loop do
         pollfds = uninitialized StaticArray(Termisu::System::Poll::Pollfd, 2)
@@ -189,21 +235,13 @@ class Termisu::Event::Source::Input < Termisu::Event::Source
         input_pollfd.revents = 0_i16
         pollfds[1] = input_pollfd
 
-        result = Termisu::System::Poll.poll(
-          pollfds.to_unsafe,
-          Termisu::System::Poll::NfdsT.new(2),
-          -1
-        )
-        if result < 0
-          next if Errno.value.eintr?
-          publish(wake_fd, Status::Error)
-          return
-        end
+        poll_descriptors(pollfds.to_unsafe, Termisu::System::Poll::NfdsT.new(2))
 
         # Cancellation wins a simultaneous input/HUP wake. The worker publishes
         # it through the cooperative pipe; no cross-fiber descriptor close is
         # needed to interrupt the source fiber on kqueue-based platforms.
         if readable?(pollfds[0].revents)
+          ReadinessLease.classify(pollfds[0].revents)
           if read_command(control_fd).stop?
             publish(wake_fd, Status::Cancelled)
             return
@@ -211,7 +249,7 @@ class Termisu::Event::Source::Input < Termisu::Event::Source
         end
         next unless pollfds[1].revents != 0
 
-        status = classify(pollfds[1].revents)
+        status = ReadinessLease.classify(pollfds[1].revents)
         return unless publish(wake_fd, status)
         if wait_for_command(control_fd).stop?
           publish(wake_fd, Status::Cancelled)
@@ -226,13 +264,9 @@ class Termisu::Event::Source::Input < Termisu::Event::Source
         pollfd.fd = control_fd
         pollfd.events = Termisu::System::Poll::POLLIN
         pollfd.revents = 0_i16
-        result = Termisu::System::Poll.poll(
-          pointerof(pollfd),
-          Termisu::System::Poll::NfdsT.new(1),
-          -1
-        )
-        next if result < 0 && Errno.value.eintr?
-        return Command::Stop if result <= 0
+        result = poll_descriptors(pointerof(pollfd), Termisu::System::Poll::NfdsT.new(1))
+        next if result == 0
+        ReadinessLease.classify(pollfd.revents)
         return read_command(control_fd)
       end
     end
@@ -276,14 +310,14 @@ class Termisu::Event::Source::Input < Termisu::Event::Source
       (events & mask) != 0
     end
 
-    private def classify(events : Int16) : Status
+    def self.classify(events : Int16) : Status
       if (events & Termisu::System::Poll::POLLNVAL) != 0
-        Status::Error
+        raise Termisu::IOError.new(Errno::EBADF, "Input readiness poll() reported POLLNVAL")
       elsif (events & Termisu::System::Poll::POLLHUP) != 0
         # HUP can accompany POLLIN/POLLERR while trailing bytes remain.
         Status::Hangup
       elsif (events & Termisu::System::Poll::POLLERR) != 0
-        Status::Error
+        raise IO::Error.new("Input readiness poll() reported POLLERR (revents=#{events})")
       else
         Status::Ready
       end
@@ -301,6 +335,15 @@ class Termisu::Event::Source::Input < Termisu::Event::Source
         ex
       end
       {descriptors, error}
+    end
+
+    def fail_readiness_poll_for_spec : Nil
+      lease = @lease || raise IO::Error.new("Input readiness lease is closed")
+      lease.fail_next_poll_for_spec
+    end
+
+    def self.readiness_status_for_spec(events : Int16) : ReadinessLease::Status
+      ReadinessLease.classify(events)
     end
   {% end %}
 
@@ -447,8 +490,10 @@ class Termisu::Event::Source::Input < Termisu::Event::Source
       break unless @running.get
       break if status == ReadinessLease::Status::Cancelled
 
-      if status == ReadinessLease::Status::Error
-        raise Termisu::IOError.select_failed(Errno::EBADF)
+      if lease.worker_failed?
+        lifecycle_log { Log.error { "Input readiness worker failed: #{lease.worker_error.message}" } }
+        # Synchronous cleanup joins the worker and re-raises its original failure.
+        break
       end
       descriptor_closed ||= status == ReadinessLease::Status::Hangup
 
