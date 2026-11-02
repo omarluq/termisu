@@ -30,6 +30,7 @@ module Termisu::Testing
     @exited = Atomic(Bool).new(false)
     @state_lock = Mutex.new
     @last_activity : MonotonicTime
+    @reader_error : IO::Error? = nil
 
     def initialize(
       program : String,
@@ -173,6 +174,20 @@ module Termisu::Testing
       @exited.get
     end
 
+    # Captures failure-time state without waiting for output or child shutdown.
+    def diagnostics : String
+      terminated = @pty.process.terminated?
+      @state_lock.synchronize do
+        String.build do |io|
+          io << "child_pid=#{@pty.process.pid} child_terminated=#{terminated}\n"
+          io << "reader_finished=#{@exited.get} reader_error="
+          io << (@reader_error.try(&.inspect_with_backtrace) || "none") << '\n'
+          io << "output_idle_ms=#{(monotonic_now - @last_activity).total_milliseconds.round(1)}\n"
+          io << "Screen:\n" << @screen
+        end
+      end
+    end
+
     # Stops the program and releases the PTY. Idempotent.
     def close : Nil
       @pty.close
@@ -194,8 +209,9 @@ module Termisu::Testing
             end
             @started.set(true)
           end
-        rescue IO::Error
-          # master hung up (child exited; Linux raises EIO) — treat as EOF
+        rescue error : IO::Error
+          # Keep the existing EOF behavior, but retain unexpected read errors too.
+          @state_lock.synchronize { @reader_error = error }
         end
         @exited.set(true)
       end

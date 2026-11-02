@@ -56,6 +56,18 @@ jobs:
         run: shards build hace
       - name: Run E2E suite
         run: bin/hace e2e
+        env:
+          TERMISU_LOG_LEVEL: debug
+          TERMISU_LOG_SYNC: "true"
+          TERMISU_LOG_FILE: ${{ runner.temp }}/termisu-e2e.log
+      - name: Preserve E2E failure logs
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-diagnostics-${{ matrix.os }}
+          path: ${{ runner.temp }}/termisu-e2e.log
+          if-no-files-found: warn
+          retention-days: 7
   e2e-freebsd:
     name: E2E (FreeBSD 15.0)
     runs-on: ubuntu-latest
