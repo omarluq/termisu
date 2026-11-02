@@ -3,7 +3,7 @@
 # Provides portable event handling using the POSIX poll() syscall
 # with software-based timer implementation using monotonic clock.
 require "../../time_compat"
-require "../../system/poll"
+require "../../system/readiness"
 
 #
 # ## Features
@@ -301,7 +301,7 @@ class Termisu::Event::Poller::Poll < Termisu::Event::Poller
     remaining = timeout_ms
     loop do
       start = monotonic_now
-      result = Termisu::System::Poll.poll(@fds.to_unsafe, Termisu::System::Poll::NfdsT.new(@fds.size), remaining)
+      result = Termisu::System::Readiness.poll(@fds.to_unsafe, Termisu::System::Poll::NfdsT.new(@fds.size), remaining)
       if result < 0 && Errno.value == Errno::EINTR
         if remaining >= 0 # finite timeout — subtract elapsed time
           elapsed = (monotonic_now - start).total_milliseconds.to_i

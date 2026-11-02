@@ -220,7 +220,7 @@ class Termisu::Event::Source::Input < Termisu::Event::Source
         end
       {% end %}
       loop do
-        result = Termisu::System::Poll.poll(pollfds, count, timeout_ms)
+        result = Termisu::System::Readiness.poll(pollfds, count, timeout_ms)
         return result if result >= 0
         errno = Errno.value
         if errno.eintr?
