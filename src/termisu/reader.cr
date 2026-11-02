@@ -20,7 +20,7 @@
 # reader.close
 # ```
 require "./time_compat"
-require "./system/poll"
+require "./system/readiness"
 
 class Termisu::Reader
   Log = Termisu::Logs::Reader
@@ -163,7 +163,7 @@ class Termisu::Reader
       # Compute remaining timeout from original start to avoid drift
       remaining_ms = remaining_timeout_ms(original_timeout_ms, start)
 
-      result = Termisu::System::Poll.poll(pointerof(pollfd), Termisu::System::Poll::NfdsT.new(1), remaining_ms)
+      result = Termisu::System::Readiness.poll(pointerof(pollfd), Termisu::System::Poll::NfdsT.new(1), remaining_ms)
 
       if result > 0
         revents = pollfd.revents
