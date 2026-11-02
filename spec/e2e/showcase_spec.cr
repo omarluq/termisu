@@ -106,7 +106,9 @@ describe "Showcase application (e2e)" do
     it "shows the goodbye message on 'q'" do
       with_showcase do |term|
         term.write("q")
-        term.get_by_text(/Goodbye/).should be_true
+        goodbye_visible = term.get_by_text(/Goodbye/)
+        STDERR.puts term.diagnostics unless goodbye_visible
+        goodbye_visible.should be_true
         term.get_by_text(/Termisu/).should be_true
       end
     end
@@ -114,7 +116,9 @@ describe "Showcase application (e2e)" do
     it "exits on uppercase 'Q'" do
       with_showcase do |term|
         term.write("Q")
-        term.get_by_text(/Goodbye/).should be_true
+        goodbye_visible = term.get_by_text(/Goodbye/)
+        STDERR.puts term.diagnostics unless goodbye_visible
+        goodbye_visible.should be_true
       end
     end
   end

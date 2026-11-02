@@ -2,7 +2,41 @@ require "spec"
 require "../../../src/termisu"
 require "../../../src/termisu/testing"
 
+private class ReaderFailureTerminal < Termisu::Testing::Terminal
+  def fail_reader : Nil
+    @pty.master.close
+  end
+end
+
 describe Termisu::Testing::Terminal do
+  describe "#diagnostics" do
+    it "captures a live child's screen without waiting for it to exit" do
+      Termisu::Testing.terminal("sh", ["-c", "printf ready; exec sleep 5"]) do |term|
+        term.get_by_text("ready").should be_true
+        report = term.diagnostics
+        report.should contain("child_terminated=false")
+        report.should contain("reader_finished=false")
+        report.should contain("reader_error=none")
+        report.should contain("ready")
+      end
+    end
+
+    it "preserves a PTY reader error alongside the last screen" do
+      term = ReaderFailureTerminal.new("sh", ["-c", "printf ready; exec sleep 5"])
+      begin
+        term.get_by_text("ready").should be_true
+        term.fail_reader
+        term.wait_until { term.exited? }.should be_true
+        report = term.diagnostics
+        report.should contain("reader_finished=true")
+        report.should_not contain("reader_error=none")
+        report.should contain("ready")
+      ensure
+        term.close
+      end
+    end
+  end
+
   describe "#wait_until" do
     it "returns true as soon as the condition holds" do
       Termisu::Testing.terminal("sh", ["-c", "printf ready; exec sleep 5"]) do |term|
