@@ -185,6 +185,36 @@ crystal spec spec/termisu/buffer_spec.cr
 crystal spec --verbose
 ```
 
+### Windows console contract probe (experimental)
+
+The Windows port is not yet runtime-qualified. With Crystal 1.21 on x64 Windows
+and an attached VT-capable console, run the isolated native probe:
+
+```powershell
+crystal spec spec/termisu/system/console_spec.cr
+# Repeat with both standard streams redirected while retaining the attached console:
+cmd /d /c "crystal spec spec/termisu/system/console_spec.cr <NUL >windows-console-probe.log 2>&1"
+```
+
+This checks native record layouts, independently opened non-inheritable console
+handles, cleanup, mode restoration, non-consuming console waits, and cancellation
+of an idle native event wait while cooperative fibers run. No input records are
+read or flushed. The idle-wait check uses events, not a blocked console read; its
+atomic completion polling is test instrumentation, not the production wake bridge.
+
+The `Windows console probes` workflow runs the isolated binary on Windows 2025
+with Crystal 1.21. Its test-only PowerShell host explicitly allocates a console
+when needed, preserves the runner's standard handles, redirects the child's
+streams, and drains both output pipes concurrently. It enforces a 30-second
+runtime limit and uploads host metadata plus stdout/stderr even when tests fail.
+This explicit test-host allocation is not production auto-attachment behavior.
+
+The probe deliberately imports only the native bindings. It does not qualify the
+full Windows input source, VT character/record decoding, child handoff, ConPTY,
+or end-to-end rendering. It contains no Windows examples on Unix: a Unix run or a
+cross-target semantic check is **not** native Windows validation. A missing attached
+console is a failure, not a silently skipped native test.
+
 ## Code Coverage
 
 Code coverage is automatically generated and uploaded to [Codecov](https://codecov.io) on every push to `main`. The CI workflow uses [kcov](https://github.com/SimonKagstrom/kcov) to measure coverage.
