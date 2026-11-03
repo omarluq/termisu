@@ -42,7 +42,7 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force -Path bin | Out-Null
           crystal --version
-          crystal spec spec/termisu/system/console_spec.cr --build-only -o bin/windows-console-probe.exe --error-on-warnings
+          crystal build spec/termisu/system/console_spec.cr -o bin/windows-console-probe.exe --error-on-warnings
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Run native probe with redirected standard streams
         shell: pwsh
