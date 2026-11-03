@@ -7,6 +7,7 @@ require "spec"
   end
 
   require "../../../src/termisu/system/console"
+  require "../../../src/termisu/system/console/readiness_lease"
   require "../../../src/termisu/time_compat"
 
   alias WindowsConsole = Termisu::System::Console::C
@@ -91,6 +92,46 @@ require "spec"
       handle = Native.CreateEventW(nil, 1, 0, nil)
       raise IO::Error.from_winerror("CreateEventW") if handle.null?
       handle
+    end
+
+    class FailedWaitLease < Termisu::System::Console::ReadinessLease
+      getter failure = IO::Error.new("injected readiness wait failure")
+
+      private def wait_handles(_handles : Array(LibC::HANDLE)) : UInt32
+        raise @failure
+      end
+    end
+
+    class FailedNotificationLease < Termisu::System::Console::ReadinessLease
+      getter failure = IO::Error.new("injected readiness notification failure")
+
+      private def publish(_status : Status) : Nil
+        raise @failure
+      end
+    end
+
+    class FailedCancellationLease < Termisu::System::Console::ReadinessLease
+      @fail_once = true
+
+      private def signal_cancellation : Nil
+        if @fail_once
+          @fail_once = false
+          raise IO::Error.new("injected cancellation failure")
+        end
+        super
+      end
+    end
+
+    class UnconfirmedJoinLease < Termisu::System::Console::ReadinessLease
+      @fail_once = true
+
+      private def join_worker : Nil
+        if @fail_once
+          @fail_once = false
+          raise IO::Error.new("injected unconfirmed join")
+        end
+        super
+      end
     end
   end
 
@@ -276,5 +317,123 @@ require "spec"
         written.get.should eq(1_u32)
       end
     end
+
+    it "joins idle production readiness runs before closing all five owned handles" do
+      WindowsConsoleProbe.with_console do |input, _output|
+        WindowsConsoleProbe.check WindowsConsole.GetNumberOfConsoleInputEvents(input, out before),
+          "GetNumberOfConsoleInputEvents"
+        before.should eq(0_u32)
+        records = Slice(WindowsConsole::InputRecord).new(1) { WindowsConsole::InputRecord.new }
+        Termisu::System::Console.read_records(input, records).should eq(0)
+        8.times do
+          lease = Termisu::System::Console::ReadinessLease.new(input.address)
+          handles = [lease.@input, lease.@cancel, lease.@rearm, lease.@writer,
+                     LibC::HANDLE.new(lease.@reader.not_nil!.fd)]
+          begin
+            lease.wait(monotonic_now + 20.milliseconds).should be_nil
+            spawn do
+              sleep 1.millisecond
+              lease.cancel
+            end
+            lease.wait(nil).should eq(Termisu::System::Console::ReadinessLease::Status::Cancelled)
+          ensure
+            lease.close
+          end
+          lease.close
+          handles.each do |handle|
+            result = WindowsConsoleProbe::Native.GetHandleInformation(handle, out _)
+            error = LibC.GetLastError
+            result.should eq(0)
+            error.should eq(6_u32)
+          end
+          WindowsConsoleProbe.check LibC.GetConsoleMode(input, out _), "GetConsoleMode(borrowed input)"
+        end
+        WindowsConsoleProbe.check WindowsConsole.GetNumberOfConsoleInputEvents(input, out after),
+          "GetNumberOfConsoleInputEvents"
+        after.should eq(before)
+      end
+    end
+
+    it "rearms the production worker without consuming its readiness signal" do
+      WindowsConsoleProbe.with_handle(WindowsConsoleProbe.event) do |input|
+        WindowsConsoleProbe.check WindowsConsoleProbe::Native.SetEvent(input), "SetEvent"
+        lease = Termisu::System::Console::ReadinessLease.new(input.address)
+        begin
+          lease.wait(monotonic_now + 1.second).should eq(Termisu::System::Console::ReadinessLease::Status::Ready)
+          lease.rearm
+          lease.wait(monotonic_now + 1.second).should eq(Termisu::System::Console::ReadinessLease::Status::Ready)
+          handles = [input]
+          WindowsConsoleProbe::Native.WaitForMultipleObjects(1_u32, handles, 0, 0_u32).should eq(LibC::WAIT_OBJECT_0)
+        ensure
+          lease.close
+        end
+      end
+    end
+
+    it "cancels a pending unread wake without requiring the source to drain it" do
+      WindowsConsoleProbe.with_handle(WindowsConsoleProbe.event) do |input|
+        WindowsConsoleProbe.check WindowsConsoleProbe::Native.SetEvent(input), "SetEvent"
+        lease = Termisu::System::Console::ReadinessLease.new(input.address)
+        begin
+          deadline = monotonic_now + 1.second
+          until lease.@wake_pending.get
+            fail "native worker did not publish readiness" if monotonic_now >= deadline
+            sleep 1.millisecond
+          end
+          lease.cancel
+        ensure
+          lease.close
+        end
+      end
+    end
+
+    it "reports the original native duplication failure during construction" do
+      expect_raises(IO::Error, /DuplicateHandle/) do
+        Termisu::System::Console::ReadinessLease.new(0_u64)
+      end
+    end
+
+    it "preserves worker failures through notification failure, EOF and cleanup" do
+      {% for type in ["WindowsConsoleProbe::FailedWaitLease", "WindowsConsoleProbe::FailedNotificationLease"] %}
+        WindowsConsoleProbe.with_handle(WindowsConsoleProbe.event) do |input|
+          WindowsConsoleProbe.check WindowsConsoleProbe::Native.SetEvent(input), "SetEvent"
+          lease = {{type.id}}.new(input.address)
+          begin
+            lease.wait(monotonic_now + 1.second).should eq(Termisu::System::Console::ReadinessLease::Status::Error)
+            lease.worker_error.should be(lease.failure)
+          ensure
+            error = expect_raises(IO::Error, /injected readiness/) { lease.close }
+            error.should be(lease.failure)
+          end
+          lease.close
+        end
+      {% end %}
+    end
+
+    it "retains live wait resources when cancellation or joining fails" do
+      [WindowsConsoleProbe::FailedCancellationLease, WindowsConsoleProbe::UnconfirmedJoinLease].each do |type|
+        WindowsConsoleProbe.with_handle(WindowsConsoleProbe.event) do |input|
+          lease = type.new(input.address)
+          handles = [lease.@input, lease.@cancel, lease.@rearm,
+                     LibC::HANDLE.new(lease.@reader.not_nil!.fd)]
+          begin
+            expect_raises(IO::Error, /injected/) { lease.close }
+            handles.each do |handle|
+              WindowsConsoleProbe.check WindowsConsoleProbe::Native.GetHandleInformation(handle, out _),
+                "GetHandleInformation(retained wait resource)"
+            end
+          ensure
+            lease.close
+          end
+          handles.each do |handle|
+            result = WindowsConsoleProbe::Native.GetHandleInformation(handle, out _)
+            error = LibC.GetLastError
+            result.should eq(0)
+            error.should eq(6_u32)
+          end
+        end
+      end
+    end
+
   end
 {% end %}

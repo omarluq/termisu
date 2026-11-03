@@ -188,7 +188,7 @@ crystal spec --verbose
 ### Windows console contract probe (experimental)
 
 The Windows port is not yet runtime-qualified. With Crystal 1.21 on x64 Windows
-and an attached VT-capable console, run the isolated native probe:
+and an attached VT-capable **disposable, idle console**, run the isolated native probe:
 
 ```powershell
 crystal spec spec/termisu/system/console_spec.cr
@@ -196,11 +196,13 @@ crystal spec spec/termisu/system/console_spec.cr
 cmd /d /c "crystal spec spec/termisu/system/console_spec.cr <NUL >windows-console-probe.log 2>&1"
 ```
 
-This checks native record layouts, independently opened non-inheritable console
-handles, cleanup, mode restoration, non-consuming console waits, and cancellation
-of an idle native event wait while cooperative fibers run. No input records are
-read or flushed. The idle-wait check uses events, not a blocked console read; its
-atomic completion polling is test instrumentation, not the production wake bridge.
+The probe checks native layouts, owned non-inheritable handles, cleanup and mode
+restoration. It exercises the native readiness lease's cooperative pipe wake-up,
+rearming, cancellation/join, unread notifications, and failure cleanup.
+
+**Do not run it in a live interactive console.** The idle checks require an
+empty input queue. They do not flush it. Console modes are shared and restored
+after each test.
 
 The `Windows console probes` workflow runs the isolated binary on Windows 2025
 with Crystal 1.21. Its test-only PowerShell host explicitly allocates a console
@@ -209,11 +211,11 @@ streams, and drains both output pipes concurrently. It enforces a 30-second
 runtime limit and uploads host metadata plus stdout/stderr even when tests fail.
 This explicit test-host allocation is not production auto-attachment behavior.
 
-The probe deliberately imports only the native bindings. It does not qualify the
-full Windows input source, VT character/record decoding, child handoff, ConPTY,
-or end-to-end rendering. It contains no Windows examples on Unix: a Unix run or a
-cross-target semantic check is **not** native Windows validation. A missing attached
-console is a failure, not a silently skipped native test.
+The probe imports only the isolated native components. It does not qualify the
+full Windows facade/input source, all input protocols (mouse/paste/replies), raw or
+child handoff, ConPTY, or end-to-end rendering. It contains no Windows examples on
+Unix: a Unix run or a cross-target semantic check is **not** native Windows
+validation. A missing attached console is a failure, not a silently skipped test.
 
 ## Code Coverage
 
