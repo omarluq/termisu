@@ -1,6 +1,10 @@
 require "../../spec_helper"
 require "../../../src/termisu/system/readiness"
 
+{% if flag?(:linux) %}
+  require "c/sys/resource"
+{% end %}
+
 private def readiness_pollfd(fd : Int32, events : Int16 = Termisu::System::Poll::POLLIN)
   descriptor = uninitialized Termisu::System::Poll::Pollfd
   descriptor.fd = fd
@@ -112,8 +116,15 @@ describe Termisu::System::Readiness do
 
   {% if flag?(:linux) %}
     it "sizes select bitmaps for real descriptors above FD_SETSIZE" do
+      min_fd = Termisu::Reader::FD_SETSIZE + 64
+      limit = uninitialized LibC::Rlimit
+      LibC.getrlimit(LibC::RLIMIT_NOFILE, pointerof(limit)).should eq(0)
+      if limit.rlim_cur <= min_fd
+        pending!("RLIMIT_NOFILE=#{limit.rlim_cur} cannot allocate fd >= #{min_fd}")
+      end
+
       read_fd, write_fd = create_pipe
-      high_fd = LibC.fcntl(read_fd, 0, Termisu::Reader::FD_SETSIZE + 64)
+      high_fd = LibC.fcntl(read_fd, 0, min_fd)
       high_fd.should be >= Termisu::Reader::FD_SETSIZE
       descriptor = readiness_pollfd(high_fd)
       LibC.write(write_fd, "h".to_unsafe, 1).should eq(1)
