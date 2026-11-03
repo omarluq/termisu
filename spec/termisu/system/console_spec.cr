@@ -221,5 +221,60 @@ require "spec"
         end
       end
     end
+
+    it "calls the documented bounded NOWAIT record API without consuming input" do
+      WindowsConsoleProbe.with_console do |input, _output|
+        records = Slice(WindowsConsole::InputRecord).new(32) { WindowsConsole::InputRecord.new }
+        WindowsConsoleProbe.check WindowsConsole.GetNumberOfConsoleInputEvents(input, out before),
+          "GetNumberOfConsoleInputEvents"
+        count = Termisu::System::Console.read_records(input, records, remove: false)
+        count.should be >= 0
+        count.should be <= records.size
+        WindowsConsoleProbe.check WindowsConsole.GetNumberOfConsoleInputEvents(input, out after),
+          "GetNumberOfConsoleInputEvents"
+        after.should be >= before
+      end
+    end
+
+    it "wakes a cooperative timed pipe reader from a synchronous native writer" do
+      WindowsConsoleProbe.with_handle(WindowsConsoleProbe.event) do |cancel|
+        reader, writer = IO.pipe(read_blocking: false, write_blocking: true)
+        write_result = Atomic(Int32).new(-1)
+        written = Atomic(UInt32).new(0_u32)
+        native_error = Atomic(UInt32).new(0_u32)
+        handles = [cancel]
+        worker = Thread.new do
+          result = WindowsConsoleProbe::Native.WaitForMultipleObjects(1_u32, handles, 0, 5000_u32)
+          if result == LibC::WAIT_OBJECT_0
+            byte = 1_u8
+            result = LibC.WriteFile(LibC::HANDLE.new(writer.fd), pointerof(byte), 1_u32, out count, nil)
+            native_error.set(LibC.GetLastError) if result == 0
+            written.set(count)
+            write_result.set(result)
+          else
+            native_error.set(result == LibC::WAIT_FAILED ? LibC.GetLastError : result)
+          end
+        end
+        begin
+          heartbeat = Atomic(Bool).new(false)
+          spawn { heartbeat.set(true) }
+          reader.read_timeout = 10.milliseconds
+          expect_raises(IO::TimeoutError) { reader.read_byte }
+          heartbeat.get.should be_true
+          write_result.get.should eq(-1)
+          WindowsConsoleProbe.check WindowsConsoleProbe::Native.SetEvent(cancel), "SetEvent"
+          reader.read_timeout = 2.seconds
+          reader.read_byte.should eq(1_u8)
+        ensure
+          WindowsConsoleProbe::Native.SetEvent(cancel)
+          worker.join
+          reader.close
+          writer.close
+        end
+        native_error.get.should eq(0_u32)
+        write_result.get.should eq(1)
+        written.get.should eq(1_u32)
+      end
+    end
   end
 {% end %}
