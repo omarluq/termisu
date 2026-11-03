@@ -83,11 +83,12 @@ jobs:
           key: freebsd-e2e-${{ hashFiles('shard.yml', 'shard.lock') }}
           restore-keys: |
             freebsd-e2e-
-      - name: Run E2E in FreeBSD VM
+      - name: Prepare FreeBSD E2E VM
         uses: vmactions/freebsd-vm@4469451fe39bee80be4066836c5170362e9349f3 # v1.5.7
         with:
           release: "15.0"
           usesh: true
+          sync: rsync
           prepare: |
             pkg install -y crystal shards terminfo-db
           run: |
@@ -97,4 +98,21 @@ jobs:
             shards --version
             shards install
             shards build hace
-            bin/hace e2e
+      - name: Run FreeBSD E2E suite
+        # This wrapper copies logs back even if the test command fails.
+        shell: freebsd {0}
+        run: |
+          set -eux
+          export TERM=xterm-256color
+          export TERMISU_LOG_LEVEL=debug
+          export TERMISU_LOG_SYNC=true
+          export TERMISU_LOG_FILE="$PWD/termisu-e2e-freebsd.log"
+          bin/hace e2e
+      - name: Preserve FreeBSD E2E failure logs
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-diagnostics-freebsd
+          path: termisu-e2e-freebsd.log
+          if-no-files-found: warn
+          retention-days: 7
