@@ -864,7 +864,7 @@ describe Termisu::Event::Source::Input do
       begin
         reader = InputReadinessCountingReader.new(read_fd)
         parser = Termisu::Input::Parser.new(reader)
-        source = Termisu::Event::Source::Input.new(reader, parser)
+        source = InputReadinessParkingSource.new(reader, parser)
         channel = Channel(Termisu::Event::Any).new(3)
 
         source.start(channel)
@@ -874,9 +874,11 @@ describe Termisu::Event::Source::Input do
 
         receive_input_key(channel).char.should eq('a')
         receive_input_key(channel).char.should eq('é')
-        1_000.times do
-          break if reader.@eof
-          Fiber.yield
+        # EOF can precede the final HUP notification; wait for its drain to finish.
+        select
+        when source.parked.receive
+        when timeout(500.milliseconds)
+          fail "input source did not park after HUP"
         end
         reader.@eof.should be_true
         count_at_eof = reader.wait_count.get
