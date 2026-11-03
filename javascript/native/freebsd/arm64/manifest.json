@@ -1,0 +1,7 @@
+{
+  "target": "native-freebsd-arm64",
+  "os": "freebsd",
+  "cpu": "arm64",
+  "libc": "n/a",
+  "library": "libtermisu.so"
+}
