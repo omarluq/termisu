@@ -35,6 +35,28 @@ describe Termisu::Testing::Terminal do
         term.close
       end
     end
+
+    it "preserves screen parser exceptions and marks the reader finished" do
+      Termisu::Testing.terminal("sh", ["-c", "printf 'ready\\033[38;5;999m'; exec sleep 5"]) do |term|
+        term.wait_until { term.exited? }.should be_true
+        report = term.diagnostics
+        report.should contain("child_terminated=false")
+        report.should contain("reader_finished=true")
+        report.should contain("ArgumentError")
+        report.should contain("ANSI-256 index must be 0-255 or -1, got 999")
+        report.should contain("ready")
+      end
+    end
+
+    it "treats a normal PTY slave hangup as EOF and retains final output" do
+      Termisu::Testing.terminal("sh", ["-c", "printf final-output"]) do |term|
+        term.wait_until { term.exited? }.should be_true
+        report = term.diagnostics
+        report.should contain("reader_finished=true")
+        report.should contain("reader_error=none")
+        report.should contain("final-output")
+      end
+    end
   end
 
   describe "#wait_until" do
