@@ -64,9 +64,15 @@ require "../console"
     end
 
     private def nul_key?(key : C::KeyEventRecord) : Bool
-      # VT text records have no virtual key; Ctrl+Space and Unicode packets can be NUL.
-      key.virtual_key_code == 0 || key.virtual_key_code == 0xE7 ||
-        (key.virtual_key_code == 0x20 && (key.control_key_state & 0x000C) != 0)
+      return true if key.virtual_key_code == 0 || key.virtual_key_code == 0xE7 ||
+                     (key.virtual_key_code == 0x20 && (key.control_key_state & 0x000C) != 0)
+      # Conhost remaps NUL with VkKeyScanW(0), not necessarily Ctrl+Space.
+      mapping = Keyboard.VkKeyScanW(0_u16)
+      state = key.control_key_state
+      key.virtual_key_code == (mapping & 0xFF) &&
+        ((state & 0x0010) != 0) == ((mapping & 0x0100) != 0) &&
+        ((state & 0x000C) != 0) == ((mapping & 0x0200) != 0) &&
+        ((state & 0x0003) != 0) == ((mapping & 0x0400) != 0)
     end
 
     private def decode_unit(unit : UInt16) : Nil
