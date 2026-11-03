@@ -1,4 +1,6 @@
 {% if flag?(:win32) %}
+  require "./system/console"
+
   # Windows console backend. Loaded after the POSIX classes it reopens, so
   # each method here replaces its POSIX body, which is then never compiled.
   #
@@ -8,53 +10,6 @@
   # records, read only once a record is known to be waiting, so nothing is
   # ever pulled off the console while a child process (an editor) owns it.
   module Termisu::System::Console
-    lib C
-      struct Coord
-        x : Int16
-        y : Int16
-      end
-
-      struct SmallRect
-        left : Int16
-        top : Int16
-        right : Int16
-        bottom : Int16
-      end
-
-      struct ScreenBufferInfo
-        size : Coord
-        cursor_position : Coord
-        attributes : UInt16
-        window : SmallRect
-        maximum_window_size : Coord
-      end
-
-      # KEY_EVENT_RECORD. INPUT_RECORD's event field is a union; only key
-      # events are read, and every other member is no larger than this one.
-      struct KeyEventRecord
-        key_down : LibC::BOOL
-        repeat_count : UInt16
-        virtual_key_code : UInt16
-        virtual_scan_code : UInt16
-        unicode_char : UInt16
-        control_key_state : LibC::DWORD
-      end
-
-      struct InputRecord
-        event_type : UInt16
-        key_event : KeyEventRecord
-      end
-
-      KEY_EVENT = 0x0001_u16
-
-      ENABLE_EXTENDED_FLAGS  = 0x0080_u32
-      ENABLE_QUICK_EDIT_MODE = 0x0040_u32
-
-      fun GetConsoleScreenBufferInfo(handle : LibC::HANDLE, info : ScreenBufferInfo*) : LibC::BOOL
-      fun GetNumberOfConsoleInputEvents(handle : LibC::HANDLE, count : LibC::DWORD*) : LibC::BOOL
-      fun ReadConsoleInputW(handle : LibC::HANDLE, buffer : InputRecord*, length : LibC::DWORD, read : LibC::DWORD*) : LibC::BOOL
-    end
-
     # Polled instead of waited on: the input source already sleeps between
     # empty polls, and a wait would block every fiber on this thread.
     POLL_STEP = 5.milliseconds
