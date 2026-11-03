@@ -481,6 +481,11 @@ require "spec"
           WindowsConsoleProbe.check WindowsConsole.WriteConsoleInputW(input, records, records.size.to_u32, out written),
             "WriteConsoleInputW(protocol fixture)"
           written.should eq(records.size)
+          peek = Slice(WindowsConsole::InputRecord).new(32) { WindowsConsole::InputRecord.new }
+          count = Termisu::System::Console.read_records(input, peek, remove: false)
+          nul_records = peek[0, count].select do |record|
+            record.event_type == WindowsConsole::KEY_EVENT && record.key_event.unicode_char == 0
+          end.map { |record| {record.key_event.virtual_key_code, record.key_event.control_key_state} }
           decoder = Termisu::System::Console::Input.new(input.address)
           byte = Bytes.new(1)
           text = IO::Memory.new
@@ -489,11 +494,32 @@ require "spec"
             break if count == 0
             text.write(byte[0, count])
           end
-          ["a\e[A\e[1;5Dλ😀\0", "a\eOA\e[1;5Dλ😀\0"].should contain(text.to_s)
+          expected = ["a\e[A\e[1;5Dλ😀\0", "a\eOA\e[1;5Dλ😀\0"]
+          unless expected.includes?(text.to_s)
+            STDERR.puts "NUL record keys/states=#{nul_records.inspect}; layout mapping=#{Termisu::System::Console::Keyboard.VkKeyScanW(0_u16)}"
+          end
+          expected.should contain(text.to_s)
           WindowsConsoleProbe.check WindowsConsole.GetNumberOfConsoleInputEvents(input, out after),
             "GetNumberOfConsoleInputEvents"
           after.should eq(0_u32)
         end
+      end
+    end
+
+    it "preserves layout-mapped NUL records without emitting modifier-only keys" do
+      WindowsConsoleProbe.with_console do |input, _output|
+        mapping = Termisu::System::Console::Keyboard.VkKeyScanW(0_u16)
+        state = 0_u32
+        state |= 0x0010_u32 if (mapping & 0x0100) != 0
+        state |= 0x0008_u32 if (mapping & 0x0200) != 0
+        state |= 0x0002_u32 if (mapping & 0x0400) != 0
+        decoder = WindowsConsoleProbe::BufferedInput.new(input.address)
+        decoder.seed([WindowsConsoleProbe.key(0, 0x10, state: 0x0010_u32),
+                      WindowsConsoleProbe.key(0, (mapping & 0xFF).to_u16, state: state),
+                      WindowsConsoleProbe.key(0x78)])
+        buffer = Bytes.new(8)
+        count = decoder.read(buffer)
+        String.new(buffer[0, count]).should eq("\0x")
       end
     end
 

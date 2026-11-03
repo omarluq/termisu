@@ -54,6 +54,11 @@
       fun WaitForMultipleObjects(count : UInt32, handles : LibC::HANDLE*, wait_all : LibC::BOOL, timeout_ms : UInt32) : UInt32
     end
 
+    @[Link("user32")]
+    lib Keyboard
+      fun VkKeyScanW(character : UInt16) : Int16
+    end
+
     alias RecordReader = Proc(LibC::HANDLE, Pointer(C::InputRecord), UInt32, Pointer(UInt32), UInt16, LibC::BOOL)
 
     # ReadConsoleInputExW has no import library; Microsoft documents this kernel32 export.
