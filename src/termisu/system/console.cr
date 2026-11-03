@@ -49,5 +49,27 @@
       fun GetNumberOfConsoleInputEvents(handle : LibC::HANDLE, count : LibC::DWORD*) : LibC::BOOL
       fun ReadConsoleInputW(handle : LibC::HANDLE, buffer : InputRecord*, length : LibC::DWORD, read : LibC::DWORD*) : LibC::BOOL
     end
+
+    alias RecordReader = Proc(LibC::HANDLE, Pointer(C::InputRecord), UInt32, Pointer(UInt32), UInt16, LibC::BOOL)
+
+    # ReadConsoleInputExW has no import library; Microsoft documents this kernel32 export.
+    READ_RECORDS = begin
+      name = "kernel32.dll\0".to_utf16
+      if LibC.GetModuleHandleExW(LibC::GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, name, out library) == 0
+        raise IO::Error.from_winerror("GetModuleHandleExW(kernel32)")
+      end
+      address = LibC.GetProcAddress(library, "ReadConsoleInputExW")
+      raise IO::Error.from_winerror("GetProcAddress(ReadConsoleInputExW)") if address.null?
+      RecordReader.new(address, Pointer(Void).null)
+    end
+
+    def self.read_records(input : LibC::HANDLE, records : Slice(C::InputRecord), *, remove : Bool = true) : Int32
+      count = 0_u32
+      flags = remove ? 0x0002_u16 : 0x0003_u16 # NOWAIT, optionally NOREMOVE
+      if READ_RECORDS.call(input, records.to_unsafe, records.size.to_u32, pointerof(count), flags) == 0
+        raise IO::Error.from_winerror("ReadConsoleInputExW")
+      end
+      count.to_i32
+    end
   end
 {% end %}
