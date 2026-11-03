@@ -346,11 +346,16 @@ begin
   termisu.render
   sleep 0.2.seconds
 
+  # Skip intermediate renders rather than accumulating scheduler/render delays.
+  goodbye_started = monotonic_now
   goodbye.each_char_with_index do |char, idx|
     termisu.set_cell(margin + idx, status_y, char, fg: Termisu::Color.cyan, attr: Termisu::Attribute::Bold)
+    deadline = goodbye_started + ((idx + 1) * 30).milliseconds
+    next if monotonic_now >= deadline && idx + 1 < goodbye.size
     termisu.set_cursor(margin + idx + 1, status_y)
     termisu.render
-    sleep 0.03.seconds
+    remaining = deadline - monotonic_now
+    sleep remaining if remaining > Time::Span.zero
   end
 
   # Blink cursor a few times
