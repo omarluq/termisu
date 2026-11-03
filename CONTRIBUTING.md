@@ -198,11 +198,13 @@ cmd /d /c "crystal spec spec/termisu/system/console_spec.cr <NUL >windows-consol
 
 The probe checks native layouts, owned non-inheritable handles, cleanup and mode
 restoration. It exercises the native readiness lease's cooperative pipe wake-up,
-rearming, cancellation/join, unread notifications, and failure cleanup.
+rearming, cancellation/join, unread notifications, and failure cleanup. It also
+checks basic native VT arrow/modifier/Unicode/NUL delivery, decoder-local surrogate
+state and bounded repeat handling.
 
-**Do not run it in a live interactive console.** The idle checks require an
-empty input queue. They do not flush it. Console modes are shared and restored
-after each test.
+**Do not run it in a live interactive console.** The protocol test requires an
+empty input queue and injects synthetic key records, then reads them back. It does
+not flush the input queue. Console modes are shared and restored after the test.
 
 The `Windows console probes` workflow runs the isolated binary on Windows 2025
 with Crystal 1.21. Its test-only PowerShell host explicitly allocates a console

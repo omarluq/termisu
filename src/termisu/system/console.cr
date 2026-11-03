@@ -48,6 +48,7 @@
       fun GetConsoleScreenBufferInfo(handle : LibC::HANDLE, info : ScreenBufferInfo*) : LibC::BOOL
       fun GetNumberOfConsoleInputEvents(handle : LibC::HANDLE, count : LibC::DWORD*) : LibC::BOOL
       fun ReadConsoleInputW(handle : LibC::HANDLE, buffer : InputRecord*, length : LibC::DWORD, read : LibC::DWORD*) : LibC::BOOL
+      fun WriteConsoleInputW(handle : LibC::HANDLE, buffer : InputRecord*, length : LibC::DWORD, written : LibC::DWORD*) : LibC::BOOL
       fun CreateEventW(attributes : LibC::SECURITY_ATTRIBUTES*, manual_reset : LibC::BOOL, initial_state : LibC::BOOL, name : UInt16*) : LibC::HANDLE
       fun SetEvent(handle : LibC::HANDLE) : LibC::BOOL
       fun WaitForMultipleObjects(count : UInt32, handles : LibC::HANDLE*, wait_all : LibC::BOOL, timeout_ms : UInt32) : UInt32

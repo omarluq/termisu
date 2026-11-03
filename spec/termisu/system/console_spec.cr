@@ -7,6 +7,7 @@ require "spec"
   end
 
   require "../../../src/termisu/system/console"
+  require "../../../src/termisu/system/console/input"
   require "../../../src/termisu/system/console/readiness_lease"
   require "../../../src/termisu/time_compat"
 
@@ -92,6 +93,28 @@ require "spec"
       handle = Native.CreateEventW(nil, 1, 0, nil)
       raise IO::Error.from_winerror("CreateEventW") if handle.null?
       handle
+    end
+
+    def key(unit : UInt16, virtual_key : UInt16 = 0, *, repeats : UInt16 = 1, state : UInt32 = 0) : WindowsConsole::InputRecord
+      record = WindowsConsole::InputRecord.new
+      record.event_type = WindowsConsole::KEY_EVENT
+      event = WindowsConsole::KeyEventRecord.new
+      event.key_down = 1
+      event.repeat_count = repeats
+      event.virtual_key_code = virtual_key
+      event.unicode_char = unit
+      event.control_key_state = state
+      record.key_event = event
+      record
+    end
+
+    class BufferedInput < Termisu::System::Console::Input
+      def seed(records : Array(WindowsConsole::InputRecord)) : Nil
+        raise "oversized fixture batch" if records.size > @records.size
+        records.each_with_index { |record, index| @records[index] = record }
+        @record_pos = 0
+        @record_count = records.size
+      end
     end
 
     class FailedWaitLease < Termisu::System::Console::ReadinessLease
@@ -435,5 +458,80 @@ require "spec"
       end
     end
 
+    it "delivers native VT arrows, modifiers, Unicode and NUL through the owned decoder" do
+      WindowsConsoleProbe.with_console do |input, output|
+        WindowsConsoleProbe.check WindowsConsole.GetNumberOfConsoleInputEvents(input, out before),
+          "GetNumberOfConsoleInputEvents"
+        before.should eq(0_u32)
+        WindowsConsoleProbe.with_modes(input, output) do
+          disabled = LibC::ENABLE_LINE_INPUT | LibC::ENABLE_ECHO_INPUT | LibC::ENABLE_PROCESSED_INPUT
+          mode = WindowsConsoleProbe.mode(input) | LibC::ENABLE_VIRTUAL_TERMINAL_INPUT.to_u32 |
+                 WindowsConsole::ENABLE_EXTENDED_FLAGS
+          mode &= ~(disabled.to_u32 | WindowsConsole::ENABLE_QUICK_EDIT_MODE)
+          WindowsConsoleProbe.check LibC.SetConsoleMode(input, mode), "SetConsoleMode(VT input)"
+          WindowsConsoleProbe.check LibC.SetConsoleMode(output, WindowsConsoleProbe.mode(output) | 0x0005_u32),
+            "SetConsoleMode(VT output)"
+          records = [WindowsConsoleProbe.key(0x61, 0x41),
+                     WindowsConsoleProbe.key(0, 0x26, state: 0x0100_u32),
+                     WindowsConsoleProbe.key(0, 0x25, state: 0x0108_u32),
+                     WindowsConsoleProbe.key(0x03BB, 0xE7),
+                     WindowsConsoleProbe.key(0xD83D, 0xE7),
+                     WindowsConsoleProbe.key(0xDE00, 0xE7),
+                     WindowsConsoleProbe.key(0, 0x20, state: 0x0008_u32)]
+          WindowsConsoleProbe.check WindowsConsole.WriteConsoleInputW(input, records, records.size.to_u32, out written),
+            "WriteConsoleInputW(protocol fixture)"
+          written.should eq(records.size)
+          decoder = Termisu::System::Console::Input.new(input.address)
+          byte = Bytes.new(1)
+          text = IO::Memory.new
+          128.times do
+            count = decoder.read(byte)
+            break if count == 0
+            text.write(byte[0, count])
+          end
+          ["a\e[A\e[1;5Dλ😀\0", "a\eOA\e[1;5Dλ😀\0"].should contain(text.to_s)
+          WindowsConsoleProbe.check WindowsConsole.GetNumberOfConsoleInputEvents(input, out after),
+            "GetNumberOfConsoleInputEvents"
+          after.should eq(0_u32)
+        end
+      end
+    end
+
+    it "keeps split surrogate state per decoder and resets only library buffers" do
+      WindowsConsoleProbe.with_console do |input, _output|
+        first = WindowsConsoleProbe::BufferedInput.new(input.address)
+        second = WindowsConsoleProbe::BufferedInput.new(input.address)
+        buffer = Bytes.new(8)
+        first.seed([WindowsConsoleProbe.key(0xD83D)])
+        first.read(buffer).should eq(0)
+        second.seed([WindowsConsoleProbe.key(0xDE00)])
+        count = second.read(buffer)
+        String.new(buffer[0, count]).should eq("\uFFFD")
+        first.seed([WindowsConsoleProbe.key(0xDE00)])
+        count = first.read(buffer)
+        String.new(buffer[0, count]).should eq("😀")
+        first.seed([WindowsConsoleProbe.key(0xD83D)])
+        first.read(buffer).should eq(0)
+        first.clear
+        first.seed([WindowsConsoleProbe.key(0xDE00)])
+        count = first.read(buffer)
+        String.new(buffer[0, count]).should eq("\uFFFD")
+      end
+    end
+
+    it "retains a large repeat count without expanding a pending allocation" do
+      WindowsConsoleProbe.with_console do |input, _output|
+        decoder = WindowsConsoleProbe::BufferedInput.new(input.address)
+        decoder.seed([WindowsConsoleProbe.key(0x78, repeats: UInt16::MAX)])
+        byte = Bytes.new(1)
+        decoder.read(byte).should eq(1)
+        byte[0].should eq(0x78_u8)
+        decoder.@repeats.should eq(UInt16::MAX.to_i32 - 1)
+        decoder.@pending.bytesize.should eq(1)
+        decoder.buffered?.should be_true
+        decoder.clear
+        decoder.buffered?.should be_false
+      end
+    end
   end
 {% end %}
