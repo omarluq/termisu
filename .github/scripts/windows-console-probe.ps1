@@ -13,7 +13,7 @@ Add-Type -TypeDefinition @'
 using System;
 using System.Runtime.InteropServices;
 public static class ConsoleProbeHost {
-    [DllImport("kernel32.dll")] public static extern IntPtr GetConsoleWindow();
+    [DllImport("kernel32.dll", SetLastError = true)] public static extern uint GetConsoleProcessList([Out] uint[] processes, uint count);
     [DllImport("kernel32.dll", SetLastError = true)] public static extern bool AllocConsole();
     [DllImport("kernel32.dll", SetLastError = true)] public static extern bool FreeConsole();
     [DllImport("kernel32.dll")] public static extern IntPtr GetStdHandle(int id);
@@ -31,8 +31,19 @@ foreach ($id in -10, -11, -12) {
     $originalHandles[$id] = [ConsoleProbeHost]::GetStdHandle($id)
 }
 
+# Attachment does not require a visible console window on headless runners.
+$consoleProcessCount = [ConsoleProbeHost]::GetConsoleProcessList([uint32[]]::new(1), 1)
+$hostInfo = @{
+    os = [Environment]::OSVersion.VersionString
+    powershell = $PSVersionTable.PSVersion.ToString()
+    initialConsoleProcesses = $consoleProcessCount
+    allocatedConsole = $false
+    redirectedStdio = $true
+}
+$hostInfo | ConvertTo-Json | Set-Content (Join-Path $OutputDirectory 'host.json')
+
 try {
-    if ([ConsoleProbeHost]::GetConsoleWindow() -eq [IntPtr]::Zero) {
+    if ($consoleProcessCount -eq 0) {
         if (-not [ConsoleProbeHost]::AllocConsole()) {
             throw [System.ComponentModel.Win32Exception]::new([Runtime.InteropServices.Marshal]::GetLastWin32Error())
         }
@@ -52,12 +63,8 @@ try {
         }
     }
 
-    @{
-        os = [Environment]::OSVersion.VersionString
-        powershell = $PSVersionTable.PSVersion.ToString()
-        allocatedConsole = $allocated
-        redirectedStdio = $true
-    } | ConvertTo-Json | Set-Content (Join-Path $OutputDirectory 'host.json')
+    $hostInfo.allocatedConsole = $allocated
+    $hostInfo | ConvertTo-Json | Set-Content (Join-Path $OutputDirectory 'host.json')
 
     $start = [Diagnostics.ProcessStartInfo]::new($probe)
     $start.UseShellExecute = $false
