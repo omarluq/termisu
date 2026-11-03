@@ -30,7 +30,7 @@ module Termisu::Testing
     @exited = Atomic(Bool).new(false)
     @state_lock = Mutex.new
     @last_activity : MonotonicTime
-    @reader_error : IO::Error? = nil
+    @reader_error : Exception? = nil
 
     def initialize(
       program : String,
@@ -196,23 +196,30 @@ module Termisu::Testing
     private def start_reader : Nil
       spawn do
         buf = Bytes.new(8192)
-        begin
-          loop do
-            n = @pty.master.read(buf)
-            break if n == 0 # EOF
-            # Mutate @screen under the same lock the reader-facing helpers read
-            # with, so a multi-threaded runtime never observes a half-applied
-            # grid. feed() is pure CPU (no yield), so the lock is held briefly.
-            @state_lock.synchronize do
-              @screen.feed(buf[0, n])
-              @last_activity = monotonic_now
-            end
-            @started.set(true)
+        loop do
+          n = begin
+            @pty.master.read(buf)
+          rescue error : IO::Error
+            {% if flag?(:linux) %}
+              raise error unless error.os_error == Errno::EIO
+              0 # Linux reports PTY slave hangup as EIO instead of EOF.
+            {% else %}
+              raise error
+            {% end %}
           end
-        rescue error : IO::Error
-          # Keep the existing EOF behavior, but retain unexpected read errors too.
-          @state_lock.synchronize { @reader_error = error }
+          break if n == 0 # EOF
+          # Mutate @screen under the same lock the reader-facing helpers read
+          # with, so a multi-threaded runtime never observes a half-applied
+          # grid. feed() is pure CPU (no yield), so the lock is held briefly.
+          @state_lock.synchronize do
+            @screen.feed(buf[0, n])
+            @last_activity = monotonic_now
+          end
+          @started.set(true)
         end
+      rescue error
+        @state_lock.synchronize { @reader_error = error }
+      ensure
         @exited.set(true)
       end
     end
