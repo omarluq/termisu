@@ -188,7 +188,7 @@ crystal spec --verbose
 ### Windows console contract probe (experimental)
 
 The Windows port is not yet runtime-qualified. With Crystal 1.21 on x64 Windows
-and an attached VT-capable **disposable, idle console**, run the isolated native probe:
+and an attached VT-capable **disposable, idle console**, run the native contract probe:
 
 ```powershell
 crystal spec spec/termisu/system/console_spec.cr
@@ -196,28 +196,29 @@ crystal spec spec/termisu/system/console_spec.cr
 cmd /d /c "crystal spec spec/termisu/system/console_spec.cr <NUL >windows-console-probe.log 2>&1"
 ```
 
-The probe checks native layouts, owned non-inheritable handles, cleanup and mode
-restoration. It exercises the native readiness lease's cooperative pipe wake-up,
-rearming, cancellation/join, unread notifications, and failure cleanup. It also
-checks basic native VT arrow/modifier/Unicode/NUL delivery, decoder-local surrogate
-state and bounded repeat handling.
+The probe imports the full facade and checks native layouts, owned non-inheritable
+handles, cleanup, shared mode restoration and failed-transition rollback. It exercises
+readiness cancellation/join, source restart with buffered input, raw-reader and cooked
+scopes, bounded Unicode output, native screen-cell readback and software timer accounting.
+It also retains basic native VT arrow/modifier/Unicode/NUL and decoder-state contracts.
 
 **Do not run it in a live interactive console.** The protocol test requires an
 empty input queue and injects synthetic key records, then reads them back. It does
 not flush the input queue. Console modes are shared and restored after the test.
 
-The `Windows console probes` workflow runs the isolated binary on Windows 2025
+The `Windows console probes` workflow runs the probe binary on Windows 2025
 with Crystal 1.21. Its test-only PowerShell host explicitly allocates a console
 when needed, preserves the runner's standard handles, redirects the child's
 streams, and drains both output pipes concurrently. It enforces a 30-second
 runtime limit and uploads host metadata plus stdout/stderr even when tests fail.
 This explicit test-host allocation is not production auto-attachment behavior.
 
-The probe imports only the isolated native components. It does not qualify the
-full Windows facade/input source, all input protocols (mouse/paste/replies), raw or
-child handoff, ConPTY, or end-to-end rendering. It contains no Windows examples on
-Unix: a Unix run or a cross-target semantic check is **not** native Windows
-validation. A missing attached console is a failure, not a silently skipped test.
+Full protocol parity (mouse/paste/replies), actual child-process handoff, ConPTY and
+end-to-end rendering remain unqualified. Windows noncanonical echo (`Mode.cbreak`) and
+generic descriptor polling raise `NotImplementedError`; they are not silently emulated.
+The probe contains no Windows examples on Unix: a Unix run or a cross-target semantic
+check is **not** native Windows validation. A missing attached console is a failure,
+not a silently skipped test.
 
 ## Code Coverage
 

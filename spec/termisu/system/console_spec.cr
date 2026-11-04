@@ -1,14 +1,8 @@
 require "spec"
 
 {% if flag?(:win32) %}
-  # Run standalone in an attached console: crystal spec spec/termisu/system/console_spec.cr
-  # Deliberately avoid the facade until its POSIX input lease has a Windows path.
-  class Termisu
-  end
-
-  require "../../../src/termisu/system/console"
-  require "../../../src/termisu/system/console/input"
-  require "../../../src/termisu/system/console/readiness_lease"
+  # Run only in a disposable idle console; these probes inject and consume input.
+  require "../../../src/termisu"
   require "../../../src/termisu/time_compat"
 
   alias WindowsConsole = Termisu::System::Console::C
@@ -21,6 +15,10 @@ require "spec"
       HANDLE_FLAG_INHERIT     = 0x0001_u32
       ENABLE_PROCESSED_OUTPUT = 0x0001_u32
 
+      fun CreateConsoleScreenBuffer(access : LibC::DWORD, share : LibC::DWORD,
+                                    attributes : LibC::SECURITY_ATTRIBUTES*, flags : LibC::DWORD, reserved : Void*) : LibC::HANDLE
+      fun ReadConsoleOutputCharacterW(handle : LibC::HANDLE, characters : UInt16*, length : LibC::DWORD,
+                                     origin : WindowsConsole::Coord, read : LibC::DWORD*) : LibC::BOOL
       fun GetHandleInformation(handle : LibC::HANDLE, flags : LibC::DWORD*) : LibC::BOOL
       fun CreateEventW(attributes : LibC::SECURITY_ATTRIBUTES*, manual_reset : LibC::BOOL,
                        initial_state : LibC::BOOL, name : LibC::LPWSTR) : LibC::HANDLE
@@ -41,6 +39,21 @@ require "spec"
         raise IO::Error.from_winerror("CreateFileW(#{name}); an attached console is required")
       end
       handle
+    end
+
+    def with_screen_buffer(&) : Nil
+      handle = Native.CreateConsoleScreenBuffer(LibC::GENERIC_READ | LibC::GENERIC_WRITE,
+        LibC::FILE_SHARE_READ | LibC::FILE_SHARE_WRITE, nil, 1_u32, nil)
+      raise IO::Error.from_winerror("CreateConsoleScreenBuffer") if handle == LibC::INVALID_HANDLE_VALUE
+      with_handle(handle) { |output| yield output }
+    end
+
+    def screen_text(output : LibC::HANDLE, count : Int32) : Array(UInt16)
+      characters = Slice(UInt16).new(count)
+      check Native.ReadConsoleOutputCharacterW(output, characters, count.to_u32, WindowsConsole::Coord.new, out read),
+        "ReadConsoleOutputCharacterW"
+      read.should eq(count.to_u32)
+      characters.to_a
     end
 
     def with_handle(handle : LibC::HANDLE, &) : Nil
@@ -106,6 +119,45 @@ require "spec"
       event.control_key_state = state
       record.key_event = event
       record
+    end
+
+    class RetainedInputSource < Termisu::Event::Source::Input
+      def seed_lease(lease : Termisu::System::Console::ReadinessLease) : Nil
+        @lease = lease
+      end
+    end
+
+    class FailedOutputMode < Termisu::Termios
+      getter failure = IO::Error.new("injected console output mode failure")
+      @fail_output = true
+
+      private def apply_console_mode(fd : IO::FileDescriptor::Handle, mode : UInt32) : Nil
+        if fd == @output_fd && @fail_output
+          @fail_output = false
+          raise @failure
+        end
+        super
+      end
+    end
+
+    def write_key(input : LibC::HANDLE, unit : UInt16, *, repeats : UInt16 = 1) : Nil
+      record = key(unit, repeats: repeats)
+      check WindowsConsole.WriteConsoleInputW(input, pointerof(record), 1_u32, out written), "WriteConsoleInputW(key)"
+      written.should eq(1_u32)
+    end
+
+    def receive(output : Channel(Termisu::Event::Any)) : Termisu::Event::Any
+      select
+      when event = output.receive
+        event
+      when timeout(2.seconds)
+        raise "Timed out receiving native input/timer event"
+      end
+    end
+
+    def key_event(event : Termisu::Event::Any?) : Termisu::Event::Key
+      event.should be_a(Termisu::Event::Key)
+      event.as(Termisu::Event::Key)
     end
 
     class BufferedInput < Termisu::System::Console::Input
@@ -557,6 +609,290 @@ require "spec"
         decoder.buffered?.should be_true
         decoder.clear
         decoder.buffered?.should be_false
+      end
+    end
+
+    it "writes split UTF-8 through a borrowed inactive wide-console handle" do
+      WindowsConsoleProbe.with_screen_buffer do |handle|
+        output = Termisu::System::Console::Output.new(handle.address)
+        text = "λé".to_slice
+        output.write(text[0, 1])
+        output.flush
+        WindowsConsoleProbe.check WindowsConsole.GetConsoleScreenBufferInfo(handle, out before), "GetConsoleScreenBufferInfo"
+        before.cursor_position.x.should eq(0)
+        output.write(text[1, text.size - 1])
+        output.finish
+        WindowsConsoleProbe.screen_text(handle, 2).should eq([0x03BB_u16, 0x00E9_u16])
+        WindowsConsoleProbe.mode(handle).should be_a(UInt32)
+      end
+    end
+
+    it "bounds wide-console output buffering across large writes" do
+      WindowsConsoleProbe.with_screen_buffer do |handle|
+        output = Termisu::System::Console::Output.new(handle.address)
+        output.write(("x" * 20_000).to_slice)
+        output.@buffer.size.should be < Termisu::System::Console::Output::CAPACITY
+        output.finish
+        output.@buffer.empty?.should be_true
+        WindowsConsoleProbe.screen_text(handle, 5).should eq(Array(UInt16).new(5, 0x78_u16))
+      end
+    end
+
+    it "rejects invalid or unfinished UTF-8 without closing its borrowed handle" do
+      WindowsConsoleProbe.with_screen_buffer do |handle|
+        output = Termisu::System::Console::Output.new(handle.address)
+        output.write(Bytes[0xFF])
+        expect_raises(IO::Error, "Invalid UTF-8 console output") { output.flush }
+        output.write("a".to_slice)
+        output.finish
+        WindowsConsoleProbe.screen_text(handle, 1).should eq([0x61_u16])
+        output.write(Bytes[0xCE])
+        expect_raises(IO::Error, "Incomplete UTF-8 console output") { output.finish }
+        WindowsConsoleProbe.mode(handle).should be_a(UInt32)
+      end
+    end
+
+    it "owns native-width noninheritable console handles instead of standard streams" do
+      WindowsConsoleProbe.with_console do |input, output|
+        original_input = WindowsConsoleProbe.mode(input)
+        original_output = WindowsConsoleProbe.mode(output)
+        tty = Termisu::TTY.new
+        input_handle, output_handle = LibC::HANDLE.new(tty.infd), LibC::HANDLE.new(tty.outfd)
+        begin
+          tty.infd.should_not eq(STDIN.fd)
+          tty.outfd.should_not eq(STDOUT.fd)
+          [input_handle, output_handle].each do |handle|
+            WindowsConsoleProbe.check WindowsConsoleProbe::Native.GetHandleInformation(handle, out flags), "GetHandleInformation(TTY)"
+            (flags & WindowsConsoleProbe::Native::HANDLE_FLAG_INHERIT).should eq(0_u32)
+            WindowsConsoleProbe.mode(handle).should be_a(UInt32)
+          end
+        ensure
+          tty.close
+          tty.close
+        end
+        WindowsConsoleProbe::Native.GetHandleInformation(input_handle, out _).should eq(0)
+        WindowsConsoleProbe::Native.GetHandleInformation(output_handle, out _).should eq(0)
+        WindowsConsoleProbe.mode(input).should eq(original_input)
+        WindowsConsoleProbe.mode(output).should eq(original_output)
+        STDIN.closed?.should be_false
+        STDOUT.closed?.should be_false
+      end
+    end
+
+    it "restores shared console modes and rejects unsupported echo transactionally" do
+      WindowsConsoleProbe.with_console do |input, output|
+        WindowsConsoleProbe.with_modes(input, output) do
+          original_input = WindowsConsoleProbe.mode(input)
+          original_output = WindowsConsoleProbe.mode(output)
+          backend = Termisu::Terminal::Backend.new
+          begin
+            modes = [Termisu::Terminal::Mode.raw, Termisu::Terminal::Mode.semi_raw,
+                     Termisu::Terminal::Mode.cooked, Termisu::Terminal::Mode.password]
+            modes.each do |mode|
+              backend.set_mode(mode)
+              bits = WindowsConsoleProbe.mode(input)
+              ((bits & 0x0002) != 0).should eq(mode.canonical?)
+              ((bits & 0x0004) != 0).should eq(mode.echo?)
+              ((bits & 0x0001) != 0).should eq(mode.signals?)
+              unless mode.canonical?
+                (bits & 0x0200).should_not eq(0_u32)
+                (bits & 0x0040).should eq(0_u32)
+                (WindowsConsoleProbe.mode(output) & 0x0005).should eq(0x0005_u32)
+              end
+            end
+            before = {WindowsConsoleProbe.mode(input), WindowsConsoleProbe.mode(output)}
+            expect_raises(NotImplementedError, "Windows console echo requires canonical input") do
+              backend.set_mode(Termisu::Terminal::Mode.cbreak)
+            end
+            {WindowsConsoleProbe.mode(input), WindowsConsoleProbe.mode(output)}.should eq(before)
+            backend.current_mode.should eq(Termisu::Terminal::Mode.password)
+          ensure
+            backend.close
+          end
+          WindowsConsoleProbe.mode(input).should eq(original_input)
+          WindowsConsoleProbe.mode(output).should eq(original_output)
+        end
+      end
+    end
+
+    it "rolls back input mode when setting output mode fails" do
+      WindowsConsoleProbe.with_console do |input, output|
+        WindowsConsoleProbe.with_modes(input, output) do
+          before = {WindowsConsoleProbe.mode(input), WindowsConsoleProbe.mode(output)}
+          modes = WindowsConsoleProbe::FailedOutputMode.new(input.address, output.address)
+          error = expect_raises(IO::Error, "injected console output mode failure") do
+            modes.set_mode(Termisu::Terminal::Mode.raw)
+          end
+          error.should be(modes.failure)
+          modes.current_mode.should be_nil
+          {WindowsConsoleProbe.mode(input), WindowsConsoleProbe.mode(output)}.should eq(before)
+          modes.restore
+        end
+      end
+    end
+
+    it "restarts the shared input source without losing buffered native repeats" do
+      WindowsConsoleProbe.with_console do |input, output|
+        WindowsConsoleProbe.with_modes(input, output) do
+          backend = Termisu::Terminal::Backend.new
+          backend.enable_raw_mode
+          reader = Termisu::Reader.new(backend.infd)
+          parser = Termisu::Input::Parser.new(reader)
+          source = Termisu::Event::Source::Input.new(reader, parser)
+          events = Channel(Termisu::Event::Any).new
+          begin
+            source.start(events)
+            WindowsConsoleProbe.write_key(input, 0x71_u16, repeats: 384_u16)
+            WindowsConsoleProbe.key_event(WindowsConsoleProbe.receive(events)).char.should eq('q')
+            source.stop
+            source.start(events)
+            383.times do
+              WindowsConsoleProbe.key_event(WindowsConsoleProbe.receive(events)).char.should eq('q')
+            end
+            source.stop
+            source.running?.should be_false
+            source.stop_required?.should be_false
+            reader.eof?.should be_false
+          ensure
+            source.stop
+            reader.close
+            backend.close
+          end
+        end
+      end
+    end
+
+    it "runs the facade, raw-reader handoff and cooked scopes over owned console I/O" do
+      WindowsConsoleProbe.with_console do |input, output|
+        WindowsConsoleProbe.with_modes(input, output) do
+          original = {WindowsConsoleProbe.mode(input), WindowsConsoleProbe.mode(output)}
+          term = Termisu.new
+          begin
+            term.set_cell(0, 0, 'λ')
+            term.render
+            WindowsConsoleProbe.with_handle(WindowsConsoleProbe.open_console("CONOUT$")) do |active|
+              WindowsConsoleProbe.screen_text(active, 1).should eq([0x03BB_u16])
+            end
+            WindowsConsoleProbe.write_key(input, 0x71_u16)
+            WindowsConsoleProbe.key_event(term.poll_event(2.seconds)).char.should eq('q')
+            term.with_raw_input do
+              WindowsConsoleProbe.write_key(input, 0x72_u16, repeats: 2_u16)
+              term.wait_for_input(250).should be_true
+              term.read_byte.should eq(0x72_u8)
+            end
+            WindowsConsoleProbe.key_event(term.poll_event(2.seconds)).char.should eq('r')
+            term.with_mode(Termisu::Terminal::Mode.cooked) do
+              (WindowsConsoleProbe.mode(input) & 0x0002).should_not eq(0_u32)
+              WindowsConsoleProbe.write_key(input, 0x63_u16)
+            end
+            WindowsConsoleProbe.key_event(term.poll_event(2.seconds)).char.should eq('c')
+          ensure
+            term.close
+          end
+          {WindowsConsoleProbe.mode(input), WindowsConsoleProbe.mode(output)}.should eq(original)
+          STDIN.closed?.should be_false
+          STDOUT.closed?.should be_false
+        end
+      end
+    end
+
+    it "keeps software timer expirations and the original SystemTimer lifecycle" do
+      poller = Termisu::Event::Poller.create
+      begin
+        handle = poller.add_timer(3.milliseconds)
+        sleep 20.milliseconds
+        event = poller.wait(Time::Span.zero)
+        event.should_not be_nil
+        event.not_nil!.timer?.should be_true
+        event.not_nil!.timer_expirations.should be >= 2_u64
+        poller.remove_timer(handle)
+        expect_raises(NotImplementedError, "Generic descriptor polling is not supported on Windows") do
+          poller.register_fd(0, Termisu::Event::Poller::FDEvents::Read)
+        end
+      ensure
+        poller.close
+      end
+      timer = Termisu::Event::Source::SystemTimer.new(4.milliseconds)
+      timer.class.to_s.should eq("Termisu::Event::Source::SystemTimer")
+      events = Channel(Termisu::Event::Any).new
+      begin
+        2.times do
+          timer.start(events)
+          WindowsConsoleProbe.receive(events).should be_a(Termisu::Event::Tick)
+          timer.stop
+          timer.running?.should be_false
+        end
+      ensure
+        timer.stop
+      end
+    end
+
+    it "defers bottom-right wrapping instead of scrolling the shared render grid" do
+      WindowsConsoleProbe.with_screen_buffer do |handle|
+        bits = WindowsConsoleProbe.mode(handle)
+        WindowsConsoleProbe.check LibC.SetConsoleMode(handle, bits | 0x000D_u32), "SetConsoleMode(delayed wrap)"
+        WindowsConsoleProbe.check WindowsConsole.GetConsoleScreenBufferInfo(handle, out info), "GetConsoleScreenBufferInfo"
+        width = info.window.right.to_i32 - info.window.left.to_i32 + 1
+        height = info.window.bottom.to_i32 - info.window.top.to_i32 + 1
+        output = Termisu::System::Console::Output.new(handle.address)
+        output.write("\e[HA\e[#{height};#{width}HZ\e[H".to_slice)
+        output.finish
+        WindowsConsoleProbe.screen_text(handle, 1).should eq([0x41_u16])
+      end
+    end
+
+    it "restores console modes despite output failure in every cleanup scope" do
+      WindowsConsoleProbe.with_console do |input, output|
+        WindowsConsoleProbe.with_modes(input, output) do
+          ["disable", "with_raw", "with_mode", "close"].each do |operation|
+            backend = Termisu::Terminal::Backend.new
+            begin
+              backend.set_mode(Termisu::Terminal::Mode.cooked) if operation == "with_mode"
+              before = {WindowsConsoleProbe.mode(input), WindowsConsoleProbe.mode(output)}
+              expect_raises(IO::Error, "Invalid UTF-8 console output") do
+                case operation
+                when "with_raw"
+                  backend.with_raw_mode { backend.write(Bytes[0xFF]) }
+                when "with_mode"
+                  backend.with_mode(Termisu::Terminal::Mode.raw) { backend.write(Bytes[0xFF]) }
+                else
+                  backend.enable_raw_mode
+                  backend.write(Bytes[0xFF])
+                  operation == "close" ? backend.close : backend.disable_raw_mode
+                end
+              end
+              {WindowsConsoleProbe.mode(input), WindowsConsoleProbe.mode(output)}.should eq(before)
+              backend.raw_mode?.should be_false
+            ensure
+              backend.close
+            end
+          end
+        end
+      end
+    end
+
+    it "retains an unconfirmed native lease before allowing source replacement" do
+      WindowsConsoleProbe.with_console do |input, _output|
+        reader = Termisu::Reader.new(input.address)
+        source = WindowsConsoleProbe::RetainedInputSource.new(reader, Termisu::Input::Parser.new(reader))
+        lease = WindowsConsoleProbe::UnconfirmedJoinLease.new(input.address)
+        events = Channel(Termisu::Event::Any).new(1)
+        source.seed_lease(lease)
+        begin
+          expect_raises(IO::Error, "injected unconfirmed join") { source.start(events) }
+          lease.closed?.should be_false
+          source.stop_required?.should be_true
+          source.@lease.should be(lease)
+          source.running?.should be_false
+          source.start(events)
+          lease.closed?.should be_true
+          source.running?.should be_true
+          source.stop
+          source.stop_required?.should be_false
+        ensure
+          source.stop
+          reader.close
+        end
       end
     end
   end
