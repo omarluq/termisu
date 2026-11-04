@@ -807,6 +807,14 @@ require "spec"
               WindowsConsoleProbe.write_keys(input, 0x63_u16)
             end
             stage = "cooked handback"
+            change = term.poll_event(2.seconds)
+            change.should be_a(Termisu::Event::ModeChange)
+            change.as(Termisu::Event::ModeChange).mode.should eq(Termisu::Terminal::Mode.cooked)
+            change.as(Termisu::Event::ModeChange).previous_mode.should eq(Termisu::Terminal::Mode.raw)
+            change = term.poll_event(2.seconds)
+            change.should be_a(Termisu::Event::ModeChange)
+            change.as(Termisu::Event::ModeChange).mode.should eq(Termisu::Terminal::Mode.raw)
+            change.as(Termisu::Event::ModeChange).previous_mode.should eq(Termisu::Terminal::Mode.cooked)
             WindowsConsoleProbe.key_event(term.poll_event(2.seconds)).char.should eq('c')
           rescue error
             STDERR.puts "Native facade input failed at #{stage}"
