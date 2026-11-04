@@ -37,7 +37,7 @@ jobs:
         with:
           crystal-version: "1.21.0"
           install-shards: "false"
-      - name: Build isolated native probe
+      - name: Build native facade and probe
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path bin | Out-Null

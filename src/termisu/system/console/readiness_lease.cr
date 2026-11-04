@@ -105,6 +105,10 @@ require "../../time_compat"
       end
     end
 
+    def closed? : Bool
+      @closed.get
+    end
+
     def close : Nil
       return unless @closed.compare_and_set(false, true)[1]
       begin

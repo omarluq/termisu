@@ -492,12 +492,12 @@ class Termisu::Terminal < Termisu::Renderer
   end
 
   # Returns the input file descriptor for Reader.
-  def infd : Int32
+  def infd : IO::FileDescriptor::Handle
     @backend.infd
   end
 
   # Returns the output file descriptor.
-  def outfd : Int32
+  def outfd : IO::FileDescriptor::Handle
     @backend.outfd
   end
 
