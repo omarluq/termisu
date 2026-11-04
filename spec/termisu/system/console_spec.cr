@@ -140,10 +140,21 @@ require "spec"
       end
     end
 
-    def write_key(input : LibC::HANDLE, unit : UInt16, *, repeats : UInt16 = 1) : Nil
-      record = key(unit, repeats: repeats)
-      check WindowsConsole.WriteConsoleInputW(input, pointerof(record), 1_u32, out written), "WriteConsoleInputW(key)"
-      written.should eq(1_u32)
+    def write_keys(input : LibC::HANDLE, unit : UInt16, *, count : Int32 = 1) : Nil
+      # VT translation handles each record once, ignoring its legacy repeat count.
+      records = Slice(WindowsConsole::InputRecord).new(count) { key(unit) }
+      check WindowsConsole.WriteConsoleInputW(input, records, count.to_u32, out written), "WriteConsoleInputW(keys)"
+      written.should eq(count.to_u32)
+      peek = Slice(WindowsConsole::InputRecord).new(count + 32) { WindowsConsole::InputRecord.new }
+      read = Termisu::System::Console.read_records(input, peek, remove: false)
+      characters = peek[0, read].sum do |record|
+        if record.event_type == WindowsConsole::KEY_EVENT && record.key_event.key_down != 0 && record.key_event.unicode_char == unit
+          record.key_event.repeat_count.to_i32
+        else
+          0
+        end
+      end
+      characters.should eq(count)
     end
 
     def receive(output : Channel(Termisu::Event::Any)) : Termisu::Event::Any
@@ -731,7 +742,7 @@ require "spec"
       end
     end
 
-    it "restarts the shared input source without losing buffered native repeats" do
+    it "restarts the shared input source without losing buffered native input" do
       WindowsConsoleProbe.with_console do |input, output|
         WindowsConsoleProbe.with_modes(input, output) do
           backend = Termisu::Terminal::Backend.new
@@ -740,19 +751,25 @@ require "spec"
           parser = Termisu::Input::Parser.new(reader)
           source = Termisu::Event::Source::Input.new(reader, parser)
           events = Channel(Termisu::Event::Any).new
+          delivered = 0
           begin
             source.start(events)
-            WindowsConsoleProbe.write_key(input, 0x71_u16, repeats: 384_u16)
+            WindowsConsoleProbe.write_keys(input, 0x71_u16, count: 384)
             WindowsConsoleProbe.key_event(WindowsConsoleProbe.receive(events)).char.should eq('q')
+            delivered += 1
             source.stop
             source.start(events)
             383.times do
               WindowsConsoleProbe.key_event(WindowsConsoleProbe.receive(events)).char.should eq('q')
+              delivered += 1
             end
             source.stop
             source.running?.should be_false
             source.stop_required?.should be_false
             reader.eof?.should be_false
+          rescue error
+            STDERR.puts "Native input restart delivered #{delivered}/384 keys"
+            raise error
           ensure
             source.stop
             reader.close
@@ -767,25 +784,33 @@ require "spec"
         WindowsConsoleProbe.with_modes(input, output) do
           original = {WindowsConsoleProbe.mode(input), WindowsConsoleProbe.mode(output)}
           term = Termisu.new
+          stage = "initial key"
           begin
             term.set_cell(0, 0, 'λ')
             term.render
             WindowsConsoleProbe.with_handle(WindowsConsoleProbe.open_console("CONOUT$")) do |active|
               WindowsConsoleProbe.screen_text(active, 1).should eq([0x03BB_u16])
             end
-            WindowsConsoleProbe.write_key(input, 0x71_u16)
+            WindowsConsoleProbe.write_keys(input, 0x71_u16)
             WindowsConsoleProbe.key_event(term.poll_event(2.seconds)).char.should eq('q')
+            stage = "raw wait"
             term.with_raw_input do
-              WindowsConsoleProbe.write_key(input, 0x72_u16, repeats: 2_u16)
+              WindowsConsoleProbe.write_keys(input, 0x72_u16, count: 2)
               term.wait_for_input(250).should be_true
               term.read_byte.should eq(0x72_u8)
             end
+            stage = "raw handback"
             WindowsConsoleProbe.key_event(term.poll_event(2.seconds)).char.should eq('r')
+            stage = "cooked scope"
             term.with_mode(Termisu::Terminal::Mode.cooked) do
               (WindowsConsoleProbe.mode(input) & 0x0002).should_not eq(0_u32)
-              WindowsConsoleProbe.write_key(input, 0x63_u16)
+              WindowsConsoleProbe.write_keys(input, 0x63_u16)
             end
+            stage = "cooked handback"
             WindowsConsoleProbe.key_event(term.poll_event(2.seconds)).char.should eq('c')
+          rescue error
+            STDERR.puts "Native facade input failed at #{stage}"
+            raise error
           ensure
             term.close
           end
