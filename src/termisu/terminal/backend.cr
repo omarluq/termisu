@@ -24,6 +24,8 @@ class Termisu::Terminal::Backend
 
   {% if flag?(:win32) %}
     @console_input : System::Console::Input
+    @input_readiness : System::Console::ReadinessLease?
+    @input_readiness_lock = Mutex.new
   {% end %}
 
   getter infd : IO::FileDescriptor::Handle
@@ -104,11 +106,32 @@ class Termisu::Terminal::Backend
 
   # Reads data from the terminal into the provided buffer.
   #
-  # Returns the number of bytes read, or 0 on EOF.
+  # Returns the number of bytes read, or 0 on EOF or for an empty buffer.
   # Raises `IO::Error` on read failure.
   def read(buffer : Bytes) : Int32
     {% if flag?(:win32) %}
-      @console_input.read(buffer)
+      raise IO::Error.new("Terminal backend is closed") if @closed.get
+      return 0 if buffer.empty?
+
+      loop do
+        count = @console_input.read(buffer)
+        return count if count > 0
+        lease = @input_readiness_lock.synchronize do
+          raise IO::Error.new("Terminal backend is closed") if @closed.get
+          if current = @input_readiness
+            current.rearm
+            current
+          else
+            @input_readiness = System::Console::ReadinessLease.new(@infd)
+          end
+        end
+        status = lease.wait(nil)
+        raise lease.worker_error if lease.worker_failed?
+        raise IO::Error.new("Terminal backend is closed") if @closed.get
+        unless status == System::Console::ReadinessLease::Status::Ready
+          raise IO::Error.new("Unexpected console input readiness status: #{status}")
+        end
+      end
     {% else %}
       loop do
         bytes_read = LibC.read(@infd, buffer, buffer.size)
@@ -224,6 +247,25 @@ class Termisu::Terminal::Backend
     return unless @closed.compare_and_set(false, true)[1]
 
     restore_error = nil.as(Exception?)
+    {% if flag?(:win32) %}
+      begin
+        @input_readiness_lock.synchronize do
+          if lease = @input_readiness
+            begin
+              lease.close
+            ensure
+              @input_readiness = nil if lease.closed?
+            end
+          end
+        end
+      rescue error
+        if @input_readiness
+          @closed.set(false)
+          raise error
+        end
+        restore_error ||= error
+      end
+    {% end %}
     begin
       {% if flag?(:win32) %}
         restore_console_mode
@@ -237,8 +279,7 @@ class Termisu::Terminal::Backend
     begin
       @tty.close
     rescue error
-      # Restoring termios is the first failure to report, but descriptor
-      # closure is always attempted and is reported when restoration worked.
+      # Earlier cleanup failures take precedence, but descriptor closure is always attempted.
       restore_error ||= error
     end
 

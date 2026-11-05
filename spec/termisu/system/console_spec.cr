@@ -1018,6 +1018,95 @@ require "spec"
       end
     end
 
+    it "waits through empty and filtered backend input and wakes a pending read on close" do
+      WindowsConsoleProbe.with_console do |input, output|
+        ["key", "close"].each do |completion|
+          WindowsConsoleProbe.with_modes(input, output) do
+            WindowsConsoleProbe.assert_idle_input(input, "Before backend read #{completion}")
+            backend = Termisu::Terminal::Backend.new
+            results = Channel(String | Exception).new(1)
+            finished = Channel(Nil).new(1)
+            begin
+              backend.enable_raw_mode
+              backend.read(Bytes.empty).should eq(0)
+              backend.@input_readiness.should be_nil
+              spawn do
+                begin
+                  buffer = Bytes.new(8)
+                  count = backend.read(buffer)
+                  results.send(String.new(buffer[0, count]))
+                rescue error
+                  results.send(error)
+                ensure
+                  finished.send(nil)
+                end
+              end
+              deadline = monotonic_now + 1.second
+              until backend.@input_readiness
+                select
+                when result = results.receive
+                  raise "Backend read ended on an empty queue: #{result.inspect}"
+                else
+                end
+                raise "Backend read did not park cooperatively" if monotonic_now >= deadline
+                sleep 1.millisecond
+              end
+              lease = backend.@input_readiness.not_nil!
+              WindowsConsoleProbe.check WindowsConsole.GetConsoleScreenBufferInfo(output, out info), "GetConsoleScreenBufferInfo(filtered backend input)"
+              filtered = WindowsConsole::InputRecord.new
+              filtered.event_type = WindowsConsoleProbe::Native::WINDOW_BUFFER_SIZE_EVENT
+              filtered.key_event = WindowsConsole::KeyEventRecord.new(key_down: info.size.unsafe_as(Int32))
+              WindowsConsoleProbe.check WindowsConsole.WriteConsoleInputW(input, pointerof(filtered), 1_u32, out written), "WriteConsoleInputW(filtered backend input)"
+              written.should eq(1_u32)
+              peek = Slice(WindowsConsole::InputRecord).new(1) { WindowsConsole::InputRecord.new }
+              Termisu::System::Console.read_records(input, peek, remove: false).should eq(1)
+              peek[0].event_type.should eq(filtered.event_type)
+              deadline = monotonic_now + 1.second
+              loop do
+                WindowsConsoleProbe.check WindowsConsole.GetNumberOfConsoleInputEvents(input, out queued), "GetNumberOfConsoleInputEvents(filtered backend input)"
+                break if queued == 0
+                raise "Backend read did not drain the filtered record" if monotonic_now >= deadline
+                sleep 1.millisecond
+              end
+              select
+              when result = results.receive
+                raise "Backend read ended on filtered input: #{result.inspect}"
+              else
+              end
+              if completion == "key"
+                WindowsConsoleProbe.write_keys(input, 0x71_u16, count: 1)
+              else
+                backend.close
+              end
+              result = select
+              when value = results.receive
+                value
+              when timeout(2.seconds)
+                raise "Backend read did not complete on #{completion}"
+              end
+              if completion == "key"
+                result.should eq("q")
+              else
+                result.should be_a(IO::Error)
+              end
+              backend.close
+              lease.closed?.should be_true
+              backend.@input_readiness.should be_nil
+              expect_raises(IO::Error, "Terminal backend is closed") { backend.read(Bytes.new(1)) }
+              WindowsConsoleProbe.assert_idle_input(input, "After backend read #{completion}")
+            ensure
+              backend.close
+              select
+              when finished.receive
+              when timeout(2.seconds)
+                raise "Backend read fiber did not terminate"
+              end
+            end
+          end
+        end
+      end
+    end
+
     it "restores shared console modes and rejects unsupported echo transactionally" do
       WindowsConsoleProbe.with_console do |input, output|
         WindowsConsoleProbe.with_modes(input, output) do
