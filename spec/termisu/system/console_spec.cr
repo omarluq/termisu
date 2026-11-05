@@ -14,6 +14,7 @@ require "spec"
     lib Native
       HANDLE_FLAG_INHERIT     = 0x0001_u32
       ENABLE_PROCESSED_OUTPUT = 0x0001_u32
+      ENABLE_WINDOW_INPUT     = 0x0008_u32
 
       fun CreateConsoleScreenBuffer(access : LibC::DWORD, share : LibC::DWORD,
                                     attributes : LibC::SECURITY_ATTRIBUTES*, flags : LibC::DWORD, reserved : Void*) : LibC::HANDLE
@@ -84,6 +85,16 @@ require "spec"
     def mode(handle : LibC::HANDLE) : UInt32
       check LibC.GetConsoleMode(handle, out value), "GetConsoleMode"
       value
+    end
+
+    def diagnose_input(input : LibC::HANDLE, stage : String) : Nil
+      records = Slice(WindowsConsole::InputRecord).new(32) { WindowsConsole::InputRecord.new }
+      count = Termisu::System::Console.read_records(input, records, remove: false)
+      payload = records[0, count].map do |record|
+        key = record.key_event
+        {record.event_type, key.unicode_char, key.virtual_key_code, key.control_key_state}
+      end
+      STDERR.puts "#{stage}: queued type/char/key/state=#{payload.inspect}"
     end
 
     def with_modes(input : LibC::HANDLE, output : LibC::HANDLE, &) : Nil
@@ -345,6 +356,10 @@ require "spec"
     it "maps legacy mouse coordinates to the borrowed viewport origin" do
       WindowsConsoleProbe.with_console do |input, output|
         WindowsConsoleProbe.with_modes(input, output) do
+          # Fixture resizing must not enqueue window records for later probes.
+          mode = WindowsConsoleProbe.mode(input) &
+                 ~(LibC::ENABLE_VIRTUAL_TERMINAL_INPUT.to_u32 | WindowsConsoleProbe::Native::ENABLE_WINDOW_INPUT)
+          WindowsConsoleProbe.check LibC.SetConsoleMode(input, mode), "SetConsoleMode(legacy records without resize events)"
           WindowsConsoleProbe.with_screen_buffer do |screen|
             WindowsConsoleProbe.check WindowsConsole.GetConsoleScreenBufferInfo(screen, out info), "GetConsoleScreenBufferInfo"
             size = WindowsConsole::Coord.new(x: info.size.x, y: (info.size.y + 10).to_i16)
@@ -353,8 +368,6 @@ require "spec"
             window.top += 5
             window.bottom += 5
             WindowsConsoleProbe.check WindowsConsoleProbe::Native.SetConsoleWindowInfo(screen, 1, pointerof(window)), "SetConsoleWindowInfo"
-            mode = WindowsConsoleProbe.mode(input) & ~LibC::ENABLE_VIRTUAL_TERMINAL_INPUT.to_u32
-            WindowsConsoleProbe.check LibC.SetConsoleMode(input, mode), "SetConsoleMode(legacy records)"
             record = WindowsConsoleProbe.mouse(1, x: window.left, y: window.top)
             WindowsConsoleProbe.check WindowsConsole.WriteConsoleInputW(input, pointerof(record), 1_u32, out written), "WriteConsoleInputW(mouse origin)"
             written.should eq(1_u32)
@@ -368,6 +381,9 @@ require "spec"
               reader.close
             end
           end
+          WindowsConsoleProbe.check WindowsConsole.GetNumberOfConsoleInputEvents(input, out remaining), "GetNumberOfConsoleInputEvents(viewport cleanup)"
+          WindowsConsoleProbe.diagnose_input(input, "After viewport cleanup") unless remaining == 0
+          remaining.should eq(0_u32)
         end
       end
     end
@@ -660,6 +676,7 @@ require "spec"
       WindowsConsoleProbe.with_console do |input, _output|
         WindowsConsoleProbe.check WindowsConsole.GetNumberOfConsoleInputEvents(input, out before),
           "GetNumberOfConsoleInputEvents"
+        WindowsConsoleProbe.diagnose_input(input, "Before idle lease") unless before == 0
         before.should eq(0_u32)
         records = Slice(WindowsConsole::InputRecord).new(1) { WindowsConsole::InputRecord.new }
         Termisu::System::Console.read_records(input, records).should eq(0)
@@ -777,6 +794,7 @@ require "spec"
       WindowsConsoleProbe.with_console do |input, output|
         WindowsConsoleProbe.check WindowsConsole.GetNumberOfConsoleInputEvents(input, out before),
           "GetNumberOfConsoleInputEvents"
+        WindowsConsoleProbe.diagnose_input(input, "Before VT decoder") unless before == 0
         before.should eq(0_u32)
         WindowsConsoleProbe.with_modes(input, output) do
           disabled = LibC::ENABLE_LINE_INPUT | LibC::ENABLE_ECHO_INPUT | LibC::ENABLE_PROCESSED_INPUT
