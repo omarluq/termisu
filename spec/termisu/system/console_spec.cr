@@ -209,14 +209,33 @@ require "spec"
     end
 
     class FailedCancellationLease < Termisu::System::Console::ReadinessLease
+      getter failure = IO::Error.new("injected cancellation failure")
       @fail_once = true
 
       private def signal_cancellation : Nil
         if @fail_once
           @fail_once = false
-          raise IO::Error.new("injected cancellation failure")
+          raise @failure
         end
         super
+      end
+    end
+
+    class PersistentCancellationLease < Termisu::System::Console::ReadinessLease
+      getter failure = IO::Error.new("injected persistent cancellation failure")
+      property reject = true
+
+      private def signal_cancellation : Nil
+        raise @failure if @reject
+        super
+      end
+    end
+
+    class CancellationInputSource < Termisu::Event::Source::Input
+      property injected_lease : Termisu::System::Console::ReadinessLease?
+
+      private def create_readiness_lease : Termisu::System::Console::ReadinessLease
+        @injected_lease || super
       end
     end
 
@@ -360,6 +379,53 @@ require "spec"
           ensure
             term.close
           end
+        end
+      end
+    end
+
+    it "cleans a stopped source after transient cancellation failure and preserves the first error" do
+      WindowsConsoleProbe.with_console do |input, _output|
+        reader = Termisu::Reader.new(input.address)
+        source = WindowsConsoleProbe::CancellationInputSource.new(reader, Termisu::Input::Parser.new(reader))
+        lease = WindowsConsoleProbe::FailedCancellationLease.new(input.address)
+        source.injected_lease = lease
+        begin
+          source.start(Channel(Termisu::Event::Any).new)
+          Fiber.yield
+          error = expect_raises(IO::Error, "injected cancellation failure") { source.stop }
+          error.should be(lease.failure)
+          lease.closed?.should be_true
+          source.stop_required?.should be_false
+          source.injected_lease = nil
+          source.start(Channel(Termisu::Event::Any).new)
+          source.stop
+        ensure
+          source.stop
+          lease.close
+          reader.close
+        end
+      end
+    end
+
+    it "retains unconfirmed source resources when cancellation keeps failing" do
+      WindowsConsoleProbe.with_console do |input, _output|
+        reader = Termisu::Reader.new(input.address)
+        source = WindowsConsoleProbe::CancellationInputSource.new(reader, Termisu::Input::Parser.new(reader))
+        lease = WindowsConsoleProbe::PersistentCancellationLease.new(input.address)
+        source.injected_lease = lease
+        begin
+          source.start(Channel(Termisu::Event::Any).new)
+          Fiber.yield
+          error = expect_raises(IO::Error, "injected persistent cancellation failure") { source.stop }
+          error.should be(lease.failure)
+          lease.closed?.should be_false
+          source.stop_required?.should be_true
+          WindowsConsoleProbe.check WindowsConsoleProbe::Native.GetHandleInformation(lease.@input, out _), "GetHandleInformation(retained input)"
+        ensure
+          lease.reject = false
+          source.stop
+          lease.close
+          reader.close
         end
       end
     end
