@@ -15,6 +15,7 @@ require "spec"
       HANDLE_FLAG_INHERIT     = 0x0001_u32
       ENABLE_PROCESSED_OUTPUT = 0x0001_u32
       ENABLE_WINDOW_INPUT     = 0x0008_u32
+      WINDOW_BUFFER_SIZE_EVENT = 0x0004_u16
 
       fun CreateConsoleScreenBuffer(access : LibC::DWORD, share : LibC::DWORD,
                                     attributes : LibC::SECURITY_ATTRIBUTES*, flags : LibC::DWORD, reserved : Void*) : LibC::HANDLE
@@ -101,6 +102,24 @@ require "spec"
       check WindowsConsole.GetNumberOfConsoleInputEvents(input, out count), "GetNumberOfConsoleInputEvents(#{stage})"
       diagnose_input(input, stage) unless count == 0
       count.should eq(0_u32)
+    end
+
+    def finish_facade_input(input : LibC::HANDLE, output : LibC::HANDLE, stage : String) : Nil
+      check WindowsConsole.GetNumberOfConsoleInputEvents(input, out count), "GetNumberOfConsoleInputEvents(#{stage})"
+      return if count == 0
+      count.should eq(1_u32)
+      records = Slice(WindowsConsole::InputRecord).new(1) { WindowsConsole::InputRecord.new }
+      Termisu::System::Console.read_records(input, records, remove: false).should eq(1)
+      record = records[0]
+      record.event_type.should eq(Native::WINDOW_BUFFER_SIZE_EVENT)
+      size = record.key_event.key_down.unsafe_as(WindowsConsole::Coord)
+      check WindowsConsole.GetConsoleScreenBufferInfo(output, out info), "GetConsoleScreenBufferInfo(#{stage})"
+      {size.x, size.y}.should eq({info.size.x, info.size.y})
+      # Conhost emits a VT viewport notification even with ENABLE_WINDOW_INPUT off.
+      Termisu::System::Console.read_records(input, records).should eq(1)
+      records[0].event_type.should eq(record.event_type)
+      records[0].key_event.key_down.should eq(record.key_event.key_down)
+      assert_idle_input(input, stage)
     end
 
     def with_modes(input : LibC::HANDLE, output : LibC::HANDLE, &) : Nil
@@ -414,7 +433,31 @@ require "spec"
             term.close
           end
         end
-        WindowsConsoleProbe.assert_idle_input(input, "After mouse facade")
+        WindowsConsoleProbe.finish_facade_input(input, output, "After mouse facade")
+      end
+    end
+
+    it "rejects facade cleanup of key input without consuming it" do
+      WindowsConsoleProbe.with_console do |input, output|
+        WindowsConsoleProbe.with_modes(input, output) do
+          WindowsConsoleProbe.assert_idle_input(input, "Before cleanup guard")
+          mode = WindowsConsoleProbe.mode(input) & ~LibC::ENABLE_VIRTUAL_TERMINAL_INPUT.to_u32
+          WindowsConsoleProbe.check LibC.SetConsoleMode(input, mode), "SetConsoleMode(cleanup guard)"
+          record = WindowsConsoleProbe.key(0x71_u16)
+          WindowsConsoleProbe.check WindowsConsole.WriteConsoleInputW(input, pointerof(record), 1_u32, out written), "WriteConsoleInputW(cleanup guard)"
+          written.should eq(1_u32)
+          expect_raises(Spec::AssertionFailed) do
+            WindowsConsoleProbe.finish_facade_input(input, output, "Reject key input")
+          end
+          WindowsConsoleProbe.check WindowsConsole.GetNumberOfConsoleInputEvents(input, out count), "GetNumberOfConsoleInputEvents(unconsumed key)"
+          count.should eq(1_u32)
+          records = Slice(WindowsConsole::InputRecord).new(1) { WindowsConsole::InputRecord.new }
+          Termisu::System::Console.read_records(input, records, remove: false).should eq(1)
+          {records[0].event_type, records[0].key_event.unicode_char}.should eq({WindowsConsole::KEY_EVENT, 0x71_u16})
+          Termisu::System::Console.read_records(input, records).should eq(1)
+          {records[0].event_type, records[0].key_event.unicode_char}.should eq({WindowsConsole::KEY_EVENT, 0x71_u16})
+          WindowsConsoleProbe.assert_idle_input(input, "After cleanup guard")
+        end
       end
     end
 
@@ -510,7 +553,7 @@ require "spec"
           end
           WindowsConsoleProbe.mode(output).should eq(original)
         end
-        WindowsConsoleProbe.assert_idle_input(input, "After canonical facade")
+        WindowsConsoleProbe.finish_facade_input(input, output, "After canonical facade")
       end
     end
 
