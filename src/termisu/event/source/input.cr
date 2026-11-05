@@ -436,7 +436,7 @@ class Termisu::Event::Source::Input < Termisu::Event::Source
       return if @running.get
       cleanup_stopped_run
 
-      lease = ReadinessLease.new(@reader.@fd)
+      lease = create_readiness_lease
       stop_signal = Channel(Nil).new
       done = Channel(Nil).new
       @lease = lease
@@ -469,9 +469,25 @@ class Termisu::Event::Source::Input < Termisu::Event::Source
 
       @running.set(false)
       @stop_signal.try { |signal| signal.close unless signal.closed? }
-      @lease.try(&.cancel)
+      cancellation_error = begin
+        @lease.try(&.cancel)
+        nil
+      rescue error
+        begin
+          @lease.try(&.close)
+        rescue
+          # A second failure cannot justify closing handles still used by a worker.
+          raise error unless @lease.try(&.closed?)
+        end
+        error
+      end
       @done.try(&.receive?)
-      cleanup_stopped_run
+      begin
+        cleanup_stopped_run
+      rescue error
+        raise cancellation_error || error
+      end
+      raise cancellation_error if cancellation_error
       lifecycle_log { Log.debug { "Input source stopped" } }
     end
   end
@@ -501,6 +517,10 @@ class Termisu::Event::Source::Input < Termisu::Event::Source
   # Returns the source name for identification.
   def name : String
     "input"
+  end
+
+  private def create_readiness_lease : ReadinessLease
+    ReadinessLease.new(@reader.@fd)
   end
 
   private def cleanup_stopped_run : Nil
