@@ -870,6 +870,7 @@ class Termisu
 
   # Executes a block with cbreak mode.
   #
+  # Windows raises NotImplementedError because noncanonical echo is unsupported.
   # Cbreak mode provides character-by-character input with echo and
   # signal handling. Useful for interactive prompts within a TUI.
   #

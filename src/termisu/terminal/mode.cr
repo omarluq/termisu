@@ -58,16 +58,19 @@ enum Termisu::Terminal::Mode
   # Enable software flow control (XON/XOFF).
   # Ctrl+S pauses output, Ctrl+Q resumes.
   # Maps to IXON flag in c_iflag.
+  # Ignored on Windows consoles.
   FlowControl = 16
 
   # Enable output processing.
   # NL→CRNL translation and other output transformations.
   # Maps to OPOST flag in c_oflag.
+  # Ignored on Windows consoles.
   OutputProcessing = 32
 
   # Enable CR to NL translation on input.
   # Carriage return (0x0D) is translated to newline (0x0A).
   # Maps to ICRNL flag in c_iflag.
+  # Ignored on Windows consoles.
   CrToNl = 64
 
   # --- Preset Methods ---
@@ -81,6 +84,7 @@ enum Termisu::Terminal::Mode
 
   # Cbreak mode - character-by-character with feedback.
   # Each keystroke available immediately, with echo and signals.
+  # Applying this mode on Windows raises NotImplementedError: console echo requires canonical input.
   # Use for: Interactive prompts, char-by-char input with visual feedback
   def self.cbreak : self
     Echo | Signals
@@ -96,6 +100,9 @@ enum Termisu::Terminal::Mode
   # Complete cooked mode - full terminal driver processing.
   # All standard cooked flags plus flow control, output processing,
   # and CR→NL translation for maximum shell compatibility.
+  # Windows consoles ignore FlowControl, OutputProcessing and CrToNl: their
+  # POSIX transformations have no direct console-mode equivalent. This also
+  # applies to full_cooked; current_mode still records the requested flags.
   # Use for: Complete shell emulation, legacy program support
   def self.full_cooked : self
     Canonical | Echo | Signals | Extended | FlowControl | OutputProcessing | CrToNl
