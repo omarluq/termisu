@@ -139,6 +139,14 @@ require "spec"
       end
     end
 
+    class FailedWideOutput < Termisu::System::Console::Output
+      getter failure = IO::Error.new("injected wide output failure")
+
+      private def write_wide(handle : LibC::HANDLE, wide : Slice(UInt16)) : Nil
+        raise @failure
+      end
+    end
+
     class FailedOutputMode < Termisu::Termios
       getter failure = IO::Error.new("injected console output mode failure")
       @fail_output = true
@@ -426,6 +434,51 @@ require "spec"
           source.stop
           lease.close
           reader.close
+        end
+      end
+    end
+
+    it "temporarily enables VT output and restores canonical output modes on failure" do
+      WindowsConsoleProbe.with_screen_buffer do |handle|
+        original = WindowsConsoleProbe.mode(handle) & ~0x000D_u32
+        WindowsConsoleProbe.check LibC.SetConsoleMode(handle, original), "SetConsoleMode(no VT output)"
+        sink = Termisu::System::Console::Output.new(handle.address)
+        sink.write("\e[1;1HV".to_slice)
+        sink.flush
+        WindowsConsoleProbe.screen_text(handle, 1).should eq([0x56_u16])
+        WindowsConsoleProbe.mode(handle).should eq(original)
+        failed = WindowsConsoleProbe::FailedWideOutput.new(handle.address)
+        failed.write("\e[1;1HX".to_slice)
+        error = expect_raises(IO::Error, "injected wide output failure") { failed.flush }
+        error.should be(failed.failure)
+        WindowsConsoleProbe.mode(handle).should eq(original)
+        failed.@buffer.size.should eq(0)
+      end
+    end
+
+    it "renders nested canonical scopes without leaking escape sequences or changing the saved output mode" do
+      WindowsConsoleProbe.with_console do |input, output|
+        WindowsConsoleProbe.with_modes(input, output) do
+          original = WindowsConsoleProbe.mode(output) & ~0x000D_u32
+          WindowsConsoleProbe.check LibC.SetConsoleMode(output, original), "SetConsoleMode(no VT output)"
+          term = Termisu.new
+          begin
+            term.with_mode(Termisu::Terminal::Mode.cooked, preserve_screen: true) do
+              WindowsConsoleProbe.mode(output).should eq(original)
+              term.with_mode(Termisu::Terminal::Mode.password, preserve_screen: true) do
+                term.set_cell(0, 0, 'Z')
+                term.render
+                WindowsConsoleProbe.with_handle(WindowsConsoleProbe.open_console("CONOUT$")) do |active|
+                  WindowsConsoleProbe.screen_text(active, 1).should eq([0x5A_u16])
+                end
+                WindowsConsoleProbe.mode(output).should eq(original)
+              end
+              WindowsConsoleProbe.mode(output).should eq(original)
+            end
+          ensure
+            term.close
+          end
+          WindowsConsoleProbe.mode(output).should eq(original)
         end
       end
     end
