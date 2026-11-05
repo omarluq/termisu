@@ -100,7 +100,11 @@ class Termisu
       lifecycle_log { Log.info { "Initializing Termisu v#{VERSION}" } }
 
       terminal = build_terminal(sync_updates)
-      reader = Reader.new(terminal.infd)
+      reader = {% if flag?(:win32) %}
+                 Reader.new(terminal.infd, output_fd: terminal.outfd)
+               {% else %}
+                 Reader.new(terminal.infd)
+               {% end %}
       input_parser = Input::Parser.new(reader)
 
       lifecycle_log { Log.debug { "Terminal size: #{terminal.size}" } }

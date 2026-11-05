@@ -19,6 +19,8 @@ require "spec"
                                     attributes : LibC::SECURITY_ATTRIBUTES*, flags : LibC::DWORD, reserved : Void*) : LibC::HANDLE
       fun ReadConsoleOutputCharacterW(handle : LibC::HANDLE, characters : UInt16*, length : LibC::DWORD,
                                      origin : WindowsConsole::Coord, read : LibC::DWORD*) : LibC::BOOL
+      fun SetConsoleScreenBufferSize(handle : LibC::HANDLE, size : WindowsConsole::Coord) : LibC::BOOL
+      fun SetConsoleWindowInfo(handle : LibC::HANDLE, absolute : LibC::BOOL, window : WindowsConsole::SmallRect*) : LibC::BOOL
       fun GetHandleInformation(handle : LibC::HANDLE, flags : LibC::DWORD*) : LibC::BOOL
       fun CreateEventW(attributes : LibC::SECURITY_ATTRIBUTES*, manual_reset : LibC::BOOL,
                        initial_state : LibC::BOOL, name : LibC::LPWSTR) : LibC::HANDLE
@@ -118,6 +120,16 @@ require "spec"
       event.unicode_char = unit
       event.control_key_state = state
       record.key_event = event
+      record
+    end
+
+    def mouse(buttons : UInt32, flags : UInt32 = 0, state : UInt32 = 0, x : Int16 = 4, y : Int16 = 6) : WindowsConsole::InputRecord
+      event = WindowsConsole::MouseEventRecord.new
+      event.position = WindowsConsole::Coord.new(x: x, y: y)
+      event.button_state, event.control_key_state, event.event_flags = buttons, state, flags
+      record = WindowsConsole::InputRecord.new
+      record.event_type = WindowsConsole::MOUSE_EVENT
+      record.key_event = event.unsafe_as(WindowsConsole::KeyEventRecord)
       record
     end
 
@@ -226,9 +238,130 @@ require "spec"
       sizeof(LibC::HANDLE).should eq(8)
       sizeof(LibC::UIntPtrT).should eq(sizeof(LibC::HANDLE))
       sizeof(WindowsConsole::KeyEventRecord).should eq(16)
+      sizeof(WindowsConsole::MouseEventRecord).should eq(sizeof(WindowsConsole::KeyEventRecord))
+      offsetof(WindowsConsole::MouseEventRecord, @button_state).should eq(4)
+      offsetof(WindowsConsole::MouseEventRecord, @control_key_state).should eq(8)
+      offsetof(WindowsConsole::MouseEventRecord, @event_flags).should eq(12)
       sizeof(WindowsConsole::InputRecord).should eq(20)
       offsetof(WindowsConsole::InputRecord, @key_event).should eq(4)
       sizeof(WindowsConsole::ScreenBufferInfo).should eq(22)
+    end
+
+    it "parses native mouse records and VT mouse bytes through the shared parser" do
+      WindowsConsoleProbe.with_console do |input, output|
+        WindowsConsoleProbe.with_modes(input, output) do
+          mode = WindowsConsoleProbe.mode(input) & ~LibC::ENABLE_VIRTUAL_TERMINAL_INPUT.to_u32
+          WindowsConsoleProbe.check LibC.SetConsoleMode(input, mode), "SetConsoleMode(legacy records)"
+          records = [WindowsConsoleProbe.mouse(1, state: 0x1F_u32),
+                     WindowsConsoleProbe.mouse(1, WindowsConsole::MOUSE_MOVED),
+                     WindowsConsoleProbe.mouse(3), WindowsConsoleProbe.mouse(2), WindowsConsoleProbe.mouse(0),
+                     WindowsConsoleProbe.mouse(4), WindowsConsoleProbe.mouse(0),
+                     WindowsConsoleProbe.mouse(8), WindowsConsoleProbe.mouse(0),
+                     WindowsConsoleProbe.mouse(16), WindowsConsoleProbe.mouse(0),
+                     WindowsConsoleProbe.mouse(0x00780000_u32, WindowsConsole::MOUSE_WHEELED),
+                     WindowsConsoleProbe.mouse(0xFF880000_u32, WindowsConsole::MOUSE_WHEELED),
+                     WindowsConsoleProbe.mouse(0x00F00000_u32, WindowsConsole::MOUSE_HWHEELED),
+                     WindowsConsoleProbe.mouse(0xFF880000_u32, WindowsConsole::MOUSE_HWHEELED),
+                     WindowsConsoleProbe.mouse(0, WindowsConsole::MOUSE_MOVED),
+                     WindowsConsoleProbe.mouse(1, WindowsConsole::DOUBLE_CLICK),
+                     WindowsConsoleProbe.mouse(1, WindowsConsole::DOUBLE_CLICK), WindowsConsoleProbe.mouse(0)]
+          "\e[<2;9;10M".each_byte { |byte| records << WindowsConsoleProbe.key(byte.to_u16) }
+          WindowsConsoleProbe.check WindowsConsole.WriteConsoleInputW(input, records.to_unsafe, records.size.to_u32, out written),
+            "WriteConsoleInputW(mouse/VT records)"
+          written.should eq(records.size.to_u32)
+          reader = Termisu::Reader.new(input.address)
+          begin
+            parser = Termisu::Input::Parser.new(reader)
+            buttons = ["Left", "Left", "Right", "Release", "Release", "Middle", "Release",
+                       "Button4", "Release", "Button5", "Release", "WheelUp", "WheelDown",
+                       "WheelRight", "WheelRight", "WheelLeft", "Release", "Left", "Left", "Release", "Right"]
+            buttons.each_with_index do |button, index|
+              event = parser.poll_event(1000)
+              event.should be_a(Termisu::Event::Mouse)
+              mouse = event.as(Termisu::Event::Mouse)
+              mouse.button.to_s.should eq(button)
+              {mouse.x, mouse.y}.should eq(index == buttons.size - 1 ? {9, 10} : {5, 7})
+              mouse.motion?.should eq(index == 1 || index == 16)
+              if index == 0
+                mouse.shift?.should be_true
+                mouse.alt?.should be_true
+                mouse.ctrl?.should be_true
+              end
+            end
+          ensure
+            reader.close
+          end
+        end
+      end
+    end
+
+    it "accumulates high-resolution wheel deltas without expanding repeated reports" do
+      WindowsConsoleProbe.with_console do |input, _output|
+        decoder = WindowsConsoleProbe::BufferedInput.new(input.address)
+        records = Array.new(8) { WindowsConsoleProbe.mouse(0x001E0000_u32, WindowsConsole::MOUSE_WHEELED) }
+        decoder.seed(records)
+        expected = "\e[<64;5;7M" * 2
+        bytes = Bytes.new(expected.bytesize)
+        decoder.read(bytes).should eq(bytes.size)
+        String.new(bytes).should eq(expected)
+        decoder.clear
+        decoder.seed([WindowsConsoleProbe.mouse(0x80000000_u32, WindowsConsole::MOUSE_HWHEELED)])
+        one = Bytes.new(1)
+        decoder.read(one).should eq(1)
+        decoder.@repeats.should be <= 273
+        decoder.@pending.bytesize.should be < 32
+        decoder.clear
+        decoder.buffered?.should be_false
+      end
+    end
+
+    it "maps legacy mouse coordinates to the borrowed viewport origin" do
+      WindowsConsoleProbe.with_console do |input, output|
+        WindowsConsoleProbe.with_modes(input, output) do
+          WindowsConsoleProbe.with_screen_buffer do |screen|
+            WindowsConsoleProbe.check WindowsConsole.GetConsoleScreenBufferInfo(screen, out info), "GetConsoleScreenBufferInfo"
+            size = WindowsConsole::Coord.new(x: info.size.x, y: (info.size.y + 10).to_i16)
+            WindowsConsoleProbe.check WindowsConsoleProbe::Native.SetConsoleScreenBufferSize(screen, size), "SetConsoleScreenBufferSize"
+            window = info.window
+            window.top += 5
+            window.bottom += 5
+            WindowsConsoleProbe.check WindowsConsoleProbe::Native.SetConsoleWindowInfo(screen, 1, pointerof(window)), "SetConsoleWindowInfo"
+            mode = WindowsConsoleProbe.mode(input) & ~LibC::ENABLE_VIRTUAL_TERMINAL_INPUT.to_u32
+            WindowsConsoleProbe.check LibC.SetConsoleMode(input, mode), "SetConsoleMode(legacy records)"
+            record = WindowsConsoleProbe.mouse(1, x: window.left, y: window.top)
+            WindowsConsoleProbe.check WindowsConsole.WriteConsoleInputW(input, pointerof(record), 1_u32, out written), "WriteConsoleInputW(mouse origin)"
+            written.should eq(1_u32)
+            reader = Termisu::Reader.new(input.address, output_fd: screen.address)
+            begin
+              event = Termisu::Input::Parser.new(reader).poll_event(1000)
+              event.should be_a(Termisu::Event::Mouse)
+              mouse = event.as(Termisu::Event::Mouse)
+              {mouse.x, mouse.y}.should eq({1, 1})
+            ensure
+              reader.close
+            end
+          end
+        end
+      end
+    end
+
+    it "enables native mouse records only while public mouse tracking is active" do
+      WindowsConsoleProbe.with_console do |input, output|
+        WindowsConsoleProbe.with_modes(input, output) do
+          term = Termisu.new
+          begin
+            (WindowsConsoleProbe.mode(input) & WindowsConsole::ENABLE_MOUSE_INPUT).should eq(0_u32)
+            term.enable_mouse
+            (WindowsConsoleProbe.mode(input) & WindowsConsole::ENABLE_MOUSE_INPUT).should_not eq(0_u32)
+            term.@terminal.set_mode(Termisu::Terminal::Mode.raw)
+            (WindowsConsoleProbe.mode(input) & WindowsConsole::ENABLE_MOUSE_INPUT).should_not eq(0_u32)
+            term.disable_mouse
+            (WindowsConsoleProbe.mode(input) & WindowsConsole::ENABLE_MOUSE_INPUT).should eq(0_u32)
+          ensure
+            term.close
+          end
+        end
+      end
     end
 
     it "opens non-inheritable console handles independently of standard streams" do

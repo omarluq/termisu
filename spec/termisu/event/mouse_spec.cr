@@ -39,12 +39,10 @@ describe Termisu::Event::Mouse::Button do
     end
 
     context "extended buttons" do
-      # Note: Extended buttons (128, 129) are not currently implemented in from_cb
-      # The current implementation only handles basic buttons and wheel events
-      it "decodes 128 as basic button (extended not implemented)" do
-        # 128 has wheel bit (64) set, so it's decoded as WheelUp variant
-        result = Termisu::Event::Mouse::Button.from_cb(128)
-        result.should be_a(Termisu::Event::Mouse::Button)
+      it "decodes extra buttons with modifiers and motion" do
+        Termisu::Event::Mouse::Button.from_cb(128).should eq(Termisu::Event::Mouse::Button::Button4)
+        Termisu::Event::Mouse::Button.from_cb(129 | 4 | 8 | 16 | 32).should eq(Termisu::Event::Mouse::Button::Button5)
+        Termisu::Event::Mouse::Button.from_cb(130).should eq(Termisu::Event::Mouse::Button::None)
       end
     end
 
