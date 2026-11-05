@@ -25,7 +25,7 @@
       end
 
       # INPUT_RECORD's union is aligned to DWORD and its largest member is
-      # KEY_EVENT_RECORD; the remaining event types are not decoded here.
+      # KEY_EVENT_RECORD. Mouse events use the same 16-byte union storage.
       struct KeyEventRecord
         key_down : LibC::BOOL
         repeat_count : UInt16
@@ -35,12 +35,25 @@
         control_key_state : LibC::DWORD
       end
 
+      struct MouseEventRecord
+        position : Coord
+        button_state : LibC::DWORD
+        control_key_state : LibC::DWORD
+        event_flags : LibC::DWORD
+      end
+
       struct InputRecord
         event_type : UInt16
         key_event : KeyEventRecord
       end
 
-      KEY_EVENT = 0x0001_u16
+      KEY_EVENT   = 0x0001_u16
+      MOUSE_EVENT = 0x0002_u16
+
+      MOUSE_MOVED    = 0x0001_u32
+      DOUBLE_CLICK   = 0x0002_u32
+      MOUSE_WHEELED  = 0x0004_u32
+      MOUSE_HWHEELED = 0x0008_u32
 
       ENABLE_MOUSE_INPUT     = 0x0010_u32
       ENABLE_EXTENDED_FLAGS  = 0x0080_u32

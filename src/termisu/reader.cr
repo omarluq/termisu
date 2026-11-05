@@ -47,10 +47,12 @@ class Termisu::Reader
   #
   # - `fd` - File descriptor to read from
   # - `buffer_size` - Internal buffer size (default: 128 bytes)
+  # On Windows, output_fd optionally supplies the borrowed screen buffer used
+  # to map native mouse positions to viewport coordinates; otherwise they are buffer-relative.
   {% if flag?(:win32) %}
-    def initialize(@fd : IO::FileDescriptor::Handle, buffer_size : Int32 = 128)
+    def initialize(@fd : IO::FileDescriptor::Handle, buffer_size : Int32 = 128, *, output_fd : IO::FileDescriptor::Handle? = nil)
       @buffer = Bytes.new(buffer_size)
-      @console_input = System::Console::Input.new(@fd)
+      @console_input = System::Console::Input.new(@fd, output_fd)
       Log.debug { "Reader initialized: fd=#{@fd}, buffer_size=#{buffer_size}" }
     end
   {% else %}

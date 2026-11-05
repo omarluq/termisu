@@ -13,8 +13,12 @@ require "../console"
     @pending = ""
     @pending_pos = 0
     @high_surrogate : UInt16?
+    @mouse_buttons = 0_u32
+    @mouse_sequence : String?
+    @wheel_delta = 0
+    @horizontal_wheel_delta = 0
 
-    def initialize(@fd : IO::FileDescriptor::Handle)
+    def initialize(@fd : IO::FileDescriptor::Handle, @output_fd : IO::FileDescriptor::Handle? = nil)
     end
 
     def buffered? : Bool
@@ -25,6 +29,9 @@ require "../console"
       @record_pos = @record_count = @repeats = @pending_pos = 0
       @pending = ""
       @high_surrogate = nil
+      @mouse_buttons = 0_u32
+      @mouse_sequence = nil
+      @wheel_delta = @horizontal_wheel_delta = 0
     end
 
     # At most one new native batch per call; repeat counts never expand into a FIFO.
@@ -41,7 +48,11 @@ require "../console"
         end
         if @repeats > 0
           @repeats -= 1
-          decode_unit(@unit)
+          if sequence = @mouse_sequence
+            @pending, @pending_pos = sequence, 0
+          else
+            decode_unit(@unit)
+          end
           next
         end
         if @record_pos >= @record_count
@@ -53,14 +64,88 @@ require "../console"
         end
         record = @records[@record_pos]
         @record_pos += 1
+        if record.event_type == C::MOUSE_EVENT
+          # Both SDK union members have the same size and DWORD alignment.
+          decode_mouse(record.key_event.unsafe_as(C::MouseEventRecord))
+          next
+        end
         next unless record.event_type == C::KEY_EVENT
         key = record.key_event
         next if key.key_down == 0
         next if key.unicode_char == 0 && !nul_key?(key)
+        @mouse_sequence = nil
         @unit = key.unicode_char
         @repeats = Math.max(key.repeat_count.to_i32, 1)
       end
       written
+    end
+
+    private MOUSE_BUTTONS = { {1_u32, 0}, {4_u32, 1}, {2_u32, 2}, {8_u32, 128}, {16_u32, 129} }
+
+    private def decode_mouse(mouse : C::MouseEventRecord) : Nil
+      x, y = mouse_position(mouse.position)
+      buttons = mouse.button_state & 0x001F_u32
+      previous, @mouse_buttons = @mouse_buttons, buttons
+      return if x < 1 || y < 1
+      modifiers = mouse_modifiers(mouse.control_key_state)
+      @repeats = 1
+      @mouse_sequence = String.build do |output|
+        flags = mouse.event_flags
+        if (flags & (C::MOUSE_WHEELED | C::MOUSE_HWHEELED)) != 0
+          if button = wheel_button(mouse)
+            sgr_mouse(output, button | modifiers, x, y)
+          end
+        elsif (flags & C::MOUSE_MOVED) != 0
+          button = MOUSE_BUTTONS.find { |mask, _| (buttons & mask) != 0 }.try(&.[1]) || 3
+          sgr_mouse(output, button | modifiers | 32, x, y)
+        else
+          MOUSE_BUTTONS.each do |mask, button|
+            pressed = (buttons & mask) != 0
+            next if ((previous ^ buttons) & mask) == 0 && !((flags & C::DOUBLE_CLICK) != 0 && pressed)
+            sgr_mouse(output, button | modifiers, x, y, release: !pressed)
+          end
+        end
+      end
+    end
+
+    private def wheel_button(mouse : C::MouseEventRecord) : Int32?
+      delta = (mouse.button_state >> 16).to_u16.unsafe_as(Int16).to_i32
+      horizontal = (mouse.event_flags & C::MOUSE_HWHEELED) != 0
+      if horizontal
+        @horizontal_wheel_delta += delta
+        steps = @horizontal_wheel_delta.tdiv(120)
+        @horizontal_wheel_delta = @horizontal_wheel_delta.remainder(120)
+      else
+        @wheel_delta += delta
+        steps = @wheel_delta.tdiv(120)
+        @wheel_delta = @wheel_delta.remainder(120)
+      end
+      return if steps == 0
+      @repeats = steps.abs
+      horizontal ? (steps > 0 ? 67 : 66) : (steps > 0 ? 64 : 65)
+    end
+
+    private def mouse_position(position : C::Coord) : {Int32, Int32}
+      x, y = position.x.to_i32 + 1, position.y.to_i32 + 1
+      if fd = @output_fd
+        if C.GetConsoleScreenBufferInfo(LibC::HANDLE.new(fd), out info) == 0
+          raise IO::Error.from_winerror("GetConsoleScreenBufferInfo(mouse input)")
+        end
+        x -= info.window.left
+        y -= info.window.top
+      end
+      {x, y}
+    end
+
+    private def mouse_modifiers(state : UInt32) : Int32
+      modifiers = (state & 0x0010) != 0 ? 4 : 0
+      modifiers |= 8 if (state & 0x0003) != 0
+      modifiers |= 16 if (state & 0x000C) != 0
+      modifiers
+    end
+
+    private def sgr_mouse(output : IO, button : Int32, x : Int32, y : Int32, *, release : Bool = false) : Nil
+      output << "\e[<" << button << ';' << x << ';' << y << (release ? 'm' : 'M')
     end
 
     private def nul_key?(key : C::KeyEventRecord) : Bool

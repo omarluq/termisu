@@ -190,7 +190,8 @@ class Termisu::Termios
         bits |= LibC::ENABLE_LINE_INPUT
         bits |= LibC::ENABLE_ECHO_INPUT if mode.echo?
       else
-        bits |= LibC::ENABLE_VIRTUAL_TERMINAL_INPUT | System::Console::C::ENABLE_MOUSE_INPUT
+        bits |= LibC::ENABLE_VIRTUAL_TERMINAL_INPUT
+        bits &= ~System::Console::C::ENABLE_MOUSE_INPUT
         bits = (bits | System::Console::C::ENABLE_EXTENDED_FLAGS) & ~System::Console::C::ENABLE_QUICK_EDIT_MODE
       end
       bits |= LibC::ENABLE_PROCESSED_INPUT if mode.signals?

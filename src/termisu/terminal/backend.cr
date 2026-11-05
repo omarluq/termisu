@@ -40,7 +40,7 @@ class Termisu::Terminal::Backend
       initialized = false
       begin
         @termios = Termios.new(@infd, @outfd)
-        @console_input = System::Console::Input.new(@infd)
+        @console_input = System::Console::Input.new(@infd, @outfd)
         initialized = true
       ensure
         @tty.close rescue nil unless initialized
