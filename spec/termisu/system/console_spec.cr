@@ -97,6 +97,12 @@ require "spec"
       STDERR.puts "#{stage}: queued type/char/key/state=#{payload.inspect}"
     end
 
+    def assert_idle_input(input : LibC::HANDLE, stage : String) : Nil
+      check WindowsConsole.GetNumberOfConsoleInputEvents(input, out count), "GetNumberOfConsoleInputEvents(#{stage})"
+      diagnose_input(input, stage) unless count == 0
+      count.should eq(0_u32)
+    end
+
     def with_modes(input : LibC::HANDLE, output : LibC::HANDLE, &) : Nil
       snapshots = [{input, mode(input)}, {output, mode(output)}]
       error : Exception? = nil
@@ -385,12 +391,16 @@ require "spec"
           WindowsConsoleProbe.diagnose_input(input, "After viewport cleanup") unless remaining == 0
           remaining.should eq(0_u32)
         end
+        WindowsConsoleProbe.assert_idle_input(input, "After viewport mode restore")
       end
     end
 
     it "enables native mouse records only while public mouse tracking is active" do
       WindowsConsoleProbe.with_console do |input, output|
+        WindowsConsoleProbe.assert_idle_input(input, "Before mouse facade")
         WindowsConsoleProbe.with_modes(input, output) do
+          mode = WindowsConsoleProbe.mode(input) & ~WindowsConsoleProbe::Native::ENABLE_WINDOW_INPUT
+          WindowsConsoleProbe.check LibC.SetConsoleMode(input, mode), "SetConsoleMode(no facade resize events)"
           term = Termisu.new
           begin
             (WindowsConsoleProbe.mode(input) & WindowsConsole::ENABLE_MOUSE_INPUT).should eq(0_u32)
@@ -404,6 +414,7 @@ require "spec"
             term.close
           end
         end
+        WindowsConsoleProbe.assert_idle_input(input, "After mouse facade")
       end
     end
 
@@ -474,7 +485,10 @@ require "spec"
 
     it "renders nested canonical scopes without leaking escape sequences or changing the saved output mode" do
       WindowsConsoleProbe.with_console do |input, output|
+        WindowsConsoleProbe.assert_idle_input(input, "Before canonical facade")
         WindowsConsoleProbe.with_modes(input, output) do
+          mode = WindowsConsoleProbe.mode(input) & ~WindowsConsoleProbe::Native::ENABLE_WINDOW_INPUT
+          WindowsConsoleProbe.check LibC.SetConsoleMode(input, mode), "SetConsoleMode(no facade resize events)"
           original = WindowsConsoleProbe.mode(output) & ~0x000D_u32
           WindowsConsoleProbe.check LibC.SetConsoleMode(output, original), "SetConsoleMode(no VT output)"
           term = Termisu.new
@@ -496,6 +510,7 @@ require "spec"
           end
           WindowsConsoleProbe.mode(output).should eq(original)
         end
+        WindowsConsoleProbe.assert_idle_input(input, "After canonical facade")
       end
     end
 
