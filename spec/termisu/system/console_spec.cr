@@ -969,6 +969,16 @@ require "spec"
             end
             {WindowsConsoleProbe.mode(input), WindowsConsoleProbe.mode(output)}.should eq(before)
             backend.current_mode.should eq(Termisu::Terminal::Mode.password)
+            backend.set_mode(Termisu::Terminal::Mode.cooked)
+            cooked = {WindowsConsoleProbe.mode(input), WindowsConsoleProbe.mode(output)}
+            flags = [Termisu::Terminal::Mode::FlowControl, Termisu::Terminal::Mode::CrToNl,
+                     Termisu::Terminal::Mode::OutputProcessing, Termisu::Terminal::Mode.full_cooked]
+            flags.each do |flag|
+              requested = Termisu::Terminal::Mode.cooked | flag
+              backend.set_mode(requested)
+              {WindowsConsoleProbe.mode(input), WindowsConsoleProbe.mode(output)}.should eq(cooked)
+              backend.current_mode.should eq(requested)
+            end
           ensure
             backend.close
           end
