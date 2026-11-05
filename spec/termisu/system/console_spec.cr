@@ -1018,19 +1018,22 @@ require "spec"
       end
     end
 
-    it "waits through empty and filtered backend input and wakes a pending read on close" do
+    it "preserves backend read waits, close wakeups and setup errors" do
       WindowsConsoleProbe.with_console do |input, output|
-        ["key", "close"].each do |completion|
+        ["key", "close", "setup failure"].each do |completion|
           WindowsConsoleProbe.with_modes(input, output) do
             WindowsConsoleProbe.assert_idle_input(input, "Before backend read #{completion}")
             backend = Termisu::Terminal::Backend.new
             results = Channel(String | Exception).new(1)
             finished = Channel(Nil).new(1)
+            reader_fiber : Fiber? = nil
+            setup_error = IO::Error.new("injected backend setup failure")
             begin
+              raise setup_error if completion == "setup failure"
               backend.enable_raw_mode
               backend.read(Bytes.empty).should eq(0)
               backend.@input_readiness.should be_nil
-              spawn do
+              reader_fiber = spawn do
                 begin
                   buffer = Bytes.new(8)
                   count = backend.read(buffer)
@@ -1094,12 +1097,17 @@ require "spec"
               backend.@input_readiness.should be_nil
               expect_raises(IO::Error, "Terminal backend is closed") { backend.read(Bytes.new(1)) }
               WindowsConsoleProbe.assert_idle_input(input, "After backend read #{completion}")
+            rescue error
+              raise error unless completion == "setup failure"
+              error.should be(setup_error)
             ensure
               backend.close
-              select
-              when finished.receive
-              when timeout(2.seconds)
-                raise "Backend read fiber did not terminate"
+              if reader_fiber
+                select
+                when finished.receive
+                when timeout(2.seconds)
+                  raise "Backend read fiber did not terminate"
+                end
               end
             end
           end
