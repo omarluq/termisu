@@ -22,18 +22,40 @@ class Termisu::Terminal::Backend
   @raw_mode_enabled : Bool = false
   @closed = Atomic(Bool).new(false)
 
-  getter infd : Int32
-  getter outfd : Int32
+  {% if flag?(:win32) %}
+    @console_input : System::Console::Input
+    @input_readiness : System::Console::ReadinessLease?
+    @input_readiness_lock = Mutex.new
+  {% end %}
+
+  getter infd : IO::FileDescriptor::Handle
+  getter outfd : IO::FileDescriptor::Handle
 
   # Creates a new terminal backend, opening `/dev/tty` for I/O.
   #
   # Raises `IO::Error` if the TTY cannot be opened.
-  def initialize
-    @tty = TTY.new
-    @termios = Termios.new(@tty.outfd)
-    @infd = @tty.infd
-    @outfd = @tty.outfd
-  end
+  {% if flag?(:win32) %}
+    def initialize
+      @tty = TTY.new
+      @infd = @tty.infd
+      @outfd = @tty.outfd
+      initialized = false
+      begin
+        @termios = Termios.new(@infd, @outfd)
+        @console_input = System::Console::Input.new(@infd, @outfd)
+        initialized = true
+      ensure
+        @tty.close rescue nil unless initialized
+      end
+    end
+  {% else %}
+    def initialize
+      @tty = TTY.new
+      @termios = Termios.new(@tty.outfd)
+      @infd = @tty.infd
+      @outfd = @tty.outfd
+    end
+  {% end %}
 
   # Enables raw mode for the terminal.
   #
@@ -54,8 +76,12 @@ class Termisu::Terminal::Backend
   # if raw mode is already disabled.
   def disable_raw_mode
     return unless @raw_mode_enabled
-    @termios.restore
-    @raw_mode_enabled = false
+    {% if flag?(:win32) %}
+      restore_console_mode
+    {% else %}
+      @termios.restore
+      @raw_mode_enabled = false
+    {% end %}
   end
 
   # Returns whether raw mode is currently enabled.
@@ -80,20 +106,45 @@ class Termisu::Terminal::Backend
 
   # Reads data from the terminal into the provided buffer.
   #
-  # Returns the number of bytes read, or 0 on EOF.
+  # Returns the number of bytes read, or 0 on EOF or for an empty buffer.
   # Raises `IO::Error` on read failure.
   def read(buffer : Bytes) : Int32
-    loop do
-      bytes_read = LibC.read(@infd, buffer, buffer.size)
-      if bytes_read >= 0
-        return bytes_read.to_i32
+    {% if flag?(:win32) %}
+      raise IO::Error.new("Terminal backend is closed") if @closed.get
+      return 0 if buffer.empty?
+
+      loop do
+        count = @console_input.read(buffer)
+        return count if count > 0
+        lease = @input_readiness_lock.synchronize do
+          raise IO::Error.new("Terminal backend is closed") if @closed.get
+          if current = @input_readiness
+            current.rearm
+            current
+          else
+            @input_readiness = System::Console::ReadinessLease.new(@infd)
+          end
+        end
+        status = lease.wait(nil)
+        raise lease.worker_error if lease.worker_failed?
+        raise IO::Error.new("Terminal backend is closed") if @closed.get
+        unless status == System::Console::ReadinessLease::Status::Ready
+          raise IO::Error.new("Unexpected console input readiness status: #{status}")
+        end
       end
-      # bytes_read < 0: check errno
-      if Errno.value == Errno::EINTR
-        next # Retry on signal interruption
+    {% else %}
+      loop do
+        bytes_read = LibC.read(@infd, buffer, buffer.size)
+        if bytes_read >= 0
+          return bytes_read.to_i32
+        end
+        # bytes_read < 0: check errno
+        if Errno.value == Errno::EINTR
+          next # Retry on signal interruption
+        end
+        raise IO::Error.from_errno("read failed")
       end
-      raise IO::Error.from_errno("read failed")
-    end
+    {% end %}
   end
 
   # Returns the terminal size as {width, height}.
@@ -101,11 +152,19 @@ class Termisu::Terminal::Backend
   # Uses the TIOCGWINSZ ioctl to query the terminal dimensions.
   # Raises `IO::Error` if the size cannot be determined.
   def size : {Int32, Int32}
-    winsize = uninitialized LibC::Winsize
-    if LibC.ioctl(@outfd, LibC::TIOCGWINSZ, pointerof(winsize)) == -1
-      raise IO::Error.from_errno("ioctl TIOCGWINSZ failed")
-    end
-    {winsize.ws_col.to_i32, winsize.ws_row.to_i32}
+    {% if flag?(:win32) %}
+      if System::Console::C.GetConsoleScreenBufferInfo(LibC::HANDLE.new(@outfd), out info) == 0
+        raise IO::Error.from_winerror("GetConsoleScreenBufferInfo")
+      end
+      {info.window.right.to_i32 - info.window.left.to_i32 + 1,
+       info.window.bottom.to_i32 - info.window.top.to_i32 + 1}
+    {% else %}
+      winsize = uninitialized LibC::Winsize
+      if LibC.ioctl(@outfd, LibC::TIOCGWINSZ, pointerof(winsize)) == -1
+        raise IO::Error.from_errno("ioctl TIOCGWINSZ failed")
+      end
+      {winsize.ws_col.to_i32, winsize.ws_row.to_i32}
+    {% end %}
   end
 
   # Executes a block with raw mode enabled, ensuring cleanup.
@@ -140,6 +199,9 @@ class Termisu::Terminal::Backend
   # ```
   # ameba:disable Naming/AccessorMethodName
   def set_mode(mode : Terminal::Mode)
+    {% if flag?(:win32) %}
+      @tty.flush
+    {% end %}
     @termios.set_mode(mode)
     # Raw mode is represented by the zero-value flags state.
     @raw_mode_enabled = mode.value == 0
@@ -173,7 +235,11 @@ class Termisu::Terminal::Backend
     yield
   ensure
     # Restore previous mode, or raw mode if no previous mode was set
-    set_mode(previous || Terminal::Mode.raw)
+    {% if flag?(:win32) %}
+      restore_console_mode(previous || Terminal::Mode.raw)
+    {% else %}
+      set_mode(previous || Terminal::Mode.raw)
+    {% end %}
   end
 
   # Closes the terminal backend, disabling raw mode and closing TTY.
@@ -181,22 +247,67 @@ class Termisu::Terminal::Backend
     return unless @closed.compare_and_set(false, true)[1]
 
     restore_error = nil.as(Exception?)
+    {% if flag?(:win32) %}
+      begin
+        @input_readiness_lock.synchronize do
+          if lease = @input_readiness
+            begin
+              lease.close
+            ensure
+              @input_readiness = nil if lease.closed?
+            end
+          end
+        end
+      rescue error
+        if @input_readiness
+          @closed.set(false)
+          raise error
+        end
+        restore_error ||= error
+      end
+    {% end %}
     begin
-      disable_raw_mode
+      {% if flag?(:win32) %}
+        restore_console_mode
+      {% else %}
+        disable_raw_mode
+      {% end %}
     rescue ex
-      restore_error = ex
+      restore_error ||= ex
     end
 
     begin
       @tty.close
     rescue error
-      # Restoring termios is the first failure to report, but descriptor
-      # closure is always attempted and is reported when restoration worked.
+      # Earlier cleanup failures take precedence, but descriptor closure is always attempted.
       restore_error ||= error
     end
 
     raise restore_error if restore_error
   end
+
+  {% if flag?(:win32) %}
+    private def restore_console_mode(mode : Terminal::Mode? = nil) : Nil
+      error : Exception? = nil
+      begin
+        @tty.flush
+      rescue ex
+        error = ex
+      end
+      begin
+        if mode
+          @termios.set_mode(mode)
+          @raw_mode_enabled = mode.value == 0
+        else
+          @termios.restore
+          @raw_mode_enabled = false
+        end
+      rescue ex
+        error ||= ex
+      end
+      raise error if error
+    end
+  {% end %}
 end
 
 # Add Winsize struct to LibC if not already defined

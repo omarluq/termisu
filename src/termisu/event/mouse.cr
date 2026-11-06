@@ -88,6 +88,8 @@ struct Termisu::Event::Mouse
         else        None
         end
       else
+        return {Button4, Button5, None, None}[button] if (cb & 128) != 0
+
         # Regular button
         case button
         when 0 then Left

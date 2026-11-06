@@ -22,13 +22,22 @@
 require "./time_compat"
 require "./system/readiness"
 
+{% if flag?(:win32) %}
+  require "./system/console/input"
+  require "./system/console/readiness_lease"
+{% end %}
+
 class Termisu::Reader
   Log = Termisu::Logs::Reader
-  @fd : Int32
+  @fd : IO::FileDescriptor::Handle
   @buffer : Bytes
   @buffer_pos : Int32 = 0
   @buffer_len : Int32 = 0
   @eof : Bool = false
+
+  {% if flag?(:win32) %}
+    @console_input : System::Console::Input
+  {% end %}
 
   # Maximum retry attempts for EINTR before giving up.
   # This prevents infinite loops in pathological signal storms.
@@ -38,10 +47,20 @@ class Termisu::Reader
   #
   # - `fd` - File descriptor to read from
   # - `buffer_size` - Internal buffer size (default: 128 bytes)
-  def initialize(@fd : Int32, buffer_size : Int32 = 128)
-    @buffer = Bytes.new(buffer_size)
-    Log.debug { "Reader initialized: fd=#{@fd}, buffer_size=#{buffer_size}" }
-  end
+  # On Windows, output_fd optionally supplies the borrowed screen buffer used
+  # to map native mouse positions to viewport coordinates; otherwise they are buffer-relative.
+  {% if flag?(:win32) %}
+    def initialize(@fd : IO::FileDescriptor::Handle, buffer_size : Int32 = 128, *, output_fd : IO::FileDescriptor::Handle? = nil)
+      @buffer = Bytes.new(buffer_size)
+      @console_input = System::Console::Input.new(@fd, output_fd)
+      Log.debug { "Reader initialized: fd=#{@fd}, buffer_size=#{buffer_size}" }
+    end
+  {% else %}
+    def initialize(@fd : IO::FileDescriptor::Handle, buffer_size : Int32 = 128)
+      @buffer = Bytes.new(buffer_size)
+      Log.debug { "Reader initialized: fd=#{@fd}, buffer_size=#{buffer_size}" }
+    end
+  {% end %}
 
   # Whether the last buffer fill reached EOF. This may be temporary on live inputs.
   def eof? : Bool
@@ -111,6 +130,9 @@ class Termisu::Reader
   # Uses select(2) with zero timeout for non-blocking check.
   def available? : Bool
     return true if @buffer_pos < @buffer_len
+    {% if flag?(:win32) %}
+      return true if @console_input.buffered?
+    {% end %}
 
     check_fd_readable(0)
   end
@@ -122,6 +144,9 @@ class Termisu::Reader
   # Returns `true` if data becomes available, `false` on timeout.
   def wait_for_data(timeout_ms : Int32) : Bool
     return true if @buffer_pos < @buffer_len
+    {% if flag?(:win32) %}
+      return true if @console_input.buffered?
+    {% end %}
 
     # Convert milliseconds to seconds and microseconds
     timeout_sec = timeout_ms // 1000
@@ -141,11 +166,36 @@ class Termisu::Reader
   # Handles EINTR by retrying automatically.
   # Other errors raise Termisu::IOError.
   private def check_fd_readable(timeout_sec : Int32 = 0, timeout_usec : Int32 = 0) : Bool
-    if @fd >= FD_SETSIZE
-      check_fd_readable_poll(timeout_sec, timeout_usec)
-    else
-      check_fd_readable_select(timeout_sec, timeout_usec)
-    end
+    {% if flag?(:win32) %}
+      timeout = timeout_sec.seconds + timeout_usec.microseconds
+      if timeout <= Time::Span.zero
+        handle = LibC::HANDLE.new(@fd)
+        result = System::Console::C.WaitForMultipleObjects(1_u32, pointerof(handle), 0, 0_u32)
+        case result
+        when 0
+          true
+        when LibC::WAIT_TIMEOUT
+          false
+        else
+          raise IO::Error.from_winerror("WaitForMultipleObjects(console input)")
+        end
+      else
+        lease = System::Console::ReadinessLease.new(@fd)
+        begin
+          status = lease.wait(monotonic_now + timeout)
+          raise lease.worker_error if lease.worker_failed?
+          status == System::Console::ReadinessLease::Status::Ready
+        ensure
+          lease.close
+        end
+      end
+    {% else %}
+      if @fd >= FD_SETSIZE
+        check_fd_readable_poll(timeout_sec, timeout_usec)
+      else
+        check_fd_readable_select(timeout_sec, timeout_usec)
+      end
+    {% end %}
   end
 
   # Checks readability using poll(2) for fd >= FD_SETSIZE.
@@ -272,6 +322,9 @@ class Termisu::Reader
     @buffer_pos = 0
     @buffer_len = 0
     @eof = false
+    {% if flag?(:win32) %}
+      @console_input.clear
+    {% end %}
   end
 
   # Closes the reader (does not close the file descriptor).
@@ -286,55 +339,62 @@ class Termisu::Reader
   # Returns true if data was read, false on EOF or no data available.
   # Raises Termisu::IOError on unrecoverable errors.
   private def fill_buffer : Bool
-    retries = 0
+    {% if flag?(:win32) %}
+      @buffer_pos = 0
+      @buffer_len = @console_input.read(@buffer)
+      @eof = false
+      @buffer_len > 0
+    {% else %}
+      retries = 0
 
-    loop do
-      bytes_read = LibC.read(@fd, @buffer, @buffer.size)
+      loop do
+        bytes_read = LibC.read(@fd, @buffer, @buffer.size)
 
-      if bytes_read > 0
-        @buffer_pos = 0
-        @buffer_len = bytes_read.to_i32
-        @eof = false
-        Termisu::Logs::Reader.trace { "fill_buffer: read #{bytes_read} bytes" }
-        return true
-      elsif bytes_read == 0
-        # EOF
-        @buffer_pos = 0
-        @buffer_len = 0
-        @eof = true
-        Termisu::Logs::Reader.debug { "fill_buffer: EOF" }
-        return false
-      end
-
-      # bytes_read < 0: error occurred
-      errno = Errno.value
-
-      if errno.eintr?
-        # Interrupted by signal - retry
-        retries += 1
-        Termisu::Logs::Reader.trace { "fill_buffer: EINTR, retry #{retries}" }
-        if retries >= MAX_EINTR_RETRIES
-          Termisu::Logs::Reader.error { "fill_buffer: max EINTR retries exceeded" }
-          raise Termisu::IOError.read_failed(errno)
+        if bytes_read > 0
+          @buffer_pos = 0
+          @buffer_len = bytes_read.to_i32
+          @eof = false
+          Termisu::Logs::Reader.trace { "fill_buffer: read #{bytes_read} bytes" }
+          return true
+        elsif bytes_read == 0
+          # EOF
+          @buffer_pos = 0
+          @buffer_len = 0
+          @eof = true
+          Termisu::Logs::Reader.debug { "fill_buffer: EOF" }
+          return false
         end
-        next
-      end
 
-      if errno.eagain?
-        # Non-blocking I/O would block - no data available
-        @buffer_pos = 0
-        @buffer_len = 0
-        @eof = false
-        return false
-      end
+        # bytes_read < 0: error occurred
+        errno = Errno.value
 
-      # EBADF: Bad file descriptor
-      # EIO: I/O error
-      # EISDIR: fd refers to a directory
-      # Other errors are unrecoverable
-      Termisu::Logs::Reader.error { "fill_buffer: read error #{errno}" }
-      raise Termisu::IOError.read_failed(errno)
-    end
+        if errno.eintr?
+          # Interrupted by signal - retry
+          retries += 1
+          Termisu::Logs::Reader.trace { "fill_buffer: EINTR, retry #{retries}" }
+          if retries >= MAX_EINTR_RETRIES
+            Termisu::Logs::Reader.error { "fill_buffer: max EINTR retries exceeded" }
+            raise Termisu::IOError.read_failed(errno)
+          end
+          next
+        end
+
+        if errno.eagain?
+          # Non-blocking I/O would block - no data available
+          @buffer_pos = 0
+          @buffer_len = 0
+          @eof = false
+          return false
+        end
+
+        # EBADF: Bad file descriptor
+        # EIO: I/O error
+        # EISDIR: fd refers to a directory
+        # Other errors are unrecoverable
+        Termisu::Logs::Reader.error { "fill_buffer: read error #{errno}" }
+        raise Termisu::IOError.read_failed(errno)
+      end
+    {% end %}
   end
 
   private def remaining_timeout_ms(original_timeout_ms : Int32, start : MonotonicTime) : Int32

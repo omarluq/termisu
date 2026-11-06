@@ -12,6 +12,66 @@ private def with_showcase(&)
   end
 end
 
+private def signal_showcase(child : Process, signal : Signal) : Bool
+  return false if child.terminated?
+  child.signal(signal)
+  true
+rescue error
+  raise error unless child.terminated?
+  false
+end
+
+private def with_showcase_pauses(term : Termisu::Testing::Terminal, &)
+  child = term.@pty.process
+  stop = Channel(Nil).new
+  done = Channel(Exception?).new(1)
+  spawn do
+    error = nil
+    begin
+      loop do
+        break unless signal_showcase(child, Signal::STOP)
+        select
+        when stop.receive?
+          break
+        when timeout(120.milliseconds)
+        end
+        break unless signal_showcase(child, Signal::CONT)
+        select
+        when stop.receive?
+          break
+        when timeout(1.millisecond)
+        end
+      end
+    rescue ex
+      error = ex
+    ensure
+      begin
+        signal_showcase(child, Signal::CONT)
+      rescue ex
+        error ||= ex
+      end
+      done.send(error)
+    end
+  end
+  begin
+    yield
+  ensure
+    stop.close
+    if error = done.receive
+      raise error
+    end
+  end
+end
+
+describe "Showcase pause signalling" do
+  it "does not signal an exited and reaped child" do
+    child = Process.new("true")
+    child.wait.success?.should be_true
+    signal_showcase(child, Signal::STOP).should be_false
+    signal_showcase(child, Signal::CONT).should be_false
+  end
+end
+
 describe "Showcase application (e2e)" do
   describe "header" do
     it "renders the title, Unicode box and subtitle" do
@@ -119,6 +179,18 @@ describe "Showcase application (e2e)" do
         goodbye_visible = term.get_by_text(/Goodbye/)
         STDERR.puts term.diagnostics unless goodbye_visible
         goodbye_visible.should be_true
+      end
+    end
+
+    it "shows the final goodbye after the child is paused and resumed" do
+      with_showcase do |term|
+        term.write("Q")
+        term.get_by_text("Thanks").should be_true
+        with_showcase_pauses(term) do
+          goodbye_visible = term.get_by_text("Goodbye! 👋")
+          STDERR.puts term.diagnostics unless goodbye_visible
+          goodbye_visible.should be_true
+        end
       end
     end
   end

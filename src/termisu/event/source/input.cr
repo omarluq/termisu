@@ -41,6 +41,9 @@ class Termisu::Event::Source::Input < Termisu::Event::Source
   # while still allowing bursty input to be processed quickly.
   MAX_DRAIN_PER_CYCLE = 64
 
+  {% if flag?(:win32) %}
+    private alias ReadinessLease = Termisu::System::Console::ReadinessLease
+  {% else %}
   # A run-local bridge between blocking poll(2) and Crystal's cooperative IO.
   #
   # The duplicated input descriptor is used only for readiness: Parser remains
@@ -149,6 +152,10 @@ class Termisu::Event::Source::Input < Termisu::Event::Source
       return unless @cancelled.compare_and_set(false, true)[1]
 
       write_command(Command::Stop) rescue nil
+    end
+
+    def closed? : Bool
+      @closed.get
     end
 
     def close : Nil
@@ -376,6 +383,7 @@ class Termisu::Event::Source::Input < Termisu::Event::Source
       end
     end
   end
+  {% end %}
 
   {% if @top_level.has_constant?(:TERMISU_INPUT_READINESS_SPEC) %}
     def self.worker_failure_cleanup_for_spec(fd : Int32) : {Array(Int32), Exception?}
@@ -428,7 +436,7 @@ class Termisu::Event::Source::Input < Termisu::Event::Source
       return if @running.get
       cleanup_stopped_run
 
-      lease = ReadinessLease.new(@reader.@fd)
+      lease = create_readiness_lease
       stop_signal = Channel(Nil).new
       done = Channel(Nil).new
       @lease = lease
@@ -440,8 +448,11 @@ class Termisu::Event::Source::Input < Termisu::Event::Source
         run_loop(output, stop_signal, lease)
       ensure
         @running.set(false)
-        lease.cancel
-        done.close
+        begin
+          lease.cancel
+        ensure
+          done.close
+        end
       end
 
       lifecycle_log { Log.debug { "Input source started" } }
@@ -458,9 +469,25 @@ class Termisu::Event::Source::Input < Termisu::Event::Source
 
       @running.set(false)
       @stop_signal.try { |signal| signal.close unless signal.closed? }
-      @lease.try(&.cancel)
+      cancellation_error = begin
+        @lease.try(&.cancel)
+        nil
+      rescue error
+        begin
+          @lease.try(&.close)
+        rescue
+          # A second failure cannot justify closing handles still used by a worker.
+          raise error unless @lease.try(&.closed?)
+        end
+        error
+      end
       @done.try(&.receive?)
-      cleanup_stopped_run
+      begin
+        cleanup_stopped_run
+      rescue error
+        raise cancellation_error || error
+      end
+      raise cancellation_error if cancellation_error
       lifecycle_log { Log.debug { "Input source stopped" } }
     end
   end
@@ -492,13 +519,23 @@ class Termisu::Event::Source::Input < Termisu::Event::Source
     "input"
   end
 
+  private def create_readiness_lease : ReadinessLease
+    ReadinessLease.new(@reader.@fd)
+  end
+
   private def cleanup_stopped_run : Nil
     lease = @lease
-    @lease = nil
-    @fiber = nil
-    @stop_signal = nil
-    @done = nil
-    lease.try(&.close)
+    begin
+      lease.try(&.close)
+    ensure
+      # Report finalized worker errors once, but retain unconfirmed native runs.
+      if lease.nil? || lease.closed?
+        @lease = nil
+        @fiber = nil
+        @stop_signal = nil
+        @done = nil
+      end
+    end
   end
 
   private def run_loop(
@@ -651,7 +688,12 @@ class Termisu::Event::Source::Input < Termisu::Event::Source
   end
 
   private def parser_buffered_input? : Bool
-    !@parser.@pending.empty? || @reader.@buffer_pos < @reader.@buffer_len
+    buffered = !@parser.@pending.empty? || @reader.@buffer_pos < @reader.@buffer_len
+    {% if flag?(:win32) %}
+      buffered || @reader.@console_input.buffered?
+    {% else %}
+      buffered
+    {% end %}
   end
 
   private def send_event(

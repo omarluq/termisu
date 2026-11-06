@@ -492,12 +492,12 @@ class Termisu::Terminal < Termisu::Renderer
   end
 
   # Returns the input file descriptor for Reader.
-  def infd : Int32
+  def infd : IO::FileDescriptor::Handle
     @backend.infd
   end
 
   # Returns the output file descriptor.
-  def outfd : Int32
+  def outfd : IO::FileDescriptor::Handle
     @backend.outfd
   end
 
@@ -549,6 +549,9 @@ class Termisu::Terminal < Termisu::Renderer
   def set_mode(mode : Terminal::Mode)
     Log.debug { "Setting mode: #{mode}" }
     @backend.set_mode(mode)
+    {% if flag?(:win32) %}
+      apply_mouse_state @mouse_enabled
+    {% end %}
   end
 
   # Executes a block with specific terminal mode, restoring previous mode after.
@@ -667,6 +670,8 @@ class Termisu::Terminal < Termisu::Renderer
   end
 
   # Executes a block with cbreak mode.
+  #
+  # Windows raises NotImplementedError because noncanonical echo is unsupported.
   #
   # Cbreak mode provides character-by-character input with echo and
   # signal handling. Useful for interactive prompts where you want
@@ -1129,6 +1134,17 @@ class Termisu::Terminal < Termisu::Renderer
   end
 
   private def apply_mouse_state(enabled : Bool)
+    {% if flag?(:win32) %}
+      handle = LibC::HANDLE.new(infd)
+      if LibC.GetConsoleMode(handle, out mode) == 0
+        raise IO::Error.from_winerror("GetConsoleMode(mouse input)")
+      end
+      flag = System::Console::C::ENABLE_MOUSE_INPUT
+      mode = enabled ? mode | flag : mode & ~flag
+      if LibC.SetConsoleMode(handle, mode) == 0
+        raise IO::Error.from_winerror("SetConsoleMode(mouse input)")
+      end
+    {% end %}
     # Enable SGR mode first (preferred), then normal mode as fallback.
     if enabled
       write(MOUSE_ENABLE_SGR)

@@ -185,6 +185,41 @@ crystal spec spec/termisu/buffer_spec.cr
 crystal spec --verbose
 ```
 
+### Windows console contract probe (experimental)
+
+The Windows port is not yet runtime-qualified. With Crystal 1.21 on x64 Windows
+and an attached VT-capable **disposable, idle console**, run the native contract probe:
+
+```powershell
+crystal spec spec/termisu/system/console_spec.cr
+# Repeat with both standard streams redirected while retaining the attached console:
+cmd /d /c "crystal spec spec/termisu/system/console_spec.cr <NUL >windows-console-probe.log 2>&1"
+```
+
+The probe imports the full facade and checks native layouts, owned non-inheritable
+handles, cleanup, shared mode restoration and failed-transition rollback. It exercises
+readiness cancellation/join, source restart with buffered input, raw-reader and cooked
+scopes, bounded Unicode output, native screen-cell readback and software timer accounting.
+It also retains basic native VT arrow/modifier/Unicode/NUL and decoder-state contracts.
+
+**Do not run it in a live interactive console.** The protocol test requires an
+empty input queue and injects synthetic key records, then reads them back. It does
+not flush the input queue. Console modes are shared and restored after the test.
+
+The `Windows console probes` workflow runs the probe binary on Windows 2025
+with Crystal 1.21. Its test-only PowerShell host explicitly allocates a console
+when needed, preserves the runner's standard handles, redirects the child's
+streams, and drains both output pipes concurrently. It enforces a 30-second
+runtime limit and uploads host metadata plus stdout/stderr even when tests fail.
+This explicit test-host allocation is not production auto-attachment behavior.
+
+Full protocol parity (mouse/paste/replies), actual child-process handoff, ConPTY and
+end-to-end rendering remain unqualified. Windows noncanonical echo (`Mode.cbreak`) and
+generic descriptor polling raise `NotImplementedError`; they are not silently emulated.
+The probe contains no Windows examples on Unix: a Unix run or a cross-target semantic
+check is **not** native Windows validation. A missing attached console is a failure,
+not a silently skipped test.
+
 ## Code Coverage
 
 Code coverage is automatically generated and uploaded to [Codecov](https://codecov.io) on every push to `main`. The CI workflow uses [kcov](https://github.com/SimonKagstrom/kcov) to measure coverage.

@@ -300,6 +300,7 @@ termisu.with_password_mode do
 end
 
 # Cbreak mode: Character-by-character with echo (Ctrl+C works)
+# Windows: raises NotImplementedError (noncanonical echo is unsupported).
 termisu.with_cbreak_mode do
   print "Press any key: "
   char = STDIN.read_char
@@ -352,6 +353,11 @@ Mode.semi_raw    # TUI with Ctrl+C support
 | full_cooked | ✓         | ✓    | ✓       | Complete shell emulation     |
 | password    | ✓         | -    | ✓       | Secure text entry            |
 | semi_raw    | -         | -    | ✓       | TUI with Ctrl+C support      |
+
+On Windows, applying `Mode.cbreak` (including via `with_cbreak_mode`) raises `NotImplementedError`
+because console echo requires canonical input. `FlowControl`, `CrToNl`, and
+`OutputProcessing` are POSIX-only flags and are ignored by Windows consoles,
+including in `full_cooked`; `current_mode` retains the requested flags.
 
 #### Convenience Methods
 

@@ -1,0 +1,1557 @@
+require "spec"
+
+{% if flag?(:win32) %}
+  # Run only in a disposable idle console; these probes inject and consume input.
+  require "../../../src/termisu"
+  require "../../../src/termisu/time_compat"
+
+  alias WindowsConsole = Termisu::System::Console::C
+
+  module WindowsConsoleProbe
+    extend self
+
+    @[Link("kernel32")]
+    lib Native
+      HANDLE_FLAG_INHERIT     = 0x0001_u32
+      ENABLE_PROCESSED_OUTPUT = 0x0001_u32
+      ENABLE_WINDOW_INPUT     = 0x0008_u32
+      WINDOW_BUFFER_SIZE_EVENT = 0x0004_u16
+
+      fun CreateConsoleScreenBuffer(access : LibC::DWORD, share : LibC::DWORD,
+                                    attributes : LibC::SECURITY_ATTRIBUTES*, flags : LibC::DWORD, reserved : Void*) : LibC::HANDLE
+      fun ReadConsoleOutputCharacterW(handle : LibC::HANDLE, characters : UInt16*, length : LibC::DWORD,
+                                     origin : WindowsConsole::Coord, read : LibC::DWORD*) : LibC::BOOL
+      fun SetConsoleScreenBufferSize(handle : LibC::HANDLE, size : WindowsConsole::Coord) : LibC::BOOL
+      fun SetConsoleWindowInfo(handle : LibC::HANDLE, absolute : LibC::BOOL, window : WindowsConsole::SmallRect*) : LibC::BOOL
+      fun GetHandleInformation(handle : LibC::HANDLE, flags : LibC::DWORD*) : LibC::BOOL
+      fun CreateEventW(attributes : LibC::SECURITY_ATTRIBUTES*, manual_reset : LibC::BOOL,
+                       initial_state : LibC::BOOL, name : LibC::LPWSTR) : LibC::HANDLE
+      fun SetEvent(handle : LibC::HANDLE) : LibC::BOOL
+      fun WaitForMultipleObjects(count : LibC::DWORD, handles : LibC::HANDLE*,
+                                 wait_all : LibC::BOOL, milliseconds : LibC::DWORD) : LibC::DWORD
+    end
+
+    def check(result : LibC::BOOL, operation : String) : Nil
+      raise IO::Error.from_winerror(operation) if result == 0
+    end
+
+    def open_console(name : String) : LibC::HANDLE
+      path = "#{name}\0".to_utf16
+      handle = LibC.CreateFileW(path, LibC::GENERIC_READ | LibC::GENERIC_WRITE,
+        LibC::FILE_SHARE_READ | LibC::FILE_SHARE_WRITE, nil, LibC::OPEN_EXISTING, 0_u32, nil)
+      if handle == LibC::INVALID_HANDLE_VALUE
+        raise IO::Error.from_winerror("CreateFileW(#{name}); an attached console is required")
+      end
+      handle
+    end
+
+    def with_screen_buffer(&) : Nil
+      handle = Native.CreateConsoleScreenBuffer(LibC::GENERIC_READ | LibC::GENERIC_WRITE,
+        LibC::FILE_SHARE_READ | LibC::FILE_SHARE_WRITE, nil, 1_u32, nil)
+      raise IO::Error.from_winerror("CreateConsoleScreenBuffer") if handle == LibC::INVALID_HANDLE_VALUE
+      with_handle(handle) { |output| yield output }
+    end
+
+    def screen_text(output : LibC::HANDLE, count : Int32) : Array(UInt16)
+      characters = Slice(UInt16).new(count)
+      check Native.ReadConsoleOutputCharacterW(output, characters, count.to_u32, WindowsConsole::Coord.new, out read),
+        "ReadConsoleOutputCharacterW"
+      read.should eq(count.to_u32)
+      characters.to_a
+    end
+
+    def with_handle(handle : LibC::HANDLE, &) : Nil
+      error : Exception? = nil
+      begin
+        yield handle
+      rescue ex
+        error = ex
+      ensure
+        if LibC.CloseHandle(handle) == 0
+          close_error = IO::Error.from_winerror("CloseHandle")
+          error ||= close_error
+        end
+      end
+      raise error if error
+    end
+
+    def with_console(&) : Nil
+      with_handle(open_console("CONIN$")) do |input|
+        with_handle(open_console("CONOUT$")) do |output|
+          yield input, output
+        end
+      end
+    end
+
+    def mode(handle : LibC::HANDLE) : UInt32
+      check LibC.GetConsoleMode(handle, out value), "GetConsoleMode"
+      value
+    end
+
+    def diagnose_input(input : LibC::HANDLE, stage : String) : Nil
+      records = Slice(WindowsConsole::InputRecord).new(32) { WindowsConsole::InputRecord.new }
+      count = Termisu::System::Console.read_records(input, records, remove: false)
+      payload = records[0, count].map do |record|
+        key = record.key_event
+        {record.event_type, key.unicode_char, key.virtual_key_code, key.control_key_state}
+      end
+      STDERR.puts "#{stage}: queued type/char/key/state=#{payload.inspect}"
+    end
+
+    def assert_idle_input(input : LibC::HANDLE, stage : String) : Nil
+      check WindowsConsole.GetNumberOfConsoleInputEvents(input, out count), "GetNumberOfConsoleInputEvents(#{stage})"
+      diagnose_input(input, stage) unless count == 0
+      count.should eq(0_u32)
+    end
+
+    def finish_facade_input(input : LibC::HANDLE, output : LibC::HANDLE, stage : String) : Nil
+      check WindowsConsole.GetNumberOfConsoleInputEvents(input, out count), "GetNumberOfConsoleInputEvents(#{stage})"
+      return if count == 0
+      count.should eq(1_u32)
+      records = Slice(WindowsConsole::InputRecord).new(1) { WindowsConsole::InputRecord.new }
+      Termisu::System::Console.read_records(input, records, remove: false).should eq(1)
+      record = records[0]
+      record.event_type.should eq(Native::WINDOW_BUFFER_SIZE_EVENT)
+      size = record.key_event.key_down.unsafe_as(WindowsConsole::Coord)
+      check WindowsConsole.GetConsoleScreenBufferInfo(output, out info), "GetConsoleScreenBufferInfo(#{stage})"
+      {size.x, size.y}.should eq({info.size.x, info.size.y})
+      # Conhost emits a VT viewport notification even with ENABLE_WINDOW_INPUT off.
+      Termisu::System::Console.read_records(input, records).should eq(1)
+      records[0].event_type.should eq(record.event_type)
+      records[0].key_event.key_down.should eq(record.key_event.key_down)
+      assert_idle_input(input, stage)
+    end
+
+    def with_modes(input : LibC::HANDLE, output : LibC::HANDLE, &) : Nil
+      snapshots = [{input, mode(input)}, {output, mode(output)}]
+      error : Exception? = nil
+      begin
+        yield
+      rescue ex
+        error = ex
+      ensure
+        snapshots.reverse_each do |handle, original|
+          if LibC.SetConsoleMode(handle, original) == 0
+            restore_error = IO::Error.from_winerror("SetConsoleMode(restore)")
+            error ||= restore_error
+          end
+        end
+      end
+      raise error if error
+    end
+
+    alias InputSignature = Tuple(UInt16, UInt128)
+
+    def input_signature(record : WindowsConsole::InputRecord) : InputSignature
+      payload = case record.event_type
+                when WindowsConsole::KEY_EVENT, WindowsConsole::MOUSE_EVENT
+                  record.key_event.unsafe_as(UInt128)
+                when Native::WINDOW_BUFFER_SIZE_EVENT
+                  # Only COORD is initialized; the rest of this union is unspecified.
+                  record.key_event.key_down.unsafe_as(UInt32).to_u128
+                else
+                  raise Spec::AssertionFailed.new("Unexpected console input type: #{record.event_type}", __FILE__, __LINE__)
+                end
+      {record.event_type, payload}
+    end
+
+    def input_snapshot(input : LibC::HANDLE) : Array(InputSignature)
+      check WindowsConsole.GetNumberOfConsoleInputEvents(input, out count), "GetNumberOfConsoleInputEvents(snapshot)"
+      count.should be <= 512_u32
+      return [] of InputSignature if count == 0
+      records = Slice(WindowsConsole::InputRecord).new(count.to_i) { WindowsConsole::InputRecord.new }
+      Termisu::System::Console.read_records(input, records, remove: false).should eq(records.size)
+      records.map { |record| input_signature(record) }.to_a
+    end
+
+    private def owned_suffix?(queued : Array(InputSignature), owned : Array(InputSignature)) : Bool
+      queued.size <= owned.size && owned[owned.size - queued.size, queued.size] == queued
+    end
+
+    def verify_owned_input(output : LibC::HANDLE, queued : Array(InputSignature), owned : Array(InputSignature)) : Nil
+      return if owned_suffix?(queued, owned)
+      if last = queued.last?
+        if last[0] == Native::WINDOW_BUFFER_SIZE_EVENT
+          check WindowsConsole.GetConsoleScreenBufferInfo(output, out info), "GetConsoleScreenBufferInfo(failed fixture)"
+          expected = {Native::WINDOW_BUFFER_SIZE_EVENT, info.size.unsafe_as(UInt32).to_u128}
+          unless last == expected
+            # The saved output handle may predate entry into an alternate buffer.
+            with_handle(open_console("CONOUT$")) do |active|
+              check WindowsConsole.GetConsoleScreenBufferInfo(active, out current), "GetConsoleScreenBufferInfo(active fixture)"
+              expected = {Native::WINDOW_BUFFER_SIZE_EVENT, current.size.unsafe_as(UInt32).to_u128}
+            end
+          end
+          return if last == expected && owned_suffix?(queued[0, queued.size - 1], owned)
+        end
+      end
+      raise Spec::AssertionFailed.new("Unowned console input remains; refusing fixture cleanup", __FILE__, __LINE__)
+    end
+
+    def capture_resize_input(input : LibC::HANDLE, output : LibC::HANDLE, owned : Array(InputSignature)) : Nil
+      queued = input_snapshot(input)
+      verify_owned_input(output, queued, owned)
+      owned.replace(queued)
+    end
+
+    def finish_injected_input(input : LibC::HANDLE, output : LibC::HANDLE, owned : Array(InputSignature)) : Nil
+      queued = input_snapshot(input)
+      verify_owned_input(output, queued, owned)
+      unless queued.empty?
+        records = Slice(WindowsConsole::InputRecord).new(queued.size) { WindowsConsole::InputRecord.new }
+        Termisu::System::Console.read_records(input, records).should eq(records.size)
+        records.map { |record| input_signature(record) }.to_a.should eq(queued)
+        assert_idle_input(input, "After failed injected fixture cleanup")
+      end
+      owned.clear
+    end
+
+    def with_injected_input(input : LibC::HANDLE, output : LibC::HANDLE, &) : Nil
+      assert_idle_input(input, "Before injected fixture")
+      owned = [] of InputSignature
+      begin
+        with_modes(input, output) { yield owned }
+      rescue error
+        begin
+          finish_injected_input(input, output, owned)
+        rescue cleanup_error
+          STDERR.puts "Injected fixture cleanup failed: #{cleanup_error.message}"
+        end
+        raise error
+      end
+    end
+
+    def write_input(input : LibC::HANDLE, output : LibC::HANDLE,
+                    records : Array(WindowsConsole::InputRecord) | Slice(WindowsConsole::InputRecord), owned : Array(InputSignature)) : Nil
+      verify_owned_input(output, input_snapshot(input), owned)
+      result = WindowsConsole.WriteConsoleInputW(input, records.to_unsafe, records.size.to_u32, out written)
+      error = IO::Error.from_winerror("WriteConsoleInputW(fixture)") if result == 0
+      begin
+        # Capture conhost's actual translation before any assertion or cooperative read.
+        owned.replace(input_snapshot(input))
+      rescue ex
+        error ||= ex
+      end
+      raise error if error
+      written.should eq(records.size.to_u32)
+    end
+
+    def event : LibC::HANDLE
+      handle = Native.CreateEventW(nil, 1, 0, nil)
+      raise IO::Error.from_winerror("CreateEventW") if handle.null?
+      handle
+    end
+
+    def key(unit : UInt16, virtual_key : UInt16 = 0, *, repeats : UInt16 = 1, state : UInt32 = 0) : WindowsConsole::InputRecord
+      record = WindowsConsole::InputRecord.new
+      record.event_type = WindowsConsole::KEY_EVENT
+      event = WindowsConsole::KeyEventRecord.new
+      event.key_down = 1
+      event.repeat_count = repeats
+      event.virtual_key_code = virtual_key
+      event.unicode_char = unit
+      event.control_key_state = state
+      record.key_event = event
+      record
+    end
+
+    def mouse(buttons : UInt32, flags : UInt32 = 0, state : UInt32 = 0, x : Int16 = 4, y : Int16 = 6) : WindowsConsole::InputRecord
+      event = WindowsConsole::MouseEventRecord.new
+      event.position = WindowsConsole::Coord.new(x: x, y: y)
+      event.button_state, event.control_key_state, event.event_flags = buttons, state, flags
+      record = WindowsConsole::InputRecord.new
+      record.event_type = WindowsConsole::MOUSE_EVENT
+      record.key_event = event.unsafe_as(WindowsConsole::KeyEventRecord)
+      record
+    end
+
+    class RetainedInputSource < Termisu::Event::Source::Input
+      def seed_lease(lease : Termisu::System::Console::ReadinessLease) : Nil
+        @lease = lease
+      end
+    end
+
+    class FailedWideOutput < Termisu::System::Console::Output
+      getter failure = IO::Error.new("injected wide output failure")
+
+      private def write_wide(handle : LibC::HANDLE, wide : Slice(UInt16)) : Nil
+        raise @failure
+      end
+    end
+
+    class FailedOutputMode < Termisu::Termios
+      getter failure = IO::Error.new("injected console output mode failure")
+      @fail_output = true
+
+      private def apply_console_mode(fd : IO::FileDescriptor::Handle, mode : UInt32) : Nil
+        if fd == @output_fd && @fail_output
+          @fail_output = false
+          raise @failure
+        end
+        super
+      end
+    end
+
+    def write_keys(input : LibC::HANDLE, output : LibC::HANDLE, owned : Array(InputSignature),
+                   unit : UInt16, *, count : Int32 = 1) : Nil
+      # VT translation handles each record once, ignoring its legacy repeat count.
+      records = Slice(WindowsConsole::InputRecord).new(count) { key(unit) }
+      write_input(input, output, records, owned)
+      peek = Slice(WindowsConsole::InputRecord).new(count + 32) { WindowsConsole::InputRecord.new }
+      read = Termisu::System::Console.read_records(input, peek, remove: false)
+      characters = peek[0, read].sum do |record|
+        if record.event_type == WindowsConsole::KEY_EVENT && record.key_event.key_down != 0 && record.key_event.unicode_char == unit
+          record.key_event.repeat_count.to_i32
+        else
+          0
+        end
+      end
+      characters.should eq(count)
+    end
+
+    def receive(output : Channel(Termisu::Event::Any)) : Termisu::Event::Any
+      select
+      when event = output.receive
+        event
+      when timeout(2.seconds)
+        raise "Timed out receiving native input/timer event"
+      end
+    end
+
+    def key_event(event : Termisu::Event::Any?) : Termisu::Event::Key
+      event.should be_a(Termisu::Event::Key)
+      event.as(Termisu::Event::Key)
+    end
+
+    class BufferedInput < Termisu::System::Console::Input
+      def seed(records : Array(WindowsConsole::InputRecord)) : Nil
+        raise "oversized fixture batch" if records.size > @records.size
+        records.each_with_index { |record, index| @records[index] = record }
+        @record_pos = 0
+        @record_count = records.size
+      end
+    end
+
+    class FailedWaitLease < Termisu::System::Console::ReadinessLease
+      getter failure = IO::Error.new("injected readiness wait failure")
+
+      private def wait_handles(_handles : Array(LibC::HANDLE)) : UInt32
+        raise @failure
+      end
+    end
+
+    class FailedNotificationLease < Termisu::System::Console::ReadinessLease
+      getter failure = IO::Error.new("injected readiness notification failure")
+
+      private def publish(_status : Status) : Nil
+        raise @failure
+      end
+    end
+
+    class FailedCancellationLease < Termisu::System::Console::ReadinessLease
+      getter failure = IO::Error.new("injected cancellation failure")
+      @fail_once = true
+
+      private def signal_cancellation : Nil
+        if @fail_once
+          @fail_once = false
+          raise @failure
+        end
+        super
+      end
+    end
+
+    class PersistentCancellationLease < Termisu::System::Console::ReadinessLease
+      getter failure = IO::Error.new("injected persistent cancellation failure")
+      property reject = true
+
+      private def signal_cancellation : Nil
+        raise @failure if @reject
+        super
+      end
+    end
+
+    class CancellationInputSource < Termisu::Event::Source::Input
+      property injected_lease : Termisu::System::Console::ReadinessLease?
+
+      private def create_readiness_lease : Termisu::System::Console::ReadinessLease
+        @injected_lease || super
+      end
+    end
+
+    class UnconfirmedJoinLease < Termisu::System::Console::ReadinessLease
+      @fail_once = true
+
+      private def join_worker : Nil
+        if @fail_once
+          @fail_once = false
+          raise IO::Error.new("injected unconfirmed join")
+        end
+        super
+      end
+    end
+  end
+
+  describe Termisu::System::Console do
+    it "matches the x64 Windows SDK record layouts without truncating handles" do
+      sizeof(LibC::HANDLE).should eq(8)
+      sizeof(LibC::UIntPtrT).should eq(sizeof(LibC::HANDLE))
+      sizeof(WindowsConsole::KeyEventRecord).should eq(16)
+      sizeof(WindowsConsole::MouseEventRecord).should eq(sizeof(WindowsConsole::KeyEventRecord))
+      offsetof(WindowsConsole::MouseEventRecord, @button_state).should eq(4)
+      offsetof(WindowsConsole::MouseEventRecord, @control_key_state).should eq(8)
+      offsetof(WindowsConsole::MouseEventRecord, @event_flags).should eq(12)
+      sizeof(WindowsConsole::InputRecord).should eq(20)
+      offsetof(WindowsConsole::InputRecord, @key_event).should eq(4)
+      sizeof(WindowsConsole::ScreenBufferInfo).should eq(22)
+    end
+
+    it "cleans owned input after a partial-read abort without replacing the original error" do
+      WindowsConsoleProbe.with_console do |input, output|
+        original = {WindowsConsoleProbe.mode(input), WindowsConsoleProbe.mode(output)}
+        failure = Spec::AssertionFailed.new("injected input fixture abort", __FILE__, __LINE__)
+        records = Array.new(64) { |index| WindowsConsoleProbe.key(index.even? ? 0x71_u16 : 0x72_u16) }
+        abort_fixture = ->(owned : Array(WindowsConsoleProbe::InputSignature)) do
+          disabled = LibC::ENABLE_LINE_INPUT | LibC::ENABLE_ECHO_INPUT | LibC::ENABLE_PROCESSED_INPUT |
+                     LibC::ENABLE_VIRTUAL_TERMINAL_INPUT
+          WindowsConsoleProbe.check LibC.SetConsoleMode(input, WindowsConsoleProbe.mode(input) & ~disabled.to_u32), "SetConsoleMode(abort fixture)"
+          WindowsConsoleProbe.write_input(input, output, records, owned)
+          reader = Termisu::Reader.new(input.address)
+          begin
+            reader.read_byte.should eq(0x71_u8)
+            WindowsConsoleProbe.input_snapshot(input).should_not be_empty
+            raise failure
+          ensure
+            reader.close
+          end
+        end
+        # Control: the old mode/reader cleanup leaves the unread native suffix queued.
+        WindowsConsoleProbe.with_injected_input(input, output) do |owned|
+          error = expect_raises(Spec::AssertionFailed, "injected input fixture abort") do
+            WindowsConsoleProbe.with_modes(input, output) { abort_fixture.call(owned) }
+          end
+          error.should be(failure)
+          WindowsConsoleProbe.input_snapshot(input).should_not be_empty
+          {WindowsConsoleProbe.mode(input), WindowsConsoleProbe.mode(output)}.should eq(original)
+          WindowsConsoleProbe.finish_injected_input(input, output, owned)
+        end
+        error = expect_raises(Spec::AssertionFailed, "injected input fixture abort") do
+          WindowsConsoleProbe.with_injected_input(input, output) { |owned| abort_fixture.call(owned) }
+        end
+        error.should be(failure)
+        {WindowsConsoleProbe.mode(input), WindowsConsoleProbe.mode(output)}.should eq(original)
+        WindowsConsoleProbe.assert_idle_input(input, "After injected fixture abort")
+      end
+    end
+
+    it "does not discard unread input from a successful injected fixture" do
+      WindowsConsoleProbe.with_console do |input, output|
+        WindowsConsoleProbe.with_injected_input(input, output) do |reset|
+          WindowsConsoleProbe.with_injected_input(input, output) do |owned|
+            mode = WindowsConsoleProbe.mode(input) & ~LibC::ENABLE_VIRTUAL_TERMINAL_INPUT.to_u32
+            WindowsConsoleProbe.check LibC.SetConsoleMode(input, mode), "SetConsoleMode(successful input fixture)"
+            records = Slice[WindowsConsoleProbe.key(0x71_u16), WindowsConsoleProbe.key(0x72_u16)]
+            WindowsConsoleProbe.write_input(input, output, records, owned)
+            reset.replace(owned)
+          end
+          WindowsConsoleProbe.input_snapshot(input).should eq(reset)
+          reset.size.should eq(2)
+          WindowsConsoleProbe.finish_injected_input(input, output, reset)
+        end
+      end
+    end
+
+    it "rejects unowned input before consuming any fixture records" do
+      WindowsConsoleProbe.with_console do |input, output|
+        WindowsConsoleProbe.with_injected_input(input, output) do |all_owned|
+          mode = WindowsConsoleProbe.mode(input) & ~LibC::ENABLE_VIRTUAL_TERMINAL_INPUT.to_u32
+          WindowsConsoleProbe.check LibC.SetConsoleMode(input, mode), "SetConsoleMode(unowned input guard)"
+          guarded = [] of WindowsConsoleProbe::InputSignature
+          WindowsConsoleProbe.write_input(input, output, Slice[WindowsConsoleProbe.key(0x71_u16)], guarded)
+          all_owned.replace(guarded)
+          WindowsConsoleProbe.write_input(input, output, Slice[WindowsConsoleProbe.key(0x7A_u16)], all_owned)
+          expect_raises(Spec::AssertionFailed, "Unowned console input") do
+            WindowsConsoleProbe.finish_injected_input(input, output, guarded)
+          end
+          WindowsConsoleProbe.input_snapshot(input).should eq(all_owned)
+          all_owned.size.should eq(2)
+          WindowsConsoleProbe.finish_injected_input(input, output, all_owned)
+        end
+      end
+    end
+
+    it "cleans private-buffer resize and injected mouse input after a fixture abort" do
+      WindowsConsoleProbe.with_console do |input, output|
+        failure = Spec::AssertionFailed.new("injected private-buffer abort", __FILE__, __LINE__)
+        error = expect_raises(Spec::AssertionFailed, "injected private-buffer abort") do
+          WindowsConsoleProbe.with_injected_input(input, output) do |owned|
+            mode = WindowsConsoleProbe.mode(input) &
+                   ~(LibC::ENABLE_VIRTUAL_TERMINAL_INPUT.to_u32 | WindowsConsoleProbe::Native::ENABLE_WINDOW_INPUT)
+            WindowsConsoleProbe.check LibC.SetConsoleMode(input, mode), "SetConsoleMode(private-buffer abort)"
+            WindowsConsoleProbe.with_screen_buffer do |screen|
+              WindowsConsoleProbe.check WindowsConsole.GetConsoleScreenBufferInfo(screen, out info), "GetConsoleScreenBufferInfo(private-buffer abort)"
+              WindowsConsoleProbe.capture_resize_input(input, screen, owned)
+              size = WindowsConsole::Coord.new(x: info.size.x, y: (info.size.y + 10).to_i16)
+              WindowsConsoleProbe.check WindowsConsoleProbe::Native.SetConsoleScreenBufferSize(screen, size), "SetConsoleScreenBufferSize(private-buffer abort)"
+              WindowsConsoleProbe.capture_resize_input(input, screen, owned)
+              WindowsConsoleProbe.write_input(input, screen, Slice[WindowsConsoleProbe.mouse(1)], owned)
+              WindowsConsoleProbe.input_snapshot(input).should_not be_empty
+              raise failure
+            end
+          end
+        end
+        error.should be(failure)
+        WindowsConsoleProbe.assert_idle_input(input, "After private-buffer abort")
+      end
+    end
+
+    it "parses native mouse records and VT mouse bytes through the shared parser" do
+      WindowsConsoleProbe.with_console do |input, output|
+        WindowsConsoleProbe.with_injected_input(input, output) do |owned|
+          mode = WindowsConsoleProbe.mode(input) & ~LibC::ENABLE_VIRTUAL_TERMINAL_INPUT.to_u32
+          WindowsConsoleProbe.check LibC.SetConsoleMode(input, mode), "SetConsoleMode(legacy records)"
+          records = [WindowsConsoleProbe.mouse(1, state: 0x1F_u32),
+                     WindowsConsoleProbe.mouse(1, WindowsConsole::MOUSE_MOVED),
+                     WindowsConsoleProbe.mouse(3), WindowsConsoleProbe.mouse(2), WindowsConsoleProbe.mouse(0),
+                     WindowsConsoleProbe.mouse(4), WindowsConsoleProbe.mouse(0),
+                     WindowsConsoleProbe.mouse(8), WindowsConsoleProbe.mouse(0),
+                     WindowsConsoleProbe.mouse(16), WindowsConsoleProbe.mouse(0),
+                     WindowsConsoleProbe.mouse(0x00780000_u32, WindowsConsole::MOUSE_WHEELED),
+                     WindowsConsoleProbe.mouse(0xFF880000_u32, WindowsConsole::MOUSE_WHEELED),
+                     WindowsConsoleProbe.mouse(0x00F00000_u32, WindowsConsole::MOUSE_HWHEELED),
+                     WindowsConsoleProbe.mouse(0xFF880000_u32, WindowsConsole::MOUSE_HWHEELED),
+                     WindowsConsoleProbe.mouse(0, WindowsConsole::MOUSE_MOVED),
+                     WindowsConsoleProbe.mouse(1, WindowsConsole::DOUBLE_CLICK),
+                     WindowsConsoleProbe.mouse(1, WindowsConsole::DOUBLE_CLICK), WindowsConsoleProbe.mouse(0)]
+          "\e[<2;9;10M".each_byte { |byte| records << WindowsConsoleProbe.key(byte.to_u16) }
+          WindowsConsoleProbe.write_input(input, output, records, owned)
+          reader = Termisu::Reader.new(input.address)
+          begin
+            parser = Termisu::Input::Parser.new(reader)
+            buttons = ["Left", "Left", "Right", "Release", "Release", "Middle", "Release",
+                       "Button4", "Release", "Button5", "Release", "WheelUp", "WheelDown",
+                       "WheelRight", "WheelRight", "WheelLeft", "Release", "Left", "Left", "Release", "Right"]
+            buttons.each_with_index do |button, index|
+              event = parser.poll_event(1000)
+              event.should be_a(Termisu::Event::Mouse)
+              mouse = event.as(Termisu::Event::Mouse)
+              mouse.button.to_s.should eq(button)
+              {mouse.x, mouse.y}.should eq(index == buttons.size - 1 ? {9, 10} : {5, 7})
+              mouse.motion?.should eq(index == 1 || index == 16)
+              if index == 0
+                mouse.shift?.should be_true
+                mouse.alt?.should be_true
+                mouse.ctrl?.should be_true
+              end
+            end
+          ensure
+            reader.close
+          end
+        end
+      end
+    end
+
+    it "accumulates high-resolution wheel deltas without expanding repeated reports" do
+      WindowsConsoleProbe.with_console do |input, _output|
+        decoder = WindowsConsoleProbe::BufferedInput.new(input.address)
+        records = Array.new(8) { WindowsConsoleProbe.mouse(0x001E0000_u32, WindowsConsole::MOUSE_WHEELED) }
+        decoder.seed(records)
+        expected = "\e[<64;5;7M" * 2
+        bytes = Bytes.new(expected.bytesize)
+        decoder.read(bytes).should eq(bytes.size)
+        String.new(bytes).should eq(expected)
+        decoder.clear
+        decoder.seed([WindowsConsoleProbe.mouse(0x80000000_u32, WindowsConsole::MOUSE_HWHEELED)])
+        one = Bytes.new(1)
+        decoder.read(one).should eq(1)
+        decoder.@repeats.should be <= 273
+        decoder.@pending.bytesize.should be < 32
+        decoder.clear
+        decoder.buffered?.should be_false
+      end
+    end
+
+    it "maps legacy mouse coordinates to the borrowed viewport origin" do
+      WindowsConsoleProbe.with_console do |input, output|
+        WindowsConsoleProbe.with_injected_input(input, output) do |owned|
+          # Fixture resizing must not enqueue window records for later probes.
+          mode = WindowsConsoleProbe.mode(input) &
+                 ~(LibC::ENABLE_VIRTUAL_TERMINAL_INPUT.to_u32 | WindowsConsoleProbe::Native::ENABLE_WINDOW_INPUT)
+          WindowsConsoleProbe.check LibC.SetConsoleMode(input, mode), "SetConsoleMode(legacy records without resize events)"
+          WindowsConsoleProbe.with_screen_buffer do |screen|
+            WindowsConsoleProbe.check WindowsConsole.GetConsoleScreenBufferInfo(screen, out info), "GetConsoleScreenBufferInfo"
+            WindowsConsoleProbe.capture_resize_input(input, screen, owned)
+            size = WindowsConsole::Coord.new(x: info.size.x, y: (info.size.y + 10).to_i16)
+            WindowsConsoleProbe.check WindowsConsoleProbe::Native.SetConsoleScreenBufferSize(screen, size), "SetConsoleScreenBufferSize"
+            WindowsConsoleProbe.capture_resize_input(input, screen, owned)
+            window = info.window
+            window.top += 5
+            window.bottom += 5
+            WindowsConsoleProbe.check WindowsConsoleProbe::Native.SetConsoleWindowInfo(screen, 1, pointerof(window)), "SetConsoleWindowInfo"
+            WindowsConsoleProbe.capture_resize_input(input, screen, owned)
+            record = WindowsConsoleProbe.mouse(1, x: window.left, y: window.top)
+            WindowsConsoleProbe.write_input(input, screen, Slice[record], owned)
+            reader = Termisu::Reader.new(input.address, output_fd: screen.address)
+            begin
+              event = Termisu::Input::Parser.new(reader).poll_event(1000)
+              event.should be_a(Termisu::Event::Mouse)
+              mouse = event.as(Termisu::Event::Mouse)
+              {mouse.x, mouse.y}.should eq({1, 1})
+            ensure
+              reader.close
+            end
+          end
+          WindowsConsoleProbe.check WindowsConsole.GetNumberOfConsoleInputEvents(input, out remaining), "GetNumberOfConsoleInputEvents(viewport cleanup)"
+          WindowsConsoleProbe.diagnose_input(input, "After viewport cleanup") unless remaining == 0
+          remaining.should eq(0_u32)
+        end
+        WindowsConsoleProbe.assert_idle_input(input, "After viewport mode restore")
+      end
+    end
+
+    it "enables native mouse records only while public mouse tracking is active" do
+      WindowsConsoleProbe.with_console do |input, output|
+        WindowsConsoleProbe.assert_idle_input(input, "Before mouse facade")
+        WindowsConsoleProbe.with_modes(input, output) do
+          mode = WindowsConsoleProbe.mode(input) & ~WindowsConsoleProbe::Native::ENABLE_WINDOW_INPUT
+          WindowsConsoleProbe.check LibC.SetConsoleMode(input, mode), "SetConsoleMode(no facade resize events)"
+          term = Termisu.new
+          begin
+            (WindowsConsoleProbe.mode(input) & WindowsConsole::ENABLE_MOUSE_INPUT).should eq(0_u32)
+            term.enable_mouse
+            (WindowsConsoleProbe.mode(input) & WindowsConsole::ENABLE_MOUSE_INPUT).should_not eq(0_u32)
+            term.@terminal.set_mode(Termisu::Terminal::Mode.raw)
+            (WindowsConsoleProbe.mode(input) & WindowsConsole::ENABLE_MOUSE_INPUT).should_not eq(0_u32)
+            term.disable_mouse
+            (WindowsConsoleProbe.mode(input) & WindowsConsole::ENABLE_MOUSE_INPUT).should eq(0_u32)
+          ensure
+            term.close
+          end
+        end
+        WindowsConsoleProbe.finish_facade_input(input, output, "After mouse facade")
+      end
+    end
+
+    it "rejects facade cleanup of key input without consuming it" do
+      WindowsConsoleProbe.with_console do |input, output|
+        WindowsConsoleProbe.with_injected_input(input, output) do |owned|
+          WindowsConsoleProbe.assert_idle_input(input, "Before cleanup guard")
+          mode = WindowsConsoleProbe.mode(input) & ~LibC::ENABLE_VIRTUAL_TERMINAL_INPUT.to_u32
+          WindowsConsoleProbe.check LibC.SetConsoleMode(input, mode), "SetConsoleMode(cleanup guard)"
+          record = WindowsConsoleProbe.key(0x71_u16)
+          WindowsConsoleProbe.write_input(input, output, Slice[record], owned)
+          expect_raises(Spec::AssertionFailed) do
+            WindowsConsoleProbe.finish_facade_input(input, output, "Reject key input")
+          end
+          WindowsConsoleProbe.check WindowsConsole.GetNumberOfConsoleInputEvents(input, out count), "GetNumberOfConsoleInputEvents(unconsumed key)"
+          count.should eq(1_u32)
+          records = Slice(WindowsConsole::InputRecord).new(1) { WindowsConsole::InputRecord.new }
+          Termisu::System::Console.read_records(input, records, remove: false).should eq(1)
+          {records[0].event_type, records[0].key_event.unicode_char}.should eq({WindowsConsole::KEY_EVENT, 0x71_u16})
+          Termisu::System::Console.read_records(input, records).should eq(1)
+          {records[0].event_type, records[0].key_event.unicode_char}.should eq({WindowsConsole::KEY_EVENT, 0x71_u16})
+          WindowsConsoleProbe.assert_idle_input(input, "After cleanup guard")
+        end
+      end
+    end
+
+    it "cleans a stopped source after transient cancellation failure and preserves the first error" do
+      WindowsConsoleProbe.with_console do |input, _output|
+        reader = Termisu::Reader.new(input.address)
+        source = WindowsConsoleProbe::CancellationInputSource.new(reader, Termisu::Input::Parser.new(reader))
+        lease = WindowsConsoleProbe::FailedCancellationLease.new(input.address)
+        source.injected_lease = lease
+        begin
+          source.start(Channel(Termisu::Event::Any).new)
+          Fiber.yield
+          error = expect_raises(IO::Error, "injected cancellation failure") { source.stop }
+          error.should be(lease.failure)
+          lease.closed?.should be_true
+          source.stop_required?.should be_false
+          source.injected_lease = nil
+          source.start(Channel(Termisu::Event::Any).new)
+          source.stop
+        ensure
+          source.stop
+          lease.close
+          reader.close
+        end
+      end
+    end
+
+    it "retains unconfirmed source resources when cancellation keeps failing" do
+      WindowsConsoleProbe.with_console do |input, _output|
+        reader = Termisu::Reader.new(input.address)
+        source = WindowsConsoleProbe::CancellationInputSource.new(reader, Termisu::Input::Parser.new(reader))
+        lease = WindowsConsoleProbe::PersistentCancellationLease.new(input.address)
+        source.injected_lease = lease
+        begin
+          source.start(Channel(Termisu::Event::Any).new)
+          Fiber.yield
+          error = expect_raises(IO::Error, "injected persistent cancellation failure") { source.stop }
+          error.should be(lease.failure)
+          lease.closed?.should be_false
+          source.stop_required?.should be_true
+          WindowsConsoleProbe.check WindowsConsoleProbe::Native.GetHandleInformation(lease.@input, out _), "GetHandleInformation(retained input)"
+        ensure
+          lease.reject = false
+          source.stop
+          lease.close
+          reader.close
+        end
+      end
+    end
+
+    it "temporarily enables VT output and restores canonical output modes on failure" do
+      WindowsConsoleProbe.with_screen_buffer do |handle|
+        original = WindowsConsoleProbe.mode(handle) & ~0x000D_u32
+        WindowsConsoleProbe.check LibC.SetConsoleMode(handle, original), "SetConsoleMode(no VT output)"
+        sink = Termisu::System::Console::Output.new(handle.address)
+        sink.write("\e[1;1HV".to_slice)
+        sink.flush
+        WindowsConsoleProbe.screen_text(handle, 1).should eq([0x56_u16])
+        WindowsConsoleProbe.mode(handle).should eq(original)
+        failed = WindowsConsoleProbe::FailedWideOutput.new(handle.address)
+        failed.write("\e[1;1HX".to_slice)
+        error = expect_raises(IO::Error, "injected wide output failure") { failed.flush }
+        error.should be(failed.failure)
+        WindowsConsoleProbe.mode(handle).should eq(original)
+        failed.@buffer.size.should eq(0)
+      end
+    end
+
+    it "renders nested canonical scopes without leaking escape sequences or changing the saved output mode" do
+      WindowsConsoleProbe.with_console do |input, output|
+        WindowsConsoleProbe.assert_idle_input(input, "Before canonical facade")
+        WindowsConsoleProbe.with_modes(input, output) do
+          mode = WindowsConsoleProbe.mode(input) & ~WindowsConsoleProbe::Native::ENABLE_WINDOW_INPUT
+          WindowsConsoleProbe.check LibC.SetConsoleMode(input, mode), "SetConsoleMode(no facade resize events)"
+          original = WindowsConsoleProbe.mode(output) & ~0x000D_u32
+          WindowsConsoleProbe.check LibC.SetConsoleMode(output, original), "SetConsoleMode(no VT output)"
+          term = Termisu.new
+          begin
+            term.with_mode(Termisu::Terminal::Mode.cooked, preserve_screen: true) do
+              WindowsConsoleProbe.mode(output).should eq(original)
+              term.with_mode(Termisu::Terminal::Mode.password, preserve_screen: true) do
+                term.set_cell(0, 0, 'Z')
+                term.render
+                WindowsConsoleProbe.with_handle(WindowsConsoleProbe.open_console("CONOUT$")) do |active|
+                  WindowsConsoleProbe.screen_text(active, 1).should eq([0x5A_u16])
+                end
+                WindowsConsoleProbe.mode(output).should eq(original)
+              end
+              WindowsConsoleProbe.mode(output).should eq(original)
+            end
+          ensure
+            term.close
+          end
+          WindowsConsoleProbe.mode(output).should eq(original)
+        end
+        WindowsConsoleProbe.finish_facade_input(input, output, "After canonical facade")
+      end
+    end
+
+    it "opens non-inheritable console handles independently of standard streams" do
+      WindowsConsoleProbe.with_console do |input, output|
+        input.should_not eq(LibC.GetStdHandle(LibC::STD_INPUT_HANDLE))
+        output.should_not eq(LibC.GetStdHandle(LibC::STD_OUTPUT_HANDLE))
+        {input, output}.each do |handle|
+          WindowsConsoleProbe.mode(handle)
+          WindowsConsoleProbe.check WindowsConsoleProbe::Native.GetHandleInformation(handle, out flags),
+            "GetHandleInformation"
+          (flags & WindowsConsoleProbe::Native::HANDLE_FLAG_INHERIT).should eq(0_u32)
+        end
+        WindowsConsoleProbe.check WindowsConsole.GetConsoleScreenBufferInfo(output, out info), "GetConsoleScreenBufferInfo"
+        (info.window.right.to_i32 - info.window.left + 1).should be > 0
+        (info.window.bottom.to_i32 - info.window.top + 1).should be > 0
+      end
+    end
+
+    it "closes an acquired handle when a later acquisition or operation fails" do
+      handle = WindowsConsoleProbe.open_console("CONIN$")
+      expect_raises(Exception, "probe failure") do
+        WindowsConsoleProbe.with_handle(handle) { raise "probe failure" }
+      end
+      result = WindowsConsoleProbe::Native.GetHandleInformation(handle, out _)
+      error = LibC.GetLastError
+      result.should eq(0)
+      error.should eq(6_u32) # ERROR_INVALID_HANDLE
+    end
+
+    it "restores input and output modes even when the body raises" do
+      WindowsConsoleProbe.with_console do |input, output|
+        input_mode = WindowsConsoleProbe.mode(input)
+        output_mode = WindowsConsoleProbe.mode(output)
+        input_cp = LibC.GetConsoleCP
+        output_cp = LibC.GetConsoleOutputCP
+        expect_raises(Exception, "mode probe failure") do
+          WindowsConsoleProbe.with_modes(input, output) do
+            disabled = (LibC::ENABLE_LINE_INPUT | LibC::ENABLE_ECHO_INPUT |
+                        LibC::ENABLE_PROCESSED_INPUT).to_u32 | WindowsConsole::ENABLE_QUICK_EDIT_MODE
+            raw = (input_mode & ~disabled) | WindowsConsole::ENABLE_EXTENDED_FLAGS |
+                  LibC::ENABLE_VIRTUAL_TERMINAL_INPUT.to_u32
+            WindowsConsoleProbe.check LibC.SetConsoleMode(input, raw), "SetConsoleMode(input VT)"
+            vt_output = output_mode | WindowsConsoleProbe::Native::ENABLE_PROCESSED_OUTPUT |
+                        LibC::ENABLE_VIRTUAL_TERMINAL_PROCESSING.to_u32
+            WindowsConsoleProbe.check LibC.SetConsoleMode(output, vt_output), "SetConsoleMode(output VT)"
+            WindowsConsoleProbe.mode(input).should eq(raw)
+            WindowsConsoleProbe.mode(output).should eq(vt_output)
+            raise "mode probe failure"
+          end
+        end
+        WindowsConsoleProbe.mode(input).should eq(input_mode)
+        WindowsConsoleProbe.mode(output).should eq(output_mode)
+        LibC.GetConsoleCP.should eq(input_cp)
+        LibC.GetConsoleOutputCP.should eq(output_cp)
+      end
+    end
+
+    it "waits on console and cancellation handles without consuming input" do
+      WindowsConsoleProbe.with_console do |input, _output|
+        WindowsConsoleProbe.with_handle(WindowsConsoleProbe.event) do |cancel|
+          handles = [cancel, input]
+          WindowsConsoleProbe.check WindowsConsole.GetNumberOfConsoleInputEvents(input, out before),
+            "GetNumberOfConsoleInputEvents"
+          result = WindowsConsoleProbe::Native.WaitForMultipleObjects(2_u32, handles, 0, 0_u32)
+          if result == LibC::WAIT_FAILED
+            raise IO::Error.from_winerror("WaitForMultipleObjects(console)")
+          end
+          {LibC::WAIT_TIMEOUT, LibC::WAIT_OBJECT_0 + 1_u32}.should contain(result)
+          WindowsConsoleProbe.check WindowsConsoleProbe::Native.SetEvent(cancel), "SetEvent"
+          WindowsConsoleProbe::Native.WaitForMultipleObjects(2_u32, handles, 0, 0_u32).should eq(LibC::WAIT_OBJECT_0)
+          WindowsConsoleProbe.check WindowsConsole.GetNumberOfConsoleInputEvents(input, out after),
+            "GetNumberOfConsoleInputEvents"
+          after.should be >= before
+        end
+      end
+    end
+
+    it "cancels an idle native wait while cooperative fibers remain runnable" do
+      WindowsConsoleProbe.with_handle(WindowsConsoleProbe.event) do |cancel|
+        WindowsConsoleProbe.with_handle(WindowsConsoleProbe.event) do |idle|
+          handles = [cancel, idle]
+          started = Atomic(Bool).new(false)
+          finished = Atomic(Bool).new(false)
+          result = Atomic(UInt32).new(LibC::WAIT_FAILED)
+          native_error = Atomic(UInt32).new(0_u32)
+          worker = Thread.new do
+            started.set(true)
+            value = WindowsConsoleProbe::Native.WaitForMultipleObjects(2_u32, handles, 0, 5000_u32)
+            native_error.set(LibC.GetLastError) if value == LibC::WAIT_FAILED
+            result.set(value)
+            finished.set(true)
+          end
+          begin
+            deadline = monotonic_now + 2.seconds
+            until started.get || monotonic_now >= deadline
+              sleep 1.millisecond
+            end
+            started.get.should be_true
+            heartbeat = Atomic(Bool).new(false)
+            spawn { heartbeat.set(true) }
+            sleep 10.milliseconds
+            heartbeat.get.should be_true
+            finished.get.should be_false
+            WindowsConsoleProbe.check WindowsConsoleProbe::Native.SetEvent(cancel), "SetEvent"
+            deadline = monotonic_now + 2.seconds
+            until finished.get || monotonic_now >= deadline
+              sleep 1.millisecond
+            end
+            finished.get.should be_true
+            native_error.get.should eq(0_u32)
+            result.get.should eq(LibC::WAIT_OBJECT_0)
+          ensure
+            # Join before close even on failure; the native wait has a finite guard.
+            WindowsConsoleProbe::Native.SetEvent(cancel)
+            worker.join
+          end
+        end
+      end
+    end
+
+    it "calls the documented bounded NOWAIT record API without consuming input" do
+      WindowsConsoleProbe.with_console do |input, _output|
+        records = Slice(WindowsConsole::InputRecord).new(32) { WindowsConsole::InputRecord.new }
+        WindowsConsoleProbe.check WindowsConsole.GetNumberOfConsoleInputEvents(input, out before),
+          "GetNumberOfConsoleInputEvents"
+        count = Termisu::System::Console.read_records(input, records, remove: false)
+        count.should be >= 0
+        count.should be <= records.size
+        WindowsConsoleProbe.check WindowsConsole.GetNumberOfConsoleInputEvents(input, out after),
+          "GetNumberOfConsoleInputEvents"
+        after.should be >= before
+      end
+    end
+
+    it "wakes a cooperative timed pipe reader from a synchronous native writer" do
+      WindowsConsoleProbe.with_handle(WindowsConsoleProbe.event) do |cancel|
+        reader, writer = IO.pipe(read_blocking: false, write_blocking: true)
+        write_result = Atomic(Int32).new(-1)
+        written = Atomic(UInt32).new(0_u32)
+        native_error = Atomic(UInt32).new(0_u32)
+        handles = [cancel]
+        worker = Thread.new do
+          result = WindowsConsoleProbe::Native.WaitForMultipleObjects(1_u32, handles, 0, 5000_u32)
+          if result == LibC::WAIT_OBJECT_0
+            byte = 1_u8
+            result = LibC.WriteFile(LibC::HANDLE.new(writer.fd), pointerof(byte), 1_u32, out count, nil)
+            native_error.set(LibC.GetLastError) if result == 0
+            written.set(count)
+            write_result.set(result)
+          else
+            native_error.set(result == LibC::WAIT_FAILED ? LibC.GetLastError : result)
+          end
+        end
+        begin
+          heartbeat = Atomic(Bool).new(false)
+          spawn { heartbeat.set(true) }
+          reader.read_timeout = 10.milliseconds
+          expect_raises(IO::TimeoutError) { reader.read_byte }
+          heartbeat.get.should be_true
+          write_result.get.should eq(-1)
+          WindowsConsoleProbe.check WindowsConsoleProbe::Native.SetEvent(cancel), "SetEvent"
+          reader.read_timeout = 2.seconds
+          reader.read_byte.should eq(1_u8)
+        ensure
+          WindowsConsoleProbe::Native.SetEvent(cancel)
+          worker.join
+          reader.close
+          writer.close
+        end
+        native_error.get.should eq(0_u32)
+        write_result.get.should eq(1)
+        written.get.should eq(1_u32)
+      end
+    end
+
+    it "joins idle production readiness runs before closing all five owned handles" do
+      WindowsConsoleProbe.with_console do |input, _output|
+        WindowsConsoleProbe.check WindowsConsole.GetNumberOfConsoleInputEvents(input, out before),
+          "GetNumberOfConsoleInputEvents"
+        WindowsConsoleProbe.diagnose_input(input, "Before idle lease") unless before == 0
+        before.should eq(0_u32)
+        records = Slice(WindowsConsole::InputRecord).new(1) { WindowsConsole::InputRecord.new }
+        Termisu::System::Console.read_records(input, records).should eq(0)
+        8.times do
+          lease = Termisu::System::Console::ReadinessLease.new(input.address)
+          handles = [lease.@input, lease.@cancel, lease.@rearm, lease.@writer,
+                     LibC::HANDLE.new(lease.@reader.not_nil!.fd)]
+          begin
+            lease.wait(monotonic_now + 20.milliseconds).should be_nil
+            spawn do
+              sleep 1.millisecond
+              lease.cancel
+            end
+            lease.wait(nil).should eq(Termisu::System::Console::ReadinessLease::Status::Cancelled)
+          ensure
+            lease.close
+          end
+          lease.close
+          handles.each do |handle|
+            result = WindowsConsoleProbe::Native.GetHandleInformation(handle, out _)
+            error = LibC.GetLastError
+            result.should eq(0)
+            error.should eq(6_u32)
+          end
+          WindowsConsoleProbe.check LibC.GetConsoleMode(input, out _), "GetConsoleMode(borrowed input)"
+        end
+        WindowsConsoleProbe.check WindowsConsole.GetNumberOfConsoleInputEvents(input, out after),
+          "GetNumberOfConsoleInputEvents"
+        after.should eq(before)
+      end
+    end
+
+    it "rearms the production worker without consuming its readiness signal" do
+      WindowsConsoleProbe.with_handle(WindowsConsoleProbe.event) do |input|
+        WindowsConsoleProbe.check WindowsConsoleProbe::Native.SetEvent(input), "SetEvent"
+        lease = Termisu::System::Console::ReadinessLease.new(input.address)
+        begin
+          lease.wait(monotonic_now + 1.second).should eq(Termisu::System::Console::ReadinessLease::Status::Ready)
+          lease.rearm
+          lease.wait(monotonic_now + 1.second).should eq(Termisu::System::Console::ReadinessLease::Status::Ready)
+          handles = [input]
+          WindowsConsoleProbe::Native.WaitForMultipleObjects(1_u32, handles, 0, 0_u32).should eq(LibC::WAIT_OBJECT_0)
+        ensure
+          lease.close
+        end
+      end
+    end
+
+    it "cancels a pending unread wake without requiring the source to drain it" do
+      WindowsConsoleProbe.with_handle(WindowsConsoleProbe.event) do |input|
+        WindowsConsoleProbe.check WindowsConsoleProbe::Native.SetEvent(input), "SetEvent"
+        lease = Termisu::System::Console::ReadinessLease.new(input.address)
+        begin
+          deadline = monotonic_now + 1.second
+          until lease.@wake_pending.get
+            fail "native worker did not publish readiness" if monotonic_now >= deadline
+            sleep 1.millisecond
+          end
+          lease.cancel
+        ensure
+          lease.close
+        end
+      end
+    end
+
+    it "reports the original native duplication failure during construction" do
+      expect_raises(IO::Error, /DuplicateHandle/) do
+        Termisu::System::Console::ReadinessLease.new(0_u64)
+      end
+    end
+
+    it "preserves worker failures through notification failure, EOF and cleanup" do
+      {% for type in ["WindowsConsoleProbe::FailedWaitLease", "WindowsConsoleProbe::FailedNotificationLease"] %}
+        WindowsConsoleProbe.with_handle(WindowsConsoleProbe.event) do |input|
+          WindowsConsoleProbe.check WindowsConsoleProbe::Native.SetEvent(input), "SetEvent"
+          lease = {{type.id}}.new(input.address)
+          begin
+            lease.wait(monotonic_now + 1.second).should eq(Termisu::System::Console::ReadinessLease::Status::Error)
+            lease.worker_error.should be(lease.failure)
+          ensure
+            error = expect_raises(IO::Error, /injected readiness/) { lease.close }
+            error.should be(lease.failure)
+          end
+          lease.close
+        end
+      {% end %}
+    end
+
+    it "retains live wait resources when cancellation or joining fails" do
+      [WindowsConsoleProbe::FailedCancellationLease, WindowsConsoleProbe::UnconfirmedJoinLease].each do |type|
+        WindowsConsoleProbe.with_handle(WindowsConsoleProbe.event) do |input|
+          lease = type.new(input.address)
+          handles = [lease.@input, lease.@cancel, lease.@rearm,
+                     LibC::HANDLE.new(lease.@reader.not_nil!.fd)]
+          begin
+            expect_raises(IO::Error, /injected/) { lease.close }
+            handles.each do |handle|
+              WindowsConsoleProbe.check WindowsConsoleProbe::Native.GetHandleInformation(handle, out _),
+                "GetHandleInformation(retained wait resource)"
+            end
+          ensure
+            lease.close
+          end
+          handles.each do |handle|
+            result = WindowsConsoleProbe::Native.GetHandleInformation(handle, out _)
+            error = LibC.GetLastError
+            result.should eq(0)
+            error.should eq(6_u32)
+          end
+        end
+      end
+    end
+
+    it "delivers native VT arrows, modifiers, Unicode and NUL through the owned decoder" do
+      WindowsConsoleProbe.with_console do |input, output|
+        WindowsConsoleProbe.check WindowsConsole.GetNumberOfConsoleInputEvents(input, out before),
+          "GetNumberOfConsoleInputEvents"
+        WindowsConsoleProbe.diagnose_input(input, "Before VT decoder") unless before == 0
+        before.should eq(0_u32)
+        WindowsConsoleProbe.with_injected_input(input, output) do |owned|
+          disabled = LibC::ENABLE_LINE_INPUT | LibC::ENABLE_ECHO_INPUT | LibC::ENABLE_PROCESSED_INPUT
+          mode = WindowsConsoleProbe.mode(input) | LibC::ENABLE_VIRTUAL_TERMINAL_INPUT.to_u32 |
+                 WindowsConsole::ENABLE_EXTENDED_FLAGS
+          mode &= ~(disabled.to_u32 | WindowsConsole::ENABLE_QUICK_EDIT_MODE)
+          WindowsConsoleProbe.check LibC.SetConsoleMode(input, mode), "SetConsoleMode(VT input)"
+          WindowsConsoleProbe.check LibC.SetConsoleMode(output, WindowsConsoleProbe.mode(output) | 0x0005_u32),
+            "SetConsoleMode(VT output)"
+          records = [WindowsConsoleProbe.key(0x61, 0x41),
+                     WindowsConsoleProbe.key(0, 0x26, state: 0x0100_u32),
+                     WindowsConsoleProbe.key(0, 0x25, state: 0x0108_u32),
+                     WindowsConsoleProbe.key(0x03BB, 0xE7),
+                     WindowsConsoleProbe.key(0xD83D, 0xE7),
+                     WindowsConsoleProbe.key(0xDE00, 0xE7),
+                     WindowsConsoleProbe.key(0, 0x20, state: 0x0008_u32)]
+          WindowsConsoleProbe.write_input(input, output, records, owned)
+          peek = Slice(WindowsConsole::InputRecord).new(32) { WindowsConsole::InputRecord.new }
+          count = Termisu::System::Console.read_records(input, peek, remove: false)
+          nul_records = peek[0, count].select do |record|
+            record.event_type == WindowsConsole::KEY_EVENT && record.key_event.unicode_char == 0
+          end.map { |record| {record.key_event.virtual_key_code, record.key_event.control_key_state} }
+          decoder = Termisu::System::Console::Input.new(input.address)
+          byte = Bytes.new(1)
+          text = IO::Memory.new
+          128.times do
+            count = decoder.read(byte)
+            break if count == 0
+            text.write(byte[0, count])
+          end
+          expected = ["a\e[A\e[1;5Dλ😀\0", "a\eOA\e[1;5Dλ😀\0"]
+          unless expected.includes?(text.to_s)
+            STDERR.puts "NUL record keys/states=#{nul_records.inspect}; layout mapping=#{Termisu::System::Console::Keyboard.VkKeyScanW(0_u16)}"
+          end
+          expected.should contain(text.to_s)
+          WindowsConsoleProbe.check WindowsConsole.GetNumberOfConsoleInputEvents(input, out after),
+            "GetNumberOfConsoleInputEvents"
+          after.should eq(0_u32)
+        end
+      end
+    end
+
+    it "preserves layout-mapped NUL records without emitting modifier-only keys" do
+      WindowsConsoleProbe.with_console do |input, _output|
+        mapping = Termisu::System::Console::Keyboard.VkKeyScanW(0_u16)
+        state = 0_u32
+        state |= 0x0010_u32 if (mapping & 0x0100) != 0
+        state |= 0x0008_u32 if (mapping & 0x0200) != 0
+        state |= 0x0002_u32 if (mapping & 0x0400) != 0
+        decoder = WindowsConsoleProbe::BufferedInput.new(input.address)
+        decoder.seed([WindowsConsoleProbe.key(0, 0x10, state: 0x0010_u32),
+                      WindowsConsoleProbe.key(0, (mapping & 0xFF).to_u16, state: state),
+                      WindowsConsoleProbe.key(0x78)])
+        buffer = Bytes.new(8)
+        count = decoder.read(buffer)
+        String.new(buffer[0, count]).should eq("\0x")
+      end
+    end
+
+    it "keeps split surrogate state per decoder and resets only library buffers" do
+      WindowsConsoleProbe.with_console do |input, _output|
+        first = WindowsConsoleProbe::BufferedInput.new(input.address)
+        second = WindowsConsoleProbe::BufferedInput.new(input.address)
+        buffer = Bytes.new(8)
+        first.seed([WindowsConsoleProbe.key(0xD83D)])
+        first.read(buffer).should eq(0)
+        second.seed([WindowsConsoleProbe.key(0xDE00)])
+        count = second.read(buffer)
+        String.new(buffer[0, count]).should eq("\uFFFD")
+        first.seed([WindowsConsoleProbe.key(0xDE00)])
+        count = first.read(buffer)
+        String.new(buffer[0, count]).should eq("😀")
+        first.seed([WindowsConsoleProbe.key(0xD83D)])
+        first.read(buffer).should eq(0)
+        first.clear
+        first.seed([WindowsConsoleProbe.key(0xDE00)])
+        count = first.read(buffer)
+        String.new(buffer[0, count]).should eq("\uFFFD")
+      end
+    end
+
+    it "retains a large repeat count without expanding a pending allocation" do
+      WindowsConsoleProbe.with_console do |input, _output|
+        decoder = WindowsConsoleProbe::BufferedInput.new(input.address)
+        decoder.seed([WindowsConsoleProbe.key(0x78, repeats: UInt16::MAX)])
+        byte = Bytes.new(1)
+        decoder.read(byte).should eq(1)
+        byte[0].should eq(0x78_u8)
+        decoder.@repeats.should eq(UInt16::MAX.to_i32 - 1)
+        decoder.@pending.bytesize.should eq(1)
+        decoder.buffered?.should be_true
+        decoder.clear
+        decoder.buffered?.should be_false
+      end
+    end
+
+    it "writes split UTF-8 through a borrowed inactive wide-console handle" do
+      WindowsConsoleProbe.with_screen_buffer do |handle|
+        output = Termisu::System::Console::Output.new(handle.address)
+        text = "λé".to_slice
+        output.write(text[0, 1])
+        output.flush
+        WindowsConsoleProbe.check WindowsConsole.GetConsoleScreenBufferInfo(handle, out before), "GetConsoleScreenBufferInfo"
+        before.cursor_position.x.should eq(0)
+        output.write(text[1, text.size - 1])
+        output.finish
+        WindowsConsoleProbe.screen_text(handle, 2).should eq([0x03BB_u16, 0x00E9_u16])
+        WindowsConsoleProbe.mode(handle).should be_a(UInt32)
+      end
+    end
+
+    it "bounds wide-console output buffering across large writes" do
+      WindowsConsoleProbe.with_screen_buffer do |handle|
+        output = Termisu::System::Console::Output.new(handle.address)
+        output.write(("x" * 20_000).to_slice)
+        output.@buffer.size.should be < Termisu::System::Console::Output::CAPACITY
+        output.finish
+        output.@buffer.empty?.should be_true
+        WindowsConsoleProbe.screen_text(handle, 5).should eq(Array(UInt16).new(5, 0x78_u16))
+      end
+    end
+
+    it "rejects invalid or unfinished UTF-8 without closing its borrowed handle" do
+      WindowsConsoleProbe.with_screen_buffer do |handle|
+        output = Termisu::System::Console::Output.new(handle.address)
+        output.write(Bytes[0xFF])
+        expect_raises(IO::Error, "Invalid UTF-8 console output") { output.flush }
+        output.write("a".to_slice)
+        output.finish
+        WindowsConsoleProbe.screen_text(handle, 1).should eq([0x61_u16])
+        output.write(Bytes[0xCE])
+        expect_raises(IO::Error, "Incomplete UTF-8 console output") { output.finish }
+        WindowsConsoleProbe.mode(handle).should be_a(UInt32)
+      end
+    end
+
+    it "owns native-width noninheritable console handles instead of standard streams" do
+      WindowsConsoleProbe.with_console do |input, output|
+        original_input = WindowsConsoleProbe.mode(input)
+        original_output = WindowsConsoleProbe.mode(output)
+        tty = Termisu::TTY.new
+        input_handle, output_handle = LibC::HANDLE.new(tty.infd), LibC::HANDLE.new(tty.outfd)
+        begin
+          tty.infd.should_not eq(STDIN.fd)
+          tty.outfd.should_not eq(STDOUT.fd)
+          [input_handle, output_handle].each do |handle|
+            WindowsConsoleProbe.check WindowsConsoleProbe::Native.GetHandleInformation(handle, out flags), "GetHandleInformation(TTY)"
+            (flags & WindowsConsoleProbe::Native::HANDLE_FLAG_INHERIT).should eq(0_u32)
+            WindowsConsoleProbe.mode(handle).should be_a(UInt32)
+          end
+        ensure
+          tty.close
+          tty.close
+        end
+        WindowsConsoleProbe::Native.GetHandleInformation(input_handle, out _).should eq(0)
+        WindowsConsoleProbe::Native.GetHandleInformation(output_handle, out _).should eq(0)
+        WindowsConsoleProbe.mode(input).should eq(original_input)
+        WindowsConsoleProbe.mode(output).should eq(original_output)
+        STDIN.closed?.should be_false
+        STDOUT.closed?.should be_false
+      end
+    end
+
+    it "preserves backend read waits, close wakeups and setup errors" do
+      WindowsConsoleProbe.with_console do |input, output|
+        ["key", "close", "setup failure"].each do |completion|
+          WindowsConsoleProbe.with_injected_input(input, output) do |owned|
+            WindowsConsoleProbe.assert_idle_input(input, "Before backend read #{completion}")
+            backend = Termisu::Terminal::Backend.new
+            results = Channel(String | Exception).new(1)
+            finished = Channel(Nil).new(1)
+            reader_fiber : Fiber? = nil
+            setup_error = IO::Error.new("injected backend setup failure")
+            begin
+              raise setup_error if completion == "setup failure"
+              backend.enable_raw_mode
+              backend.read(Bytes.empty).should eq(0)
+              backend.@input_readiness.should be_nil
+              reader_fiber = spawn do
+                begin
+                  buffer = Bytes.new(8)
+                  count = backend.read(buffer)
+                  results.send(String.new(buffer[0, count]))
+                rescue error
+                  results.send(error)
+                ensure
+                  finished.send(nil)
+                end
+              end
+              deadline = monotonic_now + 1.second
+              until backend.@input_readiness
+                select
+                when result = results.receive
+                  raise "Backend read ended on an empty queue: #{result.inspect}"
+                else
+                end
+                raise "Backend read did not park cooperatively" if monotonic_now >= deadline
+                sleep 1.millisecond
+              end
+              lease = backend.@input_readiness.not_nil!
+              WindowsConsoleProbe.check WindowsConsole.GetConsoleScreenBufferInfo(output, out info), "GetConsoleScreenBufferInfo(filtered backend input)"
+              filtered = WindowsConsole::InputRecord.new
+              filtered.event_type = WindowsConsoleProbe::Native::WINDOW_BUFFER_SIZE_EVENT
+              filtered.key_event = WindowsConsole::KeyEventRecord.new(key_down: info.size.unsafe_as(Int32))
+              WindowsConsoleProbe.write_input(input, output, Slice[filtered], owned)
+              peek = Slice(WindowsConsole::InputRecord).new(1) { WindowsConsole::InputRecord.new }
+              Termisu::System::Console.read_records(input, peek, remove: false).should eq(1)
+              peek[0].event_type.should eq(filtered.event_type)
+              deadline = monotonic_now + 1.second
+              loop do
+                WindowsConsoleProbe.check WindowsConsole.GetNumberOfConsoleInputEvents(input, out queued), "GetNumberOfConsoleInputEvents(filtered backend input)"
+                break if queued == 0
+                raise "Backend read did not drain the filtered record" if monotonic_now >= deadline
+                sleep 1.millisecond
+              end
+              select
+              when result = results.receive
+                raise "Backend read ended on filtered input: #{result.inspect}"
+              else
+              end
+              if completion == "key"
+                WindowsConsoleProbe.write_keys(input, output, owned, 0x71_u16, count: 1)
+              else
+                backend.close
+              end
+              result = select
+              when value = results.receive
+                value
+              when timeout(2.seconds)
+                raise "Backend read did not complete on #{completion}"
+              end
+              if completion == "key"
+                result.should eq("q")
+              else
+                result.should be_a(IO::Error)
+              end
+              backend.close
+              lease.closed?.should be_true
+              backend.@input_readiness.should be_nil
+              expect_raises(IO::Error, "Terminal backend is closed") { backend.read(Bytes.new(1)) }
+              WindowsConsoleProbe.assert_idle_input(input, "After backend read #{completion}")
+            rescue error
+              raise error unless completion == "setup failure"
+              error.should be(setup_error)
+            ensure
+              backend.close
+              if reader_fiber
+                select
+                when finished.receive
+                when timeout(2.seconds)
+                  raise "Backend read fiber did not terminate"
+                end
+              end
+            end
+          end
+        end
+      end
+    end
+
+    it "restores shared console modes and rejects unsupported echo transactionally" do
+      WindowsConsoleProbe.with_console do |input, output|
+        WindowsConsoleProbe.with_modes(input, output) do
+          original_input = WindowsConsoleProbe.mode(input)
+          original_output = WindowsConsoleProbe.mode(output)
+          backend = Termisu::Terminal::Backend.new
+          begin
+            modes = [Termisu::Terminal::Mode.raw, Termisu::Terminal::Mode.semi_raw,
+                     Termisu::Terminal::Mode.cooked, Termisu::Terminal::Mode.password]
+            modes.each do |mode|
+              backend.set_mode(mode)
+              bits = WindowsConsoleProbe.mode(input)
+              ((bits & 0x0002) != 0).should eq(mode.canonical?)
+              ((bits & 0x0004) != 0).should eq(mode.echo?)
+              ((bits & 0x0001) != 0).should eq(mode.signals?)
+              unless mode.canonical?
+                (bits & 0x0200).should_not eq(0_u32)
+                (bits & 0x0040).should eq(0_u32)
+                (WindowsConsoleProbe.mode(output) & 0x0005).should eq(0x0005_u32)
+              end
+            end
+            before = {WindowsConsoleProbe.mode(input), WindowsConsoleProbe.mode(output)}
+            expect_raises(NotImplementedError, "Windows console echo requires canonical input") do
+              backend.set_mode(Termisu::Terminal::Mode.cbreak)
+            end
+            {WindowsConsoleProbe.mode(input), WindowsConsoleProbe.mode(output)}.should eq(before)
+            backend.current_mode.should eq(Termisu::Terminal::Mode.password)
+            backend.set_mode(Termisu::Terminal::Mode.cooked)
+            cooked = {WindowsConsoleProbe.mode(input), WindowsConsoleProbe.mode(output)}
+            flags = [Termisu::Terminal::Mode::FlowControl, Termisu::Terminal::Mode::CrToNl,
+                     Termisu::Terminal::Mode::OutputProcessing, Termisu::Terminal::Mode.full_cooked]
+            flags.each do |flag|
+              requested = Termisu::Terminal::Mode.cooked | flag
+              backend.set_mode(requested)
+              {WindowsConsoleProbe.mode(input), WindowsConsoleProbe.mode(output)}.should eq(cooked)
+              backend.current_mode.should eq(requested)
+            end
+          ensure
+            backend.close
+          end
+          WindowsConsoleProbe.mode(input).should eq(original_input)
+          WindowsConsoleProbe.mode(output).should eq(original_output)
+        end
+      end
+    end
+
+    it "rolls back input mode when setting output mode fails" do
+      WindowsConsoleProbe.with_console do |input, output|
+        WindowsConsoleProbe.with_modes(input, output) do
+          before = {WindowsConsoleProbe.mode(input), WindowsConsoleProbe.mode(output)}
+          modes = WindowsConsoleProbe::FailedOutputMode.new(input.address, output.address)
+          error = expect_raises(IO::Error, "injected console output mode failure") do
+            modes.set_mode(Termisu::Terminal::Mode.raw)
+          end
+          error.should be(modes.failure)
+          modes.current_mode.should be_nil
+          {WindowsConsoleProbe.mode(input), WindowsConsoleProbe.mode(output)}.should eq(before)
+          modes.restore
+        end
+      end
+    end
+
+    it "restarts the shared input source without losing buffered native input" do
+      WindowsConsoleProbe.with_console do |input, output|
+        WindowsConsoleProbe.with_injected_input(input, output) do |owned|
+          backend = Termisu::Terminal::Backend.new
+          backend.enable_raw_mode
+          reader = Termisu::Reader.new(backend.infd)
+          parser = Termisu::Input::Parser.new(reader)
+          source = Termisu::Event::Source::Input.new(reader, parser)
+          events = Channel(Termisu::Event::Any).new
+          delivered = 0
+          begin
+            source.start(events)
+            WindowsConsoleProbe.write_keys(input, output, owned, 0x71_u16, count: 384)
+            WindowsConsoleProbe.key_event(WindowsConsoleProbe.receive(events)).char.should eq('q')
+            delivered += 1
+            source.stop
+            source.start(events)
+            383.times do
+              WindowsConsoleProbe.key_event(WindowsConsoleProbe.receive(events)).char.should eq('q')
+              delivered += 1
+            end
+            source.stop
+            source.running?.should be_false
+            source.stop_required?.should be_false
+            reader.eof?.should be_false
+          rescue error
+            STDERR.puts "Native input restart delivered #{delivered}/384 keys"
+            raise error
+          ensure
+            source.stop
+            reader.close
+            backend.close
+          end
+        end
+      end
+    end
+
+    it "runs the facade, raw-reader handoff and cooked scopes over owned console I/O" do
+      WindowsConsoleProbe.with_console do |input, output|
+        WindowsConsoleProbe.with_injected_input(input, output) do |owned|
+          original = {WindowsConsoleProbe.mode(input), WindowsConsoleProbe.mode(output)}
+          term = Termisu.new
+          stage = "initial key"
+          begin
+            term.set_cell(0, 0, 'λ')
+            term.render
+            WindowsConsoleProbe.with_handle(WindowsConsoleProbe.open_console("CONOUT$")) do |active|
+              WindowsConsoleProbe.screen_text(active, 1).should eq([0x03BB_u16])
+            end
+            WindowsConsoleProbe.write_keys(input, output, owned, 0x71_u16)
+            WindowsConsoleProbe.key_event(term.poll_event(2.seconds)).char.should eq('q')
+            stage = "raw wait"
+            term.with_raw_input do
+              WindowsConsoleProbe.write_keys(input, output, owned, 0x72_u16, count: 2)
+              term.wait_for_input(250).should be_true
+              term.read_byte.should eq(0x72_u8)
+            end
+            stage = "raw handback"
+            WindowsConsoleProbe.key_event(term.poll_event(2.seconds)).char.should eq('r')
+            stage = "cooked scope"
+            term.with_mode(Termisu::Terminal::Mode.cooked) do
+              (WindowsConsoleProbe.mode(input) & 0x0002).should_not eq(0_u32)
+              WindowsConsoleProbe.write_keys(input, output, owned, 0x63_u16)
+            end
+            stage = "cooked handback"
+            change = term.poll_event(2.seconds)
+            change.should be_a(Termisu::Event::ModeChange)
+            change.as(Termisu::Event::ModeChange).mode.should eq(Termisu::Terminal::Mode.cooked)
+            change.as(Termisu::Event::ModeChange).previous_mode.should eq(Termisu::Terminal::Mode.raw)
+            change = term.poll_event(2.seconds)
+            change.should be_a(Termisu::Event::ModeChange)
+            change.as(Termisu::Event::ModeChange).mode.should eq(Termisu::Terminal::Mode.raw)
+            change.as(Termisu::Event::ModeChange).previous_mode.should eq(Termisu::Terminal::Mode.cooked)
+            WindowsConsoleProbe.key_event(term.poll_event(2.seconds)).char.should eq('c')
+          rescue error
+            STDERR.puts "Native facade input failed at #{stage}"
+            raise error
+          ensure
+            term.close
+          end
+          {WindowsConsoleProbe.mode(input), WindowsConsoleProbe.mode(output)}.should eq(original)
+          STDIN.closed?.should be_false
+          STDOUT.closed?.should be_false
+        end
+      end
+    end
+
+    it "keeps software timer expirations and the original SystemTimer lifecycle" do
+      poller = Termisu::Event::Poller.create
+      begin
+        handle = poller.add_timer(3.milliseconds)
+        sleep 20.milliseconds
+        event = poller.wait(Time::Span.zero)
+        event.should_not be_nil
+        event.not_nil!.timer?.should be_true
+        event.not_nil!.timer_expirations.should be >= 2_u64
+        poller.remove_timer(handle)
+        expect_raises(NotImplementedError, "Generic descriptor polling is not supported on Windows") do
+          poller.register_fd(0, Termisu::Event::Poller::FDEvents::Read)
+        end
+      ensure
+        poller.close
+      end
+      timer = Termisu::Event::Source::SystemTimer.new(4.milliseconds)
+      timer.class.to_s.should eq("Termisu::Event::Source::SystemTimer")
+      events = Channel(Termisu::Event::Any).new
+      begin
+        2.times do
+          timer.start(events)
+          WindowsConsoleProbe.receive(events).should be_a(Termisu::Event::Tick)
+          timer.stop
+          timer.running?.should be_false
+        end
+      ensure
+        timer.stop
+      end
+    end
+
+    it "defers bottom-right wrapping instead of scrolling the shared render grid" do
+      WindowsConsoleProbe.with_screen_buffer do |handle|
+        bits = WindowsConsoleProbe.mode(handle)
+        WindowsConsoleProbe.check LibC.SetConsoleMode(handle, bits | 0x000D_u32), "SetConsoleMode(delayed wrap)"
+        WindowsConsoleProbe.check WindowsConsole.GetConsoleScreenBufferInfo(handle, out info), "GetConsoleScreenBufferInfo"
+        width = info.window.right.to_i32 - info.window.left.to_i32 + 1
+        height = info.window.bottom.to_i32 - info.window.top.to_i32 + 1
+        output = Termisu::System::Console::Output.new(handle.address)
+        output.write("\e[HA\e[#{height};#{width}HZ\e[H".to_slice)
+        output.finish
+        WindowsConsoleProbe.screen_text(handle, 1).should eq([0x41_u16])
+      end
+    end
+
+    it "restores console modes despite output failure in every cleanup scope" do
+      WindowsConsoleProbe.with_console do |input, output|
+        WindowsConsoleProbe.with_modes(input, output) do
+          ["disable", "with_raw", "with_mode", "close"].each do |operation|
+            backend = Termisu::Terminal::Backend.new
+            begin
+              backend.set_mode(Termisu::Terminal::Mode.cooked) if operation == "with_mode"
+              before = {WindowsConsoleProbe.mode(input), WindowsConsoleProbe.mode(output)}
+              expect_raises(IO::Error, "Invalid UTF-8 console output") do
+                case operation
+                when "with_raw"
+                  backend.with_raw_mode { backend.write(Bytes[0xFF]) }
+                when "with_mode"
+                  backend.with_mode(Termisu::Terminal::Mode.raw) { backend.write(Bytes[0xFF]) }
+                else
+                  backend.enable_raw_mode
+                  backend.write(Bytes[0xFF])
+                  operation == "close" ? backend.close : backend.disable_raw_mode
+                end
+              end
+              {WindowsConsoleProbe.mode(input), WindowsConsoleProbe.mode(output)}.should eq(before)
+              backend.raw_mode?.should be_false
+            ensure
+              backend.close
+            end
+          end
+        end
+      end
+    end
+
+    it "retains an unconfirmed native lease before allowing source replacement" do
+      WindowsConsoleProbe.with_console do |input, _output|
+        reader = Termisu::Reader.new(input.address)
+        source = WindowsConsoleProbe::RetainedInputSource.new(reader, Termisu::Input::Parser.new(reader))
+        lease = WindowsConsoleProbe::UnconfirmedJoinLease.new(input.address)
+        events = Channel(Termisu::Event::Any).new(1)
+        source.seed_lease(lease)
+        begin
+          expect_raises(IO::Error, "injected unconfirmed join") { source.start(events) }
+          lease.closed?.should be_false
+          source.stop_required?.should be_true
+          source.@lease.should be(lease)
+          source.running?.should be_false
+          source.start(events)
+          lease.closed?.should be_true
+          source.running?.should be_true
+          source.stop
+          source.stop_required?.should be_false
+        ensure
+          source.stop
+          reader.close
+        end
+      end
+    end
+  end
+{% end %}

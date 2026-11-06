@@ -198,26 +198,30 @@ class Termisu::Event::Source::Resize < Termisu::Event::Source
   # deliberately swallows all failures because exceptions must not escape a
   # signal trap. A full wake channel means a check is already pending.
   private def install_signal_handler(wake : Channel(Nil), run_state : RunState) : Nil
-    Signal::WINCH.trap do
-      if run_state.active?
-        select
-        when wake.send(nil)
-        else
+    {% unless flag?(:win32) %}
+      Signal::WINCH.trap do
+        if run_state.active?
+          select
+          when wake.send(nil)
+          else
+          end
         end
+      rescue
+        # Signal traps are best-effort and must never throw.
       end
-    rescue
-      # Signal traps are best-effort and must never throw.
-    end
+    {% end %}
   end
 
   # Crystal may dispatch an already-received signal after stop. This callback
   # keeps that dispatch harmless without retaining any run-local resources.
   private def install_inactive_signal_handler : Nil
-    Signal::WINCH.trap do
+    {% unless flag?(:win32) %}
+      Signal::WINCH.trap do
 
-    rescue
-      # Signal traps are best-effort and must never throw.
-    end
+      rescue
+        # Signal traps are best-effort and must never throw.
+      end
+    {% end %}
   end
 
   private def run(

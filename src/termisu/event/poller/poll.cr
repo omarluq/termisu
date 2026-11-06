@@ -68,28 +68,35 @@ class Termisu::Event::Poller::Poll < Termisu::Event::Poller
   def register_fd(fd : Int32, events : FDEvents) : Nil
     raise "Poller is closed" if @closed
 
-    # Check if already registered and update
-    # NOTE: Structs are value types - must replace the entire element
-    existing_idx = @fds.index { |pfd| pfd.fd == fd }
-    if existing_idx
-      updated = @fds[existing_idx]
-      updated.events = events_to_poll(events)
-      @fds[existing_idx] = updated
-    else
-      pollfd = Termisu::System::Poll::Pollfd.new
-      pollfd.fd = fd
-      pollfd.events = events_to_poll(events)
-      pollfd.revents = 0
-      @fds << pollfd
-    end
-    Log.debug { "Registered fd=#{fd} for events=#{events}" }
+    {% if flag?(:win32) %}
+      raise NotImplementedError.new("Generic descriptor polling is not supported on Windows")
+    {% else %}
+      # Check if already registered and update
+      # NOTE: Structs are value types - must replace the entire element
+      existing_idx = @fds.index { |pfd| pfd.fd == fd }
+      if existing_idx
+        updated = @fds[existing_idx]
+        updated.events = events_to_poll(events)
+        @fds[existing_idx] = updated
+      else
+        pollfd = Termisu::System::Poll::Pollfd.new
+        pollfd.fd = fd
+        pollfd.events = events_to_poll(events)
+        pollfd.revents = 0
+        @fds << pollfd
+      end
+      Log.debug { "Registered fd=#{fd} for events=#{events}" }
+    {% end %}
   end
 
   def unregister_fd(fd : Int32) : Nil
     return if @closed
-
-    @fds.reject! { |pfd| pfd.fd == fd }
-    Log.debug { "Unregistered fd=#{fd}" }
+    {% if flag?(:win32) %}
+      raise NotImplementedError.new("Generic descriptor polling is not supported on Windows")
+    {% else %}
+      @fds.reject! { |pfd| pfd.fd == fd }
+      Log.debug { "Unregistered fd=#{fd}" }
+    {% end %}
   end
 
   def add_timer(interval : Time::Span, repeating : Bool = true) : TimerHandle

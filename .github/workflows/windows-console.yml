@@ -1,0 +1,58 @@
+name: Windows console probes
+on:
+  push:
+    branches: [windows-console-backend]
+    paths:
+      - "src/**/*.cr"
+      - "spec/termisu/system/console_spec.cr"
+      - ".github/scripts/windows-console-probe.ps1"
+      - ".github/workflows/windows-console.yml"
+      - ".github/actions/setup-crystal/action.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "src/**/*.cr"
+      - "spec/termisu/system/console_spec.cr"
+      - ".github/scripts/windows-console-probe.ps1"
+      - ".github/workflows/windows-console.yml"
+      - ".github/actions/setup-crystal/action.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: windows-console-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  native-probes:
+    name: Native console contracts (Crystal 1.21)
+    runs-on: windows-2025
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Setup Crystal
+        uses: ./.github/actions/setup-crystal
+        with:
+          crystal-version: "1.21.0"
+          install-shards: "false"
+      - name: Build native facade and probe
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path bin | Out-Null
+          crystal --version
+          crystal build spec/termisu/system/console_spec.cr -o bin/windows-console-probe.exe --error-on-warnings
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Run native probe with redirected standard streams
+        shell: pwsh
+        run: |
+          ./.github/scripts/windows-console-probe.ps1 -ProbePath bin/windows-console-probe.exe -OutputDirectory "$env:RUNNER_TEMP/windows-console-probe"
+      - name: Upload native diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: windows-console-probe
+          path: ${{ runner.temp }}/windows-console-probe
+          if-no-files-found: warn
+          retention-days: 7
