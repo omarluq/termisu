@@ -187,6 +187,12 @@ require "spec"
       raise Spec::AssertionFailed.new("Unowned console input remains; refusing fixture cleanup", __FILE__, __LINE__)
     end
 
+    def capture_resize_input(input : LibC::HANDLE, output : LibC::HANDLE, owned : Array(InputSignature)) : Nil
+      queued = input_snapshot(input)
+      verify_owned_input(output, queued, owned)
+      owned.replace(queued)
+    end
+
     def finish_injected_input(input : LibC::HANDLE, output : LibC::HANDLE, owned : Array(InputSignature)) : Nil
       queued = input_snapshot(input)
       verify_owned_input(output, queued, owned)
@@ -473,6 +479,31 @@ require "spec"
       end
     end
 
+    it "cleans private-buffer resize and injected mouse input after a fixture abort" do
+      WindowsConsoleProbe.with_console do |input, output|
+        failure = Spec::AssertionFailed.new("injected private-buffer abort", __FILE__, __LINE__)
+        error = expect_raises(Spec::AssertionFailed, "injected private-buffer abort") do
+          WindowsConsoleProbe.with_injected_input(input, output) do |owned|
+            mode = WindowsConsoleProbe.mode(input) &
+                   ~(LibC::ENABLE_VIRTUAL_TERMINAL_INPUT.to_u32 | WindowsConsoleProbe::Native::ENABLE_WINDOW_INPUT)
+            WindowsConsoleProbe.check LibC.SetConsoleMode(input, mode), "SetConsoleMode(private-buffer abort)"
+            WindowsConsoleProbe.with_screen_buffer do |screen|
+              WindowsConsoleProbe.check WindowsConsole.GetConsoleScreenBufferInfo(screen, out info), "GetConsoleScreenBufferInfo(private-buffer abort)"
+              WindowsConsoleProbe.capture_resize_input(input, screen, owned)
+              size = WindowsConsole::Coord.new(x: info.size.x, y: (info.size.y + 10).to_i16)
+              WindowsConsoleProbe.check WindowsConsoleProbe::Native.SetConsoleScreenBufferSize(screen, size), "SetConsoleScreenBufferSize(private-buffer abort)"
+              WindowsConsoleProbe.capture_resize_input(input, screen, owned)
+              WindowsConsoleProbe.write_input(input, screen, Slice[WindowsConsoleProbe.mouse(1)], owned)
+              WindowsConsoleProbe.input_snapshot(input).should_not be_empty
+              raise failure
+            end
+          end
+        end
+        error.should be(failure)
+        WindowsConsoleProbe.assert_idle_input(input, "After private-buffer abort")
+      end
+    end
+
     it "parses native mouse records and VT mouse bytes through the shared parser" do
       WindowsConsoleProbe.with_console do |input, output|
         WindowsConsoleProbe.with_injected_input(input, output) do |owned|
@@ -548,14 +579,17 @@ require "spec"
           WindowsConsoleProbe.check LibC.SetConsoleMode(input, mode), "SetConsoleMode(legacy records without resize events)"
           WindowsConsoleProbe.with_screen_buffer do |screen|
             WindowsConsoleProbe.check WindowsConsole.GetConsoleScreenBufferInfo(screen, out info), "GetConsoleScreenBufferInfo"
+            WindowsConsoleProbe.capture_resize_input(input, screen, owned)
             size = WindowsConsole::Coord.new(x: info.size.x, y: (info.size.y + 10).to_i16)
             WindowsConsoleProbe.check WindowsConsoleProbe::Native.SetConsoleScreenBufferSize(screen, size), "SetConsoleScreenBufferSize"
+            WindowsConsoleProbe.capture_resize_input(input, screen, owned)
             window = info.window
             window.top += 5
             window.bottom += 5
             WindowsConsoleProbe.check WindowsConsoleProbe::Native.SetConsoleWindowInfo(screen, 1, pointerof(window)), "SetConsoleWindowInfo"
+            WindowsConsoleProbe.capture_resize_input(input, screen, owned)
             record = WindowsConsoleProbe.mouse(1, x: window.left, y: window.top)
-            WindowsConsoleProbe.write_input(input, output, Slice[record], owned)
+            WindowsConsoleProbe.write_input(input, screen, Slice[record], owned)
             reader = Termisu::Reader.new(input.address, output_fd: screen.address)
             begin
               event = Termisu::Input::Parser.new(reader).poll_event(1000)
