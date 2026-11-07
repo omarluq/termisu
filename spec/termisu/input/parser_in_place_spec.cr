@@ -94,21 +94,37 @@ end
 
 describe Termisu::Input::Parser do
   it "allocates nothing transient for key and mouse events and only owned Preedit text" do
-    count = 500
-    [
-      "€".to_slice,
-      "\e[1;5A".to_slice,
-      "\e[97;5u".to_slice,
-      "\e[27;5;112~".to_slice,
-      "\e[<0;10;20M".to_slice,
-      Bytes[0x1B, '['.ord, 'M'.ord, 32, 33, 33],
-    ].each do |sequence|
-      parser_allocated_bytes(sequence, count).should eq(0), String.new(sequence)
-    end
+    {% if flag?(:termisu_parser_allocation_probe) %}
+      count = 500
+      [
+        "€".to_slice,
+        "\e[1;5A".to_slice,
+        "\e[97;5u".to_slice,
+        "\e[27;5;112~".to_slice,
+        "\e[<0;10;20M".to_slice,
+        Bytes[0x1B, '['.ord, 'M'.ord, 32, 33, 33],
+      ].each do |sequence|
+        parser_allocated_bytes(sequence, count).should eq(0), String.new(sequence)
+      end
 
-    preedit_bytes = parser_allocated_bytes("\e[0;1;4352:4449u".to_slice, count)
-    preedit_bytes.should be > 0
-    preedit_bytes.should be <= 48_u64 * count
+      preedit_bytes = parser_allocated_bytes("\e[0;1;4352:4449u".to_slice, count)
+      preedit_bytes.should be > 0
+      preedit_bytes.should be <= 48_u64 * count
+    {% else %}
+      # GC.stats is process-wide; exclude allocations from SDK monitor threads.
+      output = IO::Memory.new
+      status = Process.run(
+        "crystal",
+        [
+          "run", "-Dtermisu_parser_allocation_probe", __FILE__, "--",
+          "--example", "allocates nothing transient", "--no-color",
+        ],
+        output: output,
+        error: output
+      )
+      status.success?.should be_true, output.to_s
+      output.to_s.should contain("1 examples, 0 failures, 0 errors, 0 pending")
+    {% end %}
   end
 
   describe "in-place UTF-8 decoding" do
