@@ -24,9 +24,13 @@ concurrency:
   cancel-in-progress: true
 jobs:
   native-probes:
-    name: Native console contracts (Crystal 1.21)
+    name: Native console contracts (Crystal ${{ matrix.crystal }})
     runs-on: windows-2025
     timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        crystal: ["1.21.0", "1.22.2"]
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -35,7 +39,7 @@ jobs:
       - name: Setup Crystal
         uses: ./.github/actions/setup-crystal
         with:
-          crystal-version: "1.21.0"
+          crystal-version: ${{ matrix.crystal }}
           install-shards: "false"
       - name: Build native facade and probe
         shell: pwsh
@@ -52,7 +56,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: windows-console-probe
+          name: windows-console-probe-${{ matrix.crystal }}
           path: ${{ runner.temp }}/windows-console-probe
           if-no-files-found: warn
           retention-days: 7

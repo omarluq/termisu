@@ -5,8 +5,8 @@ require "../../time_compat"
   # A run owns its duplicate, cancellation/rearm events and cooperative wake pipe.
   # The native worker only observes readiness; it never consumes console input.
   class Termisu::System::Console::ReadinessLease
-    {% if compare_versions(Crystal::VERSION, "1.21.0") < 0 || compare_versions(Crystal::VERSION, "1.22.0") >= 0 %}
-      {% raise "Termisu Windows readiness supports Crystal >= 1.21.0, < 1.22.0" %}
+    {% if compare_versions(Crystal::VERSION, "1.21.0") < 0 || compare_versions(Crystal::VERSION, "1.23.0") >= 0 %}
+      {% raise "Termisu Windows readiness supports Crystal >= 1.21.0, < 1.23.0" %}
     {% end %}
 
     enum Status : UInt8
