@@ -35,12 +35,13 @@ on:
 # /dev/tty / terminfo), not the shell.
 jobs:
   e2e:
-    name: E2E (${{ matrix.os }})
+    name: E2E (Crystal ${{ matrix.crystal }}, ${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
+        crystal: ["1.21.0", "1.22.2"]
     permissions:
       contents: read
     steps:
@@ -49,7 +50,7 @@ jobs:
       - name: Setup Crystal
         uses: ./.github/actions/setup-crystal
         with:
-          crystal-version: "1.21.0"
+          crystal-version: ${{ matrix.crystal }}
       - name: Install shards
         run: shards install
       - name: Build hace
@@ -64,7 +65,7 @@ jobs:
         if: ${{ failure() }}
         uses: actions/upload-artifact@v7
         with:
-          name: e2e-diagnostics-${{ matrix.os }}
+          name: e2e-diagnostics-${{ matrix.os }}-crystal-${{ matrix.crystal }}
           path: ${{ runner.temp }}/termisu-e2e.log
           if-no-files-found: warn
           retention-days: 7
