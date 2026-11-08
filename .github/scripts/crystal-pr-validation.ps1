@@ -107,7 +107,9 @@ if ($Configuration -ne 'sdk121') {
     $output = Invoke-Probe 'upstream-thread-spec' $expectedFailure
     if ($expectedFailure) {
         Assert-State ($output.Contains('6 examples, 1 failures, 0 errors, 0 pending')) 'Expected exactly one executed regression failure'
-        Assert-State ($output.Contains('after_join.should eq(0)')) 'Wrong upstream regression failed'
+        # Macro source locations show the enclosing guard, not the failing assertion.
+        Assert-State ($output.Contains('1) Thread closes its semaphore when joined before exiting') -and
+            $output -match 'Expected:\s+0\s+got:\s+1') 'Wrong upstream regression failed'
         $regression = 'expected native semaphore assertion failure'
     } else {
         Assert-State ($output.Contains('6 examples, 0 failures, 0 errors, 0 pending')) 'Upstream thread specs did not pass'
