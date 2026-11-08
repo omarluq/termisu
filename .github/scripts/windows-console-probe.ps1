@@ -2,7 +2,8 @@ param(
     [Parameter(Mandatory = $true)]
     [string]$ProbePath,
     [Parameter(Mandatory = $true)]
-    [string]$OutputDirectory
+    [string]$OutputDirectory,
+    [switch]$AllowFailure
 )
 
 $ErrorActionPreference = 'Stop'
@@ -89,10 +90,12 @@ try {
     $err = $stderr.GetAwaiter().GetResult()
     $out | Set-Content (Join-Path $OutputDirectory 'stdout.log')
     $err | Set-Content (Join-Path $OutputDirectory 'stderr.log')
+    $nativeResult = @{ exitCode = $process.ExitCode; timedOut = $timedOut; supervisionCompleted = $false }
+    $nativeResult | ConvertTo-Json | Set-Content (Join-Path $OutputDirectory 'process-result.json')
     Write-Host $out
     if ($err) { Write-Host $err }
     if ($timedOut) { throw 'Native console probe timed out after 30 seconds' }
-    if ($process.ExitCode -ne 0) { throw "Native console probe exited with $($process.ExitCode)" }
+    if ($process.ExitCode -ne 0 -and -not $AllowFailure) { throw "Native console probe exited with $($process.ExitCode)" }
 }
 catch {
     $_ | Out-String | Set-Content (Join-Path $OutputDirectory 'host-error.log') -ErrorAction SilentlyContinue
@@ -124,3 +127,6 @@ finally {
         }
     }
 }
+
+$nativeResult.supervisionCompleted = $true
+$nativeResult | ConvertTo-Json | Set-Content (Join-Path $OutputDirectory 'process-result.json')

@@ -1,47 +1,67 @@
-name: SDK thread cleanup diagnostic
+name: Crystal PR17884 validation
 on:
   push:
-    branches: [diagnostic/crystal122-thread-cleanup]
+    branches: [diagnostic/crystal17884-thread-cleanup]
     paths:
       - ".github/scripts/sdk-thread-cleanup.cr"
+      - ".github/scripts/termisu-thread-cleanup.cr"
+      - ".github/scripts/crystal-pr-validation.ps1"
+      - ".github/scripts/windows-console-probe.ps1"
       - ".github/workflows/sdk-thread-cleanup.yml"
 permissions:
   contents: read
 jobs:
-  native-diagnostic:
-    name: Native SDK cleanup (Crystal ${{ matrix.crystal }})
+  native-validation:
+    name: Native cleanup (${{ matrix.profile }})
     runs-on: windows-2025
     timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
-        crystal: ["1.21.0", "1.22.2"]
+        include:
+          - profile: sdk121
+            crystal: "1.21.0"
+          - profile: sdk122
+            crystal: "1.22.2"
+          - profile: pr-base
+            crystal: "1.22.2"
+          - profile: pr-head
+            crystal: "1.22.2"
     steps:
-      - name: Checkout
+      - name: Checkout Termisu proof branch
         uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - name: Setup Crystal
+      - name: Setup released compiler
         uses: ./.github/actions/setup-crystal
         with:
           crystal-version: ${{ matrix.crystal }}
           install-shards: "false"
-      - name: Build SDK-only diagnostic
+      - name: Checkout pinned Crystal PR head
+        if: matrix.profile != 'sdk121'
+        uses: actions/checkout@v7
+        with:
+          repository: crystal-lang/crystal
+          ref: 7c0e4bc7b3c545ba52f62ce110886bedf4ea4c74
+          path: crystal-pr
+          persist-credentials: false
+      - name: Checkout pinned Crystal PR base
+        if: matrix.profile == 'pr-base'
+        uses: actions/checkout@v7
+        with:
+          repository: crystal-lang/crystal
+          ref: 3e2cd3824953481ce8d89eea78050f525a9f89ee
+          path: crystal-base
+          persist-credentials: false
+      - name: Verify native resources and Termisu contracts
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force -Path bin | Out-Null
-          crystal --version
-          crystal build .github/scripts/sdk-thread-cleanup.cr -o bin/sdk-thread-cleanup.exe --error-on-warnings
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Execute bounded native diagnostic
-        shell: pwsh
-        run: |
-          ./.github/scripts/windows-console-probe.ps1 -ProbePath bin/sdk-thread-cleanup.exe -OutputDirectory "$env:RUNNER_TEMP/sdk-thread-cleanup"
-      - name: Upload diagnostic evidence
+          ./.github/scripts/crystal-pr-validation.ps1 -Configuration '${{ matrix.profile }}' -OutputDirectory "$env:RUNNER_TEMP/crystal17884"
+      - name: Upload native evidence
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: sdk-thread-cleanup-${{ matrix.crystal }}
-          path: ${{ runner.temp }}/sdk-thread-cleanup
+          name: crystal17884-${{ matrix.profile }}
+          path: ${{ runner.temp }}/crystal17884
           if-no-files-found: error
           retention-days: 7
