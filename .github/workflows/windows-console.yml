@@ -30,7 +30,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        crystal: ["1.21.0", "1.22.2"]
+        crystal: ["1.21.0", "1.22.2", "1.22.3"]
     steps:
       - name: Checkout
         uses: actions/checkout@v7
