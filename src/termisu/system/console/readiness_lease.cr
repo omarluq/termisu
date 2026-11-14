@@ -9,6 +9,13 @@ require "../../time_compat"
       {% raise "Termisu Windows readiness supports Crystal >= 1.21.0, < 1.23.0" %}
     {% end %}
 
+    {% if Fiber.has_constant?(:ExecutionContext) %}
+      private alias Worker = Fiber::ExecutionContext::Isolated
+    {% else %}
+      # Older runtimes have no isolated execution contexts.
+      private alias Worker = Thread
+    {% end %}
+
     enum Status : UInt8
       Ready     = 1
       Hangup    = 2
@@ -21,7 +28,7 @@ require "../../time_compat"
     @rearm : LibC::HANDLE
     @writer : LibC::HANDLE
     @reader : IO::FileDescriptor?
-    @thread : Thread?
+    @worker : Worker?
     @closed = Atomic(Bool).new(false)
     @cancelled = Atomic(Bool).new(false)
     @wake_pending = Atomic(Bool).new(false)
@@ -41,11 +48,13 @@ require "../../time_compat"
         ensure
           writer.close
         end
-        thread = Thread.new { worker_loop }
-        if thread.to_unsafe.null?
-          raise IO::Error.new("Native input readiness thread could not be started")
-        end
-        @thread = thread
+        worker = Worker.new(name: "termisu-input-readiness") { worker_loop }
+        {% unless Fiber.has_constant?(:ExecutionContext) %}
+          if worker.to_unsafe.null?
+            raise IO::Error.new("Native input readiness thread could not be started")
+          end
+        {% end %}
+        @worker = worker
       rescue error
         close_resources
         raise error
@@ -115,7 +124,7 @@ require "../../time_compat"
         cancel
         join_worker
       rescue error
-        # A failed native join does not establish termination; retain all wait resources.
+        # A failed wait does not establish worker completion; retain all wait resources.
         @closed.set(false)
         raise error
       end
@@ -125,7 +134,12 @@ require "../../time_compat"
     end
 
     private def join_worker : Nil
-      @thread.try(&.join)
+      {% if Fiber.has_constant?(:ExecutionContext) %}
+        # Wait for our block and its ensure, not the pooled OS thread's lifetime.
+        @worker.try(&.wait)
+      {% else %}
+        @worker.try(&.join)
+      {% end %}
     end
 
     private def worker_loop : Nil
@@ -200,8 +214,8 @@ require "../../time_compat"
         error = ex
       end
       @reader = nil
-      # Once started, the worker owns and closes the writer, before join returns.
-      handles = @thread ? [@input, @cancel, @rearm] : [@input, @cancel, @rearm, @writer]
+      # Once started, the worker owns and closes the writer, before the worker wait returns.
+      handles = @worker ? [@input, @cancel, @rearm] : [@input, @cancel, @rearm, @writer]
       handles.each do |handle|
         next if handle.null?
         if LibC.CloseHandle(handle) == 0
