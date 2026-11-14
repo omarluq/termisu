@@ -53,11 +53,18 @@ class Termisu::Event::Source::Input < Termisu::Event::Source
   # A control pipe cancels or rearms the poll worker, while a second pipe wakes
   # the source fiber through Crystal's ordinary public IO API.
   private class ReadinessLease
-    # Thread is an internal Crystal API: qualify the next minor before widening this.
+    # Qualify each runtime before widening this range; legacy runtimes still use Thread.
     {% if compare_versions(Crystal::VERSION, "1.17.0") < 0 || compare_versions(Crystal::VERSION, "1.23.0") >= 0 %}
       {% raise "Termisu input readiness supports Crystal >= 1.17.0, < 1.23.0 (Thread API)" %}
-    {% elsif !Thread.has_method?(:initialize) || !Thread.has_method?(:join) %}
+    {% elsif !Fiber.has_constant?(:ExecutionContext) && (!Thread.has_method?(:initialize) || !Thread.has_method?(:join)) %}
       {% raise "Termisu input readiness requires Thread#initialize and Thread#join" %}
+    {% end %}
+
+    {% if Fiber.has_constant?(:ExecutionContext) %}
+      private alias Worker = Fiber::ExecutionContext::Isolated
+    {% else %}
+      # Older runtimes have no isolated execution contexts.
+      private alias Worker = Thread
     {% end %}
 
     # POSIX specifies F_DUPFD as command zero on all supported targets.
@@ -80,7 +87,7 @@ class Termisu::Event::Source::Input < Termisu::Event::Source
     @wake_writer : IO::FileDescriptor?
     @control_reader : IO::FileDescriptor?
     @control_writer : IO::FileDescriptor?
-    @thread : Thread?
+    @worker : Worker?
     @cancelled = Atomic(Bool).new(false)
     @closed = Atomic(Bool).new(false)
     @worker_error : Exception?
@@ -101,7 +108,7 @@ class Termisu::Event::Source::Input < Termisu::Event::Source
       input_fd = @input_fd
       wake_fd = wake_writer.fd
       control_fd = control_reader.fd
-      @thread = Thread.new do
+      @worker = Worker.new(name: "termisu-input-readiness") do
         worker_loop(input_fd, wake_fd, control_fd)
       rescue error
         # Wake the source fiber so stop can reach the synchronous join, which
@@ -163,19 +170,27 @@ class Termisu::Event::Source::Input < Termisu::Event::Source
 
       cancel
       begin
-        @thread.try(&.join)
+        join_worker
       ensure
-        # Thread#join re-raises a worker failure. Descriptor ownership still
+        # Waiting re-raises a worker failure. Descriptor ownership still
         # ends here, and the worker error remains the primary exception.
         close_descriptors
       end
     end
 
+    private def join_worker : Nil
+      {% if Fiber.has_constant?(:ExecutionContext) %}
+        @worker.try(&.wait)
+      {% else %}
+        @worker.try(&.join)
+      {% end %}
+    end
+
     {% if @top_level.has_constant?(:TERMISU_INPUT_READINESS_SPEC) %}
       def fail_worker_for_spec : Array(Int32)
         cancel
-        @thread.try(&.join)
-        @thread = Thread.new { raise ArgumentError.new("readiness worker fault") }
+        join_worker
+        @worker = Worker.new(name: "termisu-input-fault") { raise ArgumentError.new("readiness worker fault") }
         descriptors = [
           @wake_reader.not_nil!.fd,
           @wake_writer.not_nil!.fd,
