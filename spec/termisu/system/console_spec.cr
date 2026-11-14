@@ -923,7 +923,7 @@ require "spec"
       end
     end
 
-    it "joins idle production readiness runs before closing all five owned handles" do
+    it "waits for idle production readiness runs before closing all five owned handles" do
       WindowsConsoleProbe.with_console do |input, _output|
         WindowsConsoleProbe.check WindowsConsole.GetNumberOfConsoleInputEvents(input, out before),
           "GetNumberOfConsoleInputEvents"
