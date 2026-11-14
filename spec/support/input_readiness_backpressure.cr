@@ -20,11 +20,11 @@ class Termisu::Event::Source::Input
         raise IO::Error.from_errno("Could not configure nonblocking control fixture")
       end
       result = Atomic(Bool).new(false)
-      @thread = Thread.new { result.set(read_command(control.fd).rearm?) }
+      @worker = Worker.new(name: "termisu-input-backpressure") { result.set(read_command(control.fd).rearm?) }
       wait_for_backpressure_for_spec { @control_blocked_for_spec.get }
       rearm
-      @thread.try(&.join)
-      @thread = nil
+      join_worker
+      @worker = nil
       result.get
     end
 
@@ -35,9 +35,9 @@ class Termisu::Event::Source::Input
       fill_pipe_for_spec(writer.fd)
       cancel
       result = Atomic(Bool).new(false)
-      @thread = Thread.new { result.set(wait_for_command(control.fd).stop?) }
-      @thread.try(&.join)
-      @thread = nil
+      @worker = Worker.new(name: "termisu-input-backpressure") { result.set(wait_for_command(control.fd).stop?) }
+      join_worker
+      @worker = nil
       result.get
     end
 
@@ -50,10 +50,27 @@ class Termisu::Event::Source::Input
       wait_for_backpressure_for_spec { @wake_blocked_for_spec.get }
     end
 
+    {% if Fiber.has_constant?(:ExecutionContext) %}
+      def delay_cleanup_for_spec(entered : Channel(Nil), release : Channel(Nil)) : Nil
+        reset_worker_for_spec
+        control = @control_reader || raise "Missing control reader"
+        @worker = Worker.new(name: "termisu-input-cleanup") do
+          read_command(control.fd)
+        ensure
+          entered.send(nil)
+          select
+          when release.receive?
+          when timeout(2.seconds)
+            raise "Timed out waiting to release worker cleanup"
+          end
+        end
+      end
+    {% end %}
+
     private def reset_worker_for_spec : Nil
       cancel
-      @thread.try(&.join)
-      @thread = nil
+      join_worker
+      @worker = nil
       control = @control_reader || raise "Missing control reader"
       # Atomic cancellation can leave the original Stop byte unread. This is a
       # test-only worker reset; production restarts always allocate a new lease.

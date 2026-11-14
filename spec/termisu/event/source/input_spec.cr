@@ -434,6 +434,114 @@ describe Termisu::Event::Source::Input do
   end
 
   describe "restart lifecycle" do
+    it "releases every idle run before restarting" do
+      read_fd, write_fd = create_pipe
+      begin
+        reader = Termisu::Reader.new(read_fd)
+        source = Termisu::Event::Source::Input.new(reader, Termisu::Input::Parser.new(reader))
+        channel = Channel(Termisu::Event::Any).new(1)
+
+        16.times do
+          source.start(channel)
+          descriptors = input_readiness_descriptors(source)
+
+          source.stop
+          source.stop_required?.should be_false
+          descriptors.each do |descriptor|
+            result = LibC.fcntl(descriptor, LibC::F_GETFD, 0)
+            error = Errno.value
+            result.should eq(-1)
+            error.should eq(Errno::EBADF)
+          end
+          LibC.fcntl(read_fd, LibC::F_GETFD, 0).should_not eq(-1)
+        end
+      ensure
+        source.try(&.stop)
+        channel.try(&.close)
+        reader.try(&.close)
+        LibC.close(read_fd)
+        LibC.close(write_fd)
+      end
+    end
+
+    {% if Fiber.has_constant?(:ExecutionContext) %}
+      it "keeps resources until worker cleanup finishes during concurrent stops" do
+        read_fd, write_fd = create_pipe
+        entered = Channel(Nil).new(1)
+        release = Channel(Nil).new
+        attempting = Channel(Nil).new(2)
+        stopped = Channel(Exception?).new(2)
+        begin
+          reader = Termisu::Reader.new(read_fd)
+          source = Termisu::Event::Source::Input.new(reader, Termisu::Input::Parser.new(reader))
+          channel = Channel(Termisu::Event::Any).new(1)
+          source.start(channel)
+          lease = source.@lease || fail "input readiness lease not created"
+          descriptors = input_readiness_descriptors(source)
+          lease.delay_cleanup_for_spec(entered, release)
+
+          2.times do
+            spawn do
+              attempting.send(nil)
+              error = begin
+                source.stop
+                nil
+              rescue ex
+                ex
+              end
+              stopped.send(error)
+            end
+          end
+          2.times do
+            select
+            when attempting.receive
+            when timeout(1.second)
+              fail "Stop did not start"
+            end
+          end
+          select
+          when entered.receive
+          when timeout(1.second)
+            fail "Worker did not enter cleanup"
+          end
+
+          select
+          when stopped.receive
+            fail "Stop returned before worker cleanup finished"
+          else
+          end
+          descriptors.each do |descriptor|
+            LibC.fcntl(descriptor, LibC::F_GETFD, 0).should_not eq(-1)
+          end
+
+          release.close
+          2.times do
+            select
+            when error = stopped.receive
+              error.should be_nil
+            when timeout(1.second)
+              fail "Stop did not finish after worker cleanup"
+            end
+          end
+          source.stop_required?.should be_false
+          descriptors.each do |descriptor|
+            result = LibC.fcntl(descriptor, LibC::F_GETFD, 0)
+            error = Errno.value
+            result.should eq(-1)
+            error.should eq(Errno::EBADF)
+          end
+          LibC.fcntl(read_fd, LibC::F_GETFD, 0).should_not eq(-1)
+        ensure
+          release.close unless release.closed?
+          source.try(&.stop)
+          channel.try(&.close)
+          reader.try(&.close)
+          LibC.close(read_fd)
+          LibC.close(write_fd)
+        end
+      end
+    {% end %}
+
     it "can be started again after stopping" do
       read_fd, write_fd = create_pipe
       begin
