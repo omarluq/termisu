@@ -36,8 +36,11 @@ dependencies:
 2. Run `shards install`
 
 Supported Crystal versions are 1.17.x–1.22.x (Windows: 1.21.x–1.22.x).
-Input readiness uses Crystal's internal `Thread` API; expanding this range requires
-validating worker creation, cancellation, and failure propagation on the new release.
+Input readiness uses `Fiber::ExecutionContext::Isolated` when the runtime provides it,
+with the existing internal `Thread` fallback on older or alternate runtimes.
+Expanding this range requires validating worker creation, cancellation, and failure
+propagation. Shutdown waits for the worker's code to finish before releasing its
+resources; an isolated worker's underlying OS thread may remain in Crystal's pool.
 
 ## Usage
 
