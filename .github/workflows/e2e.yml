@@ -41,7 +41,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
-        crystal: ["1.21.0", "1.22.2"]
+        crystal: ["1.21.0", "1.22.2", "1.22.3"]
     permissions:
       contents: read
     steps:
